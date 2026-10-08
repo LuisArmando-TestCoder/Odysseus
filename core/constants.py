@@ -21,7 +21,10 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 
 # API Configuration
 MAX_CONTEXT_MESSAGES = 90
-REQUEST_TIMEOUT = 20
+# Upstream request timeout for model listing / ping probes. Kept short enough
+# that a slow or unreachable endpoint fails fast instead of wedging the UI,
+# but generous enough for cold local serve engines (Ollama / llama.cpp).
+REQUEST_TIMEOUT = 12
 OPENAI_COMPAT_PATH = "/v1/chat/completions"
 
 # Environment variables with defaults

@@ -208,6 +208,9 @@ class Document(TimestampMixin, Base):
     source_email_folder      = Column(String, nullable=True)
     source_email_account_id  = Column(String, nullable=True)
     source_email_message_id  = Column(String, nullable=True, index=True)
+    # Absolute path of this document's on-disk file (see src/document_files.py).
+    # NULL for documents not yet migrated to a file (backfilled at startup).
+    file_path                = Column(String, nullable=True)
 
     session  = relationship("Session", backref=backref("documents", cascade="save-update, merge"))
     versions = relationship("DocumentVersion", back_populates="document",
@@ -1158,6 +1161,46 @@ def _migrate_add_doc_source_email_cols():
     except Exception as e:
         logging.getLogger(__name__).warning(f"doc source-email migration: {e}")
 
+def _migrate_add_document_file_path_column():
+    """Add the on-disk ``file_path`` column to documents (documents-as-files)."""
+    try:
+        with engine.connect() as conn:
+            existing = {r[1] for r in conn.execute(text("PRAGMA table_info(documents)"))}
+            if "file_path" not in existing:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN file_path VARCHAR"))
+                logging.getLogger(__name__).info("Added file_path column to documents")
+                conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"documents file_path migration: {e}")
+
+def _migrate_sync_documents_to_files():
+    """Backfill documents-as-files: write every document that has no file yet
+    to ``data/documents/`` (or resolve PDF uploads) and stamp its file_path.
+    Idempotent; the DB stays the source of truth (no data removed)."""
+    try:
+        from src.document_files import write_document_file
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"documents-to-files: cannot import helper: {e}")
+        return
+    try:
+        db = SessionLocal()
+        try:
+            docs = db.query(Document).filter(Document.file_path.is_(None)).all()
+            migrated = 0
+            for d in docs:
+                try:
+                    d.file_path = write_document_file(d)
+                    migrated += 1
+                except Exception as e:
+                    logging.getLogger(__name__).warning(f"documents-to-files: {d.id}: {e}")
+            if migrated:
+                db.commit()
+                logging.getLogger(__name__).info(f"Migrated {migrated} document(s) to files")
+        finally:
+            db.close()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"documents-to-files migration: {e}")
+
 def _migrate_add_task_automation_columns():
     """Add automation columns to scheduled_tasks table if missing."""
     new_cols = {
@@ -1528,6 +1571,8 @@ def init_db():
     _migrate_assign_legacy_owner()
     _migrate_add_tidy_verdict()
     _migrate_add_doc_source_email_cols()
+    _migrate_add_document_file_path_column()
+    _migrate_sync_documents_to_files()
     _migrate_add_oauth_config()
     _migrate_add_task_automation_columns()
     _migrate_add_disabled_tools()

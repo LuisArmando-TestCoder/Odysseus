@@ -483,7 +483,12 @@ async def build_chat_context(
     )
     if use_rag is not None:
         _preface_kwargs["use_rag"] = use_rag_val
-    preface, rag_sources, web_sources = chat_processor.build_context_preface(**_preface_kwargs)
+    # Run context assembly off the event loop: memory load, RAG retrieval,
+    # web search and URL fetching are blocking I/O that would otherwise stall
+    # the loop (and delay the first token of every concurrent request).
+    preface, rag_sources, web_sources = await asyncio.to_thread(
+        chat_processor.build_context_preface, **_preface_kwargs
+    )
 
     # Capture used memories immediately
     used_memories = getattr(chat_processor, '_last_used_memories', [])

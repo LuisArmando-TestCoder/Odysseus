@@ -28580,6 +28580,18 @@ body.doc-find-active mark.doc-find-mark.current {
 #doc-actions-footer .email-send-split {
   margin-left: auto;
 }
+/* Bottom-bar "system path" for the active document. */
+.doc-path-label {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 62%;
+  padding-left: 2px;
+  user-select: text;
+}
 /* WYSIWYG email body — what the recipient sees, edited in place. */
 .doc-email-richbody {
   flex: 1;

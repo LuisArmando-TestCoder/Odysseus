@@ -365,7 +365,9 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
             # For Desktop App creds, redirect to localhost — the user will
             # paste the resulting URL back if they're on a different device.
-            redirect_uri = "http://localhost:7000/api/mcp/oauth/callback"
+            # Use the request's own origin so the callback port matches the
+            # app's real bind port (7860 on macOS), not a hardcoded 7000.
+            redirect_uri = str(request.base_url).rstrip("/") + "/api/mcp/oauth/callback"
 
             params = {
                 "client_id": client_id,
@@ -433,7 +435,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
             client_id = keys["client_id"]
             client_secret = keys["client_secret"]
 
-            redirect_uri = "http://localhost:7000/api/mcp/oauth/callback"
+            redirect_uri = str(request.base_url).rstrip("/") + "/api/mcp/oauth/callback"
 
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -548,7 +550,7 @@ def _oauth_authorize_page(auth_url: str, server_id: str, host: str) -> str:
   <div class="divider"></div>
   <form method="POST" action="http://{host}/api/mcp/oauth/exchange/{server_id}">
     <p>Paste the URL from your browser after signing in:</p>
-    <input type="text" name="callback_url" placeholder="http://localhost:7000/api/mcp/oauth/callback?code=..." required>
+    <input type="text" name="callback_url" placeholder="http://{host}/api/mcp/oauth/callback?code=..." required>
     <br><button type="submit">Connect</button>
   </form>
 </div></body></html>"""

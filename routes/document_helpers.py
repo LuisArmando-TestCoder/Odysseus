@@ -37,6 +37,31 @@ class DocumentPatch(BaseModel):
 
 # ---- Helpers ----
 
+def _doc_system_path(doc: Document) -> str:
+    """Absolute filesystem path for a document (shown in the editor's bottom bar).
+
+    Uploaded files (PDFs) resolve to their real file; editor documents resolve
+    to their on-disk file under ``data/documents/`` (or the database during the
+    pre-migration transition).
+    """
+    from src.document_files import document_path
+    return document_path(doc)
+
+
+def _sync_doc_file(db, doc: Document) -> None:
+    """Mirror a document to its on-disk file and persist file_path.
+
+    Best-effort: a failed write logs a warning and leaves the DB row intact, so
+    a filesystem error never blocks the document operation itself.
+    """
+    try:
+        from src.document_files import write_document_file
+        doc.file_path = write_document_file(doc)
+        db.commit()
+    except Exception as e:
+        logger.warning("document file sync failed for %s: %s", getattr(doc, "id", "?"), e)
+
+
 def _doc_to_dict(doc: Document) -> Dict[str, Any]:
     return {
         "id": doc.id,
@@ -49,6 +74,8 @@ def _doc_to_dict(doc: Document) -> Dict[str, Any]:
         "archived": bool(getattr(doc, "archived", False)),
         "created_at": (doc.created_at.isoformat() + "Z") if doc.created_at else None,
         "updated_at": (doc.updated_at.isoformat() + "Z") if doc.updated_at else None,
+        # Human-readable location shown in the editor's bottom bar.
+        "path": _doc_system_path(doc),
         # Source-email provenance (set when doc was created from an email
         # attachment) — drives the "Send signed reply" menu item.
         "source_email_uid":        getattr(doc, "source_email_uid", None),

@@ -39,3 +39,7 @@ qrcode[pil]
 croniter
 pytest
 pytest-asyncio
+# Selenium WebDriver for the Gemini web-scraper LLM backend.
+# Selenium ≥4.6 includes Selenium Manager which automatically downloads
+# the correct ChromeDriver — no manual chromedriver install needed.
+selenium>=4.6

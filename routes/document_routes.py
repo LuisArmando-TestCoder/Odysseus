@@ -21,6 +21,7 @@ from routes.document_helpers import (
     _doc_to_dict, _version_to_dict,
     _verify_doc_owner, _owner_session_filter,
     _slug, _resolve_user_upload_path, _assert_pdf_marker_upload_owned, _derive_title,
+    _sync_doc_file,
     _PDF_RENDER_SCALE,
 )
 
@@ -109,6 +110,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             db.add(ver)
             db.commit()
             db.refresh(doc)
+            _sync_doc_file(db, doc)
             try:
                 from src.event_bus import fire_event
                 fire_event("document_created", doc.owner)
@@ -567,6 +569,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             doc.current_content = req.content
             db.commit()
             db.refresh(doc)
+            _sync_doc_file(db, doc)
             return _doc_to_dict(doc)
         except HTTPException:
             raise
@@ -604,6 +607,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                         pass
             db.commit()
             db.refresh(doc)
+            _sync_doc_file(db, doc)
             return _doc_to_dict(doc)
         except HTTPException:
             raise

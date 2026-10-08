@@ -713,9 +713,10 @@ def _build_system_prompt(
                     f'are NOT part of the document.\n'
                     f'```\n{_doc_numbered}\n```\n'
                     f'You ALREADY HAVE this document — it is right above. Do NOT ask the user to paste '
-                    f'it, and do NOT use read_file, bash, cat, or any tool to fetch it: it lives in the '
-                    f'editor, NOT on disk, so those attempts will fail. Every request is about THIS '
-                    f'document unless the user clearly says otherwise.\n'
+                    f'it, and do NOT re-fetch it with read_file/bash/cat (you already hold the full text). '
+                    f'This document is also saved as a real file on disk in the documents folder '
+                    f'(data/documents/), so other chats can find it there with read_file. Every request '
+                    f'is about THIS document unless the user clearly says otherwise.\n'
                     f'A "[Doc edit: L25]" prefix means the user is pointing at that line — use the '
                     f'numbers above to find the text they mean.\n'
                     f'To edit: use edit_document with <<<FIND>>>...<<<REPLACE>>>...<<<END>>>. The FIND '
@@ -2024,11 +2025,17 @@ async def stream_agent_loop(
                     yield f'data: {json.dumps({"type": "doc_stream_delta", "content": content})}\n\n'
                     break
 
-        # Execute each tool block
+        # Execute tool blocks. Independent tools run concurrently so a
+        # multi-tool turn (e.g. web search + read file + shell) isn't
+        # serialized one-at-a-time; results are still processed in order below.
         tool_results = []
         tool_result_texts = []  # plain text for native tool role messages
         budget_hit = False
-        for i, block in enumerate(tool_blocks):
+
+        # Pre-compute per-block metadata + enforce the tool budget up front,
+        # announcing each tool as we go.
+        block_meta = []  # (block, cmd_display, is_doc_tool)
+        for block in tool_blocks:
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 yield f'data: {json.dumps({"type": "budget_exceeded", "limit": max_tool_calls, "used": total_tool_calls})}\n\n'
@@ -2043,44 +2050,59 @@ async def stream_agent_loop(
                 cmd_display = block.content.split("\n")[0].strip()[:80]
             else:
                 cmd_display = block.content.strip()
-
+            block_meta.append((block, cmd_display, is_doc_tool))
             yield (
                 f'data: {json.dumps({"type": "tool_start", "tool": block.tool_type, "command": cmd_display, "round": round_num})}\n\n'
             )
 
-            # Streaming progress for long-running tools (bash, python).
-            # The bash/python branches inside _direct_fallback emit
-            # periodic {elapsed_s, tail} payloads via this callback;
-            # we forward each one as a `tool_progress` SSE event so
-            # the UI can render live elapsed-time + tail-of-output.
-            _progress_q: asyncio.Queue = asyncio.Queue()
-            async def _push_progress(payload):
-                await _progress_q.put(payload)
+        if block_meta:
+            # Run all tools concurrently. Long-running tools (bash/python) push
+            # {elapsed_s, tail} progress payloads into one shared queue tagged
+            # with the source tool, plus a final sentinel; we drain until every
+            # task's sentinel arrives so live progress streams without dropping
+            # events and results still map back to tool_call_ids in order.
+            progress_q: asyncio.Queue = asyncio.Queue()
 
-            async def _run_tool():
-                try:
-                    return await execute_tool_block(
-                        block,
-                        session_id=session_id,
-                        disabled_tools=disabled_tools,
-                        owner=owner,
-                        progress_cb=_push_progress,
-                    )
-                finally:
-                    # Sentinel so the drainer knows to stop.
-                    await _progress_q.put(None)
+            def _make_exec(block):
+                async def _exec():
+                    async def _push_progress(payload):
+                        await progress_q.put((block.tool_type, payload))
+                    try:
+                        return await execute_tool_block(
+                            block,
+                            session_id=session_id,
+                            disabled_tools=disabled_tools,
+                            owner=owner,
+                            progress_cb=_push_progress,
+                        )
+                    finally:
+                        # Sentinel so the drainer knows this tool finished.
+                        await progress_q.put((block.tool_type, None))
+                return _exec()
 
-            _tool_task = asyncio.create_task(_run_tool())
-            # Drain progress events as they arrive — block until the
-            # next event OR the tool finishes (sentinel = None).
-            while True:
-                evt = await _progress_q.get()
-                if evt is None:
-                    break
-                yield (
-                    f'data: {json.dumps({"type": "tool_progress", "tool": block.tool_type, "round": round_num, **evt})}\n\n'
-                )
-            desc, result = await _tool_task
+            exec_tasks = [asyncio.create_task(_make_exec(block)) for block, _, _ in block_meta]
+            try:
+                sentinels = 0
+                while sentinels < len(exec_tasks):
+                    tool_name, payload = await progress_q.get()
+                    if payload is None:
+                        sentinels += 1
+                    else:
+                        yield (
+                            f'data: {json.dumps({"type": "tool_progress", "tool": tool_name, "round": round_num, **payload})}\n\n'
+                        )
+            finally:
+                for t in exec_tasks:
+                    if not t.done():
+                        t.cancel()
+
+            # Collect (description, result) in the SAME order as block_meta so
+            # native tool-call results map back to their tool_call_ids correctly.
+            desc_results = await asyncio.gather(*exec_tasks)
+        else:
+            desc_results = []
+
+        for (block, cmd_display, is_doc_tool), (desc, result) in zip(block_meta, desc_results):
 
             # Extract structured web sources from web_search tool output.
             # web_search returns {"output": ..., "exit_code": 0}; check "output"

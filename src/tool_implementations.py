@@ -215,6 +215,16 @@ def _coerce_email_document_content(existing: str, incoming: str) -> str:
     return header.rstrip() + "\n---\n" + body
 
 
+def _sync_document_to_file(db, doc) -> None:
+    """Mirror a document to its on-disk file (best-effort)."""
+    try:
+        from src.document_files import write_document_file
+        doc.file_path = write_document_file(doc)
+        db.commit()
+    except Exception as e:
+        logger.warning("document file sync failed for %s: %s", getattr(doc, "id", "?"), e)
+
+
 async def do_create_document(content_block: str, session_id: Optional[str] = None, owner: Optional[str] = None) -> Dict:
     """Create a new document. Supports two formats:
       1) Line-based: line 1 = title, line 2 (optional) = language, rest = content
@@ -309,6 +319,7 @@ async def do_create_document(content_block: str, session_id: Optional[str] = Non
         db.add(doc)
         db.add(ver)
         db.commit()
+        _sync_document_to_file(db, doc)
 
         set_active_document(doc_id)
         try:
@@ -371,6 +382,7 @@ async def do_update_document(content: str, doc_id: Optional[str] = None, owner: 
         doc.version_count = new_ver
         db.add(ver)
         db.commit()
+        _sync_document_to_file(db, doc)
 
         return {
             "action": "update",
@@ -463,6 +475,7 @@ async def do_edit_document(content: str, doc_id: Optional[str] = None, owner: Op
         doc.version_count = new_ver
         db.add(ver)
         db.commit()
+        _sync_document_to_file(db, doc)
 
         return {
             "action": "edit",
@@ -2461,7 +2474,23 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None) -> Dict:
 # Cookbook routes loopback. The agent's tool calls run in-process but
 # need to reach admin-gated cookbook routes; we ride the per-process
 # internal token so require_admin lets us through. See core/middleware.py.
-_COOKBOOK_BASE = "http://localhost:7000"
+def _loopback_base() -> str:
+    """Origin of this Odysseus process's own HTTP server, used for the
+    agent's in-process loopback tool calls (app_api, cookbook, gallery).
+
+    Honors APP_BIND / APP_PORT; otherwise falls back to the macOS port (7860)
+    vs the Docker/Linux default (7000). Without this, every loopback tool
+    call fails with 'connection refused' whenever the app is NOT on port 7000.
+    """
+    import platform
+    bind = (os.getenv("APP_BIND") or "127.0.0.1").strip()
+    if bind in ("0.0.0.0", "::", "*", ""):
+        bind = "127.0.0.1"  # loop back to ourselves, not the wildcard bind
+    port = os.getenv("APP_PORT") or ("7860" if platform.system() == "Darwin" else "7000")
+    return f"http://{bind}:{port}"
+
+
+_COOKBOOK_BASE = _loopback_base()
 
 
 def _internal_headers(owner: Optional[str] = None) -> Dict[str, str]:
@@ -3682,7 +3711,7 @@ async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
         payload["scale"] = args["scale"]
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(f"http://localhost:7000/api/gallery/{action}", json=payload)
+            resp = await client.post(f"{_COOKBOOK_BASE}/api/gallery/{action}", json=payload)
             data = resp.json()
         if data.get("success") or data.get("id"):
             return {"output": f"Image edited ({action}). New image ID: {data.get('id', '?')}", "exit_code": 0}
@@ -3858,7 +3887,7 @@ async def do_resolve_contact(content: str, owner: Optional[str] = None) -> Dict:
     async with httpx.AsyncClient(timeout=30) as client:
         # 2. Email history (sent/received)
         try:
-            resp = await client.get("http://localhost:7000/api/email/resolve-contact", params={"name": name})
+            resp = await client.get(f"{_COOKBOOK_BASE}/api/email/resolve-contact", params={"name": name})
             if resp.status_code == 200:
                 for c in (resp.json().get("contacts") or []):
                     email = (c.get("email") or "").strip().lower()

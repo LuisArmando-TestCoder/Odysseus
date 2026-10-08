@@ -6,12 +6,31 @@ import json
 import logging
 import hashlib
 import threading
+import os
 from fastapi import HTTPException
 from typing import Optional, Dict, List
 from src.model_context import get_context_length, DEFAULT_CONTEXT
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# ── Selenium Web-Scraper provider ─────────────────────────────────────────────
+# When ODYSSEUS_LLM_SCRAPER=1 every LLM call is routed to the Gemini web-UI
+# scraper (src/scraper_llm.py) regardless of the configured endpoint URL.
+_SCRAPER_ENABLED = os.getenv("ODYSSEUS_LLM_SCRAPER", "").lower() in ("1", "true", "yes")
+
+
+def _is_scraper_url(url: str) -> bool:
+    """Return True for sentinel scraper:// endpoint URLs."""
+    if not url:
+        return False
+    try:
+        _p = urlparse(url.strip())
+        return _p.scheme == "scraper" or (_p.hostname or "").lower() == "gemini-web"
+    except Exception:
+        return False
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 class LLMConfig:
     """Configuration constants for LLM operations."""
@@ -306,6 +325,8 @@ def _detect_provider(url: str) -> str:
     Unknown hosts fall back to the OpenAI-compatible default, which the
     majority of providers implement.
     """
+    if _SCRAPER_ENABLED or _is_scraper_url(url):
+        return "scraper"
     if _is_ollama_native_url(url):
         return "ollama"
     if _host_match(url, "anthropic.com"):
@@ -742,6 +763,8 @@ def list_model_ids(base_chat_url: str, timeout: int = LLMConfig.DEFAULT_TIMEOUT,
     provider = _detect_provider(base_chat_url)
     if provider == "anthropic":
         return list(ANTHROPIC_MODELS)
+    if provider == "scraper":
+        return ["gemini-web-ui"]
     try:
         h = {}
         if headers:
@@ -818,6 +841,17 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         messages_copy = non_sys
 
     provider = _detect_provider(url)
+
+    # ── Scraper short-circuit ─────────────────────────────────────────────────
+    if provider == "scraper":
+        from src.scraper_llm import call_scraper_llm as _call_scraper
+        try:
+            result = _call_scraper(messages_copy)
+            return result if isinstance(result, str) else json.dumps(result)
+        except Exception as _e:
+            raise HTTPException(502, f"[Scraper] call_scraper_llm failed: {_e}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     cache_key = _get_cache_key(url, model, messages_copy, temperature, max_tokens)
     cached_response = _get_cached_response(cache_key)
     if cached_response:
@@ -936,6 +970,16 @@ async def llm_call_async(
     else:
         messages_copy = non_sys
 
+    # ── Scraper short-circuit ─────────────────────────────────────────────────
+    if provider == "scraper":
+        from src.scraper_llm import call_scraper_llm as _call_scraper
+        try:
+            result = await asyncio.to_thread(_call_scraper, messages_copy)
+            return result if isinstance(result, str) else json.dumps(result)
+        except Exception as _e:
+            raise HTTPException(502, f"[Scraper] call_scraper_llm failed: {_e}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     cache_key = _get_cache_key(url, model, messages_copy, temperature, max_tokens)
     cached_response = _get_cached_response(cache_key)
     if cached_response:
@@ -1045,6 +1089,23 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
         messages_copy = [{"role": "system", "content": "\n\n".join(sys_parts)}] + non_sys
     else:
         messages_copy = non_sys
+
+    # ── Scraper short-circuit ─────────────────────────────────────────────────
+    if provider == "scraper":
+        from src.scraper_llm import call_scraper_llm as _call_scraper
+        try:
+            full_text = await asyncio.to_thread(_call_scraper, messages_copy)
+            if not isinstance(full_text, str):
+                full_text = json.dumps(full_text)
+            # Chunk into ~80-char pieces to simulate streaming in the chat UI
+            chunk_size = 80
+            for i in range(0, max(len(full_text), 1), chunk_size):
+                yield f'data: {json.dumps({"delta": full_text[i:i + chunk_size]})}\n\n'
+            yield "data: [DONE]\n\n"
+        except Exception as _e:
+            yield f'event: error\ndata: {json.dumps({"error": str(_e), "status": 502})}\n\n'
+        return
+    # ─────────────────────────────────────────────────────────────────────────
 
     if provider == "anthropic":
         target_url = _normalize_anthropic_url(url)

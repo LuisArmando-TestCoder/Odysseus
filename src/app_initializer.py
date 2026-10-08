@@ -24,6 +24,60 @@ from src.search import update_search_config
 
 logger = logging.getLogger(__name__)
 
+
+def _seed_scraper_endpoint() -> None:
+    """Ensure a ModelEndpoint row exists for the Gemini scraper backend.
+
+    Called at startup when ODYSSEUS_LLM_SCRAPER=1.  Creates a shared (owner=None)
+    endpoint with base_url='scraper://gemini' so every resolve_endpoint() call
+    finds a valid row and never returns (None, None, None) which would trigger
+    a 503 "No model endpoint configured" guard in the routes.
+
+    Idempotent — skips creation if a scraper endpoint already exists.
+    """
+    if os.getenv("ODYSSEUS_LLM_SCRAPER", "").lower() not in ("1", "true", "yes"):
+        return
+    try:
+        import uuid
+        from core.database import SessionLocal, ModelEndpoint
+        db = SessionLocal()
+        try:
+            existing = (
+                db.query(ModelEndpoint)
+                .filter(ModelEndpoint.base_url.like("scraper%"))
+                .filter(ModelEndpoint.is_enabled.is_(True))
+                .first()
+            )
+            if existing:
+                logger.info(
+                    "[Scraper] ModelEndpoint '%s' already present — skipping seed.",
+                    existing.name,
+                )
+                return
+            ep = ModelEndpoint(
+                id=f"scraper-{uuid.uuid4().hex[:8]}",
+                name="Gemini Web Scraper",
+                base_url="scraper://gemini",
+                api_key=None,
+                is_enabled=True,
+                model_type="llm",
+                # cached_models is used by resolve_endpoint() to pick a default
+                # model name when no explicit model is configured for a session.
+                cached_models='["gemini-web-ui"]',
+                supports_tools=False,
+                owner=None,  # shared — visible to all users
+            )
+            db.add(ep)
+            db.commit()
+            logger.info(
+                "[Scraper] Seeded ModelEndpoint 'Gemini Web Scraper' (scraper://gemini)."
+            )
+        finally:
+            db.close()
+    except Exception as _e:
+        logger.warning("[Scraper] Could not seed scraper endpoint: %s", _e)
+
+
 def create_directories():
     """Create necessary directories if they don't exist."""
     for directory in (DATA_DIR, PERSONAL_DIR, RUNBOOK_DIR, UPLOAD_DIR):
@@ -42,6 +96,10 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
     # Create directories first
     create_directories()
 
+    # When running in web-scraper mode, ensure the sentinel ModelEndpoint exists
+    # so every resolve_endpoint() call has a valid row to return.
+    _seed_scraper_endpoint()
+
     # Initialize core managers
     memory_manager = MemoryManager(DATA_DIR)
     skills_manager = SkillsManager(DATA_DIR)
@@ -49,6 +107,14 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
     set_session_manager(session_manager)  # Enable Session.add_message() persistence
     upload_handler = UploadHandler(base_dir, UPLOAD_DIR)
     personal_docs_manager = PersonalDocsManager(PERSONAL_DIR, rag_manager)
+    # Also index the editor-documents folder (data/documents/) so documents
+    # written as files are retrievable from other chats via RAG.
+    try:
+        from src.document_files import DOCUMENTS_DIR
+        os.makedirs(DOCUMENTS_DIR, exist_ok=True)
+        personal_docs_manager.add_directory(DOCUMENTS_DIR, index=True)
+    except Exception as e:
+        logger.warning("Failed to register documents folder for indexing: %s", e)
     api_key_manager = APIKeyManager(DATA_DIR)
     preset_manager = PresetManager(DATA_DIR)
 

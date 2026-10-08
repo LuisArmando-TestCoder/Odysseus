@@ -3464,6 +3464,14 @@ import * as Modals from './modalManager.js';
     clearSelection();
     const doc = docs.get(docId);
 
+    // Bottom-bar "system path" for the active document.
+    const pathLabel = document.getElementById('doc-path-label');
+    if (pathLabel) {
+      const p = doc.path || (doc.title ? 'Documents/' + doc.title : '');
+      if (p) { pathLabel.textContent = p; pathLabel.style.display = ''; }
+      else { pathLabel.style.display = 'none'; }
+    }
+
     // Populate editor
     const titleInput = document.getElementById('doc-title-input');
     const textarea = document.getElementById('doc-editor-textarea');
@@ -3953,6 +3961,8 @@ import * as Modals from './modalManager.js';
            pinned to the bottom no matter which pane (editor / md-preview /
            csv / html / pdf) is the one growing to fill. -->
       <div id="doc-actions-footer" class="doc-email-actions">
+        <span id="doc-path-label" class="doc-path-label" title="Document location" style="display:none"></span>
+        <span style="flex:1"></span>
         <span class="email-send-split" id="doc-copy-export-split">
           <button type="button" id="doc-footer-copy-btn" class="email-send-btn email-send-main" title="Copy document"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>
           <button type="button" id="doc-footer-export-btn" class="email-send-btn email-send-caret" title="Export as…" aria-label="Export options"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 15 12 9 18 15"/></svg></button>
@@ -6104,6 +6114,7 @@ import * as Modals from './modalManager.js';
       version: doc.version_count || 1,
       sessionId: sessionId || doc.session_id,
       userSetLanguage: !!doc.language,
+      path: doc.path || '',
       _composeAtts: existing?._composeAtts,
       // Provenance for the "Send signed reply" flow
       sourceEmailUid:       doc.source_email_uid || null,
