@@ -890,6 +890,20 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "sherlock_osint",
+            "description": "Enumerate a username/handle across hundreds of sites using Sherlock to find where it exists (OSINT). Use when the user asks to find someone's accounts or aliases by username. Requires the sherlock CLI (pip install sherlock).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "usernames": {"type": "array", "items": {"type": "string"}, "description": "Usernames/handles to search, e.g. ['alice', 'alice_1987']"},
+                },
+                "required": ["usernames"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_contact",
             "description": "Create, update, delete, or list the user's CardDAV contacts. Use to save a new contact ('save Jonathan's email jon@x.com'), update an existing one ('change Maria's number'), or remove one. For update/delete you need the contact's uid — call action='list' first to find it. Writes go through the same dedupe + validation as the Contacts UI.",
             "parameters": {

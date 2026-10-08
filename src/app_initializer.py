@@ -103,6 +103,33 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
     # Initialize core managers
     memory_manager = MemoryManager(DATA_DIR)
     skills_manager = SkillsManager(DATA_DIR)
+    # Seed bundled skills (shipped with the repo under bundled_skills/) into the
+    # user's data/skills/ on first run, so they're part of the codebase AND
+    # available to the app. Idempotent — never overwrites an existing skill.
+    try:
+        from src.constants import BASE_DIR
+        bundled_root = os.path.join(BASE_DIR, "bundled_skills")
+        if os.path.isdir(bundled_root):
+            import shutil as _shutil
+            seeded = 0
+            for _cat in os.listdir(bundled_root):
+                _cat_dir = os.path.join(bundled_root, _cat)
+                if not os.path.isdir(_cat_dir):
+                    continue
+                for _name in os.listdir(_cat_dir):
+                    _src = os.path.join(_cat_dir, _name, "SKILL.md")
+                    if not os.path.isfile(_src):
+                        continue
+                    _dest = skills_manager._skill_file(_cat, _name)
+                    if os.path.exists(_dest):
+                        continue
+                    os.makedirs(os.path.dirname(_dest), exist_ok=True)
+                    _shutil.copyfile(_src, _dest)
+                    seeded += 1
+            if seeded:
+                logger.info("Seeded %d bundled skill(s) into data/skills/", seeded)
+    except Exception as e:
+        logger.warning("Failed to seed bundled skills: %s", e)
     session_manager = SessionManager(SESSIONS_FILE)
     set_session_manager(session_manager)  # Enable Session.add_message() persistence
     upload_handler = UploadHandler(base_dir, UPLOAD_DIR)

@@ -4010,6 +4010,48 @@ async def _run_bw(args: list, session: Optional[str] = None, input_text: Optiona
     return stdout.decode(errors="replace").strip(), stderr.decode(errors="replace").strip(), proc.returncode
 
 
+async def do_sherlock_osint(content: str, owner: Optional[str] = None) -> Dict:
+    """Run Sherlock OSINT username enumeration.
+
+    Args (JSON) or one username per line:
+      {"usernames": ["alice", "bob"]}
+    """
+    import asyncio
+    from src.osint_research import run_sherlock
+
+    raw = (content or "").strip()
+    usernames: list = []
+    if raw.startswith("{"):
+        try:
+            args = json.loads(raw)
+            usernames = args.get("usernames") or []
+            if isinstance(usernames, str):
+                usernames = [usernames]
+        except ValueError:
+            return {"error": "Invalid JSON arguments", "exit_code": 1}
+    else:
+        usernames = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+
+    if not usernames:
+        return {"error": "Provide at least one username to search (JSON {\"usernames\": [...]} or one per line)", "exit_code": 1}
+
+    result = await asyncio.to_thread(run_sherlock, usernames)
+    if result.get("error") and not result.get("found"):
+        return {"error": result["error"], "exit_code": 1}
+
+    lines = []
+    for f in result.get("found") or []:
+        hits = f.get("sites") or []
+        if f.get("error"):
+            lines.append(f"{f['username']}: error — {f['error']}")
+        elif hits:
+            lines.append(f"{f['username']}: found on {len(hits)} site(s)")
+            lines.extend(f"  {h}" for h in hits)
+        else:
+            lines.append(f"{f['username']}: no hits")
+    return {"output": "\n".join(lines) or "(no results)", "found": result.get("found", []), "exit_code": 0}
+
+
 async def do_vault_search(content: str, owner: Optional[str] = None) -> Dict:
     """Search the vault by keyword. Returns matching item names + URLs, NO passwords."""
     try:

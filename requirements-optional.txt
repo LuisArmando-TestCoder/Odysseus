@@ -34,3 +34,9 @@ PyMuPDF
 # [all]/Azure/audio extras (cloud + heavy). Pinned to a release >30 days old per
 # the dependency-age discussion in issue #485.
 markitdown[docx,pptx,xlsx,xls]==0.1.5
+
+# OSINT username enumeration (the `sherlock_osint` tool / bundled OSINT skill).
+# Provides the `sherlock` CLI used by src/osint_research.py. Optional — the
+# tool returns a clear "install with: pip install sherlock-project" hint when
+# it's missing.
+sherlock-project
