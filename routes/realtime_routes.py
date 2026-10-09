@@ -1,13 +1,14 @@
 # routes/realtime_routes.py
-"""OpenAI Realtime API — unified WebRTC interface.
+"""GPT-Live — full-duplex WebRTC voice with a separate backend.
 
-The browser creates an SDP offer and POSTs it here; this backend combines it
-with the session config and exchanges it for OpenAI's SDP answer over
-``POST /v1/realtime/calls``. The API key never leaves the server, and the
-browser only ever talks to this origin (CSP-friendly).
+The browser creates an SDP offer and POSTs it here (as JSON). This backend
+exchanges it for GPT-Live's SDP answer over ``POST /v1/live/sessions``. The API
+key never leaves the server, and the browser only talks to this origin
+(CSP-friendly). GPT-Live handles the spoken conversation (listen-while-speaking,
+barge-in) and can delegate reasoning/tools to a backend — our existing chat
+workflow.
 """
 
-import json
 import logging
 
 import httpx
@@ -23,8 +24,8 @@ def setup_realtime_routes() -> APIRouter:
     router = APIRouter(prefix="/api/realtime", tags=["realtime"])
 
     @router.post("/session")
-    async def create_realtime_session(request: Request):
-        """Exchange a browser SDP offer for OpenAI's SDP answer (raw text)."""
+    async def create_live_session(request: Request):
+        """Exchange a browser SDP offer for GPT-Live's SDP answer."""
         if not effective_user(request):
             raise HTTPException(401, "Authentication required")
 
@@ -33,37 +34,45 @@ def setup_realtime_routes() -> APIRouter:
         if not api_key:
             raise HTTPException(400, "OpenAI API key not configured")
 
-        sdp = (await request.body()).decode("utf-8", "replace").strip()
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+
+        sdp = (body.get("sdp") or "").strip()
         if not sdp:
             raise HTTPException(400, "An SDP offer is required")
-        logger.info(f"Realtime SDP offer received: {len(sdp)} bytes | head={sdp[:80]!r}")
+        logger.info(f"GPT-Live SDP offer received: {len(sdp)} bytes | head={sdp[:80]!r}")
 
-        model = settings.get("realtime_model", "gpt-realtime-2.1")
-        voice = settings.get("realtime_voice", "alloy")
-        session_config = json.dumps({
-            "type": "realtime",
-            "model": model,
-            "audio": {"output": {"voice": voice}},
-        })
+        model = settings.get("realtime_model", "gpt-live-1")
+        instructions = settings.get(
+            "realtime_instructions", "Be concise and conversational."
+        )
+
+        payload = {
+            "session": {
+                "model": model,
+                "instructions": instructions,
+            },
+            "transport": {"type": "webrtc", "sdp": sdp},
+        }
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.post(
-                    "https://api.openai.com/v1/realtime/calls",
+                    "https://api.openai.com/v1/live/sessions",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    files={
-                        "sdp": (None, sdp, "application/sdp"),
-                        "session": (None, session_config, "application/json"),
-                    },
+                    json=payload,
                 )
         except httpx.HTTPError as e:
-            logger.error(f"Realtime session exchange failed: {e}")
+            logger.error(f"GPT-Live session exchange failed: {e}")
             raise HTTPException(502, f"OpenAI unreachable: {e}")
 
         if r.status_code not in (200, 201):
-            logger.error(f"Realtime session exchange: {r.status_code} {r.text[:500]}")
+            logger.error(f"GPT-Live session exchange: {r.status_code} {r.text[:500]}")
             raise HTTPException(r.status_code, r.text[:500])
 
-        return Response(content=r.text, media_type="application/sdp")
+        # Forward OpenAI's JSON: { session: { id }, transport: { sdp } }.
+        return Response(content=r.text, media_type="application/json")
 
     return router

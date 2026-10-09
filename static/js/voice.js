@@ -213,6 +213,18 @@ function _appendTranscript(speaker, text) {
 
 function _handleEvent(evt) {
   switch (evt.type) {
+    case 'session.started':
+      _setStatus('Connected — listening… (talk to interrupt)');
+      break;
+    case 'session.closed':
+      _setStatus('Conversation ended — click the mic to restart');
+      break;
+    case 'user_transcription_text':
+      _appendTranscript('You', evt.text || evt.transcript || '');
+      break;
+    case 'live_captioning_text':
+      _appendTranscript('AI', evt.text || evt.delta || '');
+      break;
     case 'conversation.item.input_audio_transcription.completed':
       _appendTranscript('You', evt.transcript || (evt.item && evt.item.content && evt.item.content[0] && evt.item.content[0].transcript) || '');
       break;
@@ -225,7 +237,6 @@ function _handleEvent(evt) {
       _appendTranscript('AI', evt.delta || '');
       break;
     case 'response.done':
-    case 'session.closed':
       _setStatus('Listening… (talk to interrupt)');
       break;
     case 'error':
@@ -292,16 +303,19 @@ async function startVoice(canvas) {
       `${_apiBase()}/api/realtime/session`,
       {
         method: 'POST',
-        body: sdp,
-        headers: { 'Content-Type': 'application/sdp' },
+        body: JSON.stringify({ sdp }),
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
       }
     );
     if (!resp.ok) {
       const txt = await resp.text().catch(() => '');
-      throw new Error('OpenAI SDP: HTTP ' + resp.status + ' ' + txt.slice(0, 200));
+      throw new Error('GPT-Live SDP: HTTP ' + resp.status + ' ' + txt.slice(0, 200));
     }
-    await _pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
+    const result = await resp.json();
+    const answerSdp = result && result.transport && result.transport.sdp;
+    if (!answerSdp) throw new Error('No SDP answer from GPT-Live');
+    await _pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
   } catch (e) {
     console.error('realtime connect failed', e);
     _cleanup();
