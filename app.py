@@ -594,6 +594,11 @@ from routes.stt_routes import setup_stt_routes
 app.include_router(setup_stt_routes(stt_service))
 logger.info("STT service initialized (provider managed via settings)")
 
+# OpenAI Realtime (WebRTC voice)
+from routes.realtime_routes import setup_realtime_routes
+app.include_router(setup_realtime_routes())
+logger.info("OpenAI Realtime routes initialized")
+
 # Documents (artifacts/canvas)
 from routes.document_routes import setup_document_routes
 app.include_router(setup_document_routes(session_manager, upload_handler))

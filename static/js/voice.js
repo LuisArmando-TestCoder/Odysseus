@@ -1,18 +1,16 @@
-// voice.js — Voice conversation: mic capture, FFT-driven fluid shader,
-// OpenRouter STT (server-side), and browser TTS (male British).
-//
-// The mic feeds a Web Audio AnalyserNode; its frequency spectrum drives a
-// WebGL fragment shader: a circularly-clipped disc of layered Perlin "purling"
-// noise that flows like a fluid. Stop to transcribe (server) and send.
+// voice.js — Real-time voice conversation via OpenAI Realtime API (WebRTC),
+// with a FFT-driven fluid shader. The mic streams continuously; OpenAI's
+// server-side VAD handles turn-taking and barge-in, so it feels like a phone
+// call — no record-then-send.
 
 let _micStream = null;
-let _recorder = null;
 let _audioCtx = null;
 let _analyser = null;
-let _chunks = [];
-let _recording = false;
+let _pc = null;
+let _dc = null;
+let _audioEl = null;
+let _active = false;
 
-let _overlay = null;
 let _canvas = null;
 let _gl = null;
 let _raf = 0;
@@ -20,7 +18,7 @@ let _fftLoc = null;
 let _timeLoc = null;
 let _resLoc = null;
 let _freqData = null;
-let _t0 = performance.now();
+let _t0 = 0;
 
 const BANDS = 64;
 
@@ -35,7 +33,6 @@ attribute vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 `;
 
-// FFT-driven, circularly-clipped layered value-noise "fluid".
 const FRAG = `
 precision highp float;
 uniform vec2 u_res;
@@ -69,7 +66,7 @@ float fbm(vec3 p) {
 void main() {
   vec2 uv = (2.0 * gl_FragCoord.xy - u_res) / min(u_res.x, u_res.y);
   float r = length(uv);
-  if (r > 1.0) discard;                       // circular clip
+  if (r > 1.0) discard;
 
   float bass = 0.0, mid = 0.0, hi = 0.0;
   for (int i = 0; i < BANDS; i++) {
@@ -85,8 +82,6 @@ void main() {
   float t = u_time * 0.35;
   vec3 p = vec3(uv * (1.6 + 1.8 * bass), t);
   float n = fbm(p);
-
-  // layered bands
   float n2 = fbm(vec3(uv * 3.4, t * 1.3) + vec3(7.0));
   float n3 = fbm(vec3(uv * 6.2, -t * 0.9) + vec3(13.0));
 
@@ -102,8 +97,6 @@ void main() {
   col = mix(col, violet, mid * smoothstep(0.2, 0.8, n2));
   col = mix(col, cyan, hi * smoothstep(0.3, 0.9, n3));
   col += flow * vec3(0.02, 0.04, 0.06) * (0.5 + bass);
-
-  // soft rim + inner glow
   col *= smoothstep(1.0, 0.82, r);
   col += vec3(0.02, 0.05, 0.08) * (0.4 + 0.6 * bass) * (1.0 - r * 0.6);
 
@@ -111,7 +104,7 @@ void main() {
 }
 `;
 
-// ── WebGL overlay ───────────────────────────────────────────────────────────
+// ── WebGL ───────────────────────────────────────────────────────────────────
 
 function _compile(type, src) {
   const s = _gl.createShader(type);
@@ -191,67 +184,81 @@ function _hide() {
 function _cleanup() {
   if (_micStream) { _micStream.getTracks().forEach(t => t.stop()); _micStream = null; }
   if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; }
-  _analyser = null; _recorder = null; _chunks = [];
+  if (_audioEl) { _audioEl.pause(); _audioEl.srcObject = null; _audioEl = null; }
+  _analyser = null; _pc = null; _dc = null;
 }
 
-// ── STT + send ──────────────────────────────────────────────────────────────
+// ── Status / transcript UI ──────────────────────────────────────────────────
 
-async function _transcribe(blob) {
-  const fd = new FormData();
-  fd.append('file', blob, 'audio.webm');
-  try {
-    const r = await fetch(`${_apiBase()}/api/stt/transcribe`, { method: 'POST', body: fd });
-    const data = await r.json().catch(() => ({}));
-    return (data.text || '').trim();
-  } catch (e) {
-    console.error('STT failed', e);
-    return '';
+function _setStatus(text) {
+  const el = document.getElementById('doc-voice-status');
+  if (el) el.textContent = text;
+}
+
+function _appendTranscript(speaker, text) {
+  if (!text || !text.trim()) return;
+  const el = document.getElementById('doc-voice-transcript');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.className = 'voice-line';
+  line.innerHTML = `<b>${speaker}:</b> <span></span>`;
+  line.querySelector('span').textContent = text.trim();
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  // keep the last ~40 lines
+  while (el.children.length > 40) el.removeChild(el.firstChild);
+}
+
+// ── Realtime event handling ─────────────────────────────────────────────────
+
+function _handleEvent(evt) {
+  switch (evt.type) {
+    case 'conversation.item.input_audio_transcription.completed':
+      _appendTranscript('You', evt.transcript || (evt.item && evt.item.content && evt.item.content[0] && evt.item.content[0].transcript) || '');
+      break;
+    case 'response.output_audio_transcript.delta':
+    case 'response.audio_transcript.delta':
+      _appendTranscript('AI', evt.delta || '');
+      break;
+    case 'response.output_text.delta':
+    case 'response.text.delta':
+      _appendTranscript('AI', evt.delta || '');
+      break;
+    case 'response.done':
+    case 'session.closed':
+      _setStatus('Listening… (talk to interrupt)');
+      break;
+    case 'error':
+      console.error('realtime error', evt);
+      if (window.uiModule) window.uiModule.showError('Voice error: ' + (evt.error && evt.error.message || 'unknown'));
+      break;
   }
 }
 
-function _insertAndSend(text) {
-  const input = document.querySelector('#message-input, textarea#message-input');
-  if (input) {
-    input.value = text;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  const sendBtn = document.querySelector('.send-btn, #send-btn');
-  if (sendBtn) sendBtn.click();
-  else if (window.chatModule && window.chatModule.handleChatSubmit) window.chatModule.handleChatSubmit();
-}
-
-// ── TTS (browser, male British) ─────────────────────────────────────────────
-
-export function speak(text, opts = {}) {
-  if (!('speechSynthesis' in window)) return false;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  const voices = window.speechSynthesis.getVoices();
-  const prefer = /en[-_]GB/i;
-  const male = /male|daniel|george|arthur|oliver/i;
-  u.voice =
-    voices.find(v => prefer.test(v.lang) && male.test(v.name)) ||
-    voices.find(v => prefer.test(v.lang)) ||
-    voices.find(v => /en[-_]GB/i.test(v.lang)) ||
-    voices.find(v => /^en/i.test(v.lang)) ||
-    null;
-  u.lang = u.voice?.lang || 'en-GB';
-  u.pitch = opts.pitch ?? 0.9;
-  u.rate = opts.rate ?? 1.0;
-  window.speechSynthesis.speak(u);
-  return true;
-}
-
-// ── Public toggle ───────────────────────────────────────────────────────────
-
-export function isRecording() { return _recording; }
-
-export async function toggleVoice(canvas) {
-  if (_recording) { await stopVoice(); return; }
-  await startVoice(canvas);
-}
+// ── Start / stop ────────────────────────────────────────────────────────────
 
 async function startVoice(canvas) {
+  if (_active) return;
+
+  let ephemeral;
+  try {
+    const r = await fetch(`${_apiBase()}/api/realtime/ephemeral`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      credentials: 'same-origin',
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.detail || ('HTTP ' + r.status));
+    }
+    ephemeral = await r.json();
+  } catch (e) {
+    console.error('ephemeral key failed', e);
+    if (window.uiModule) window.uiModule.showError('Voice start failed: ' + e.message);
+    return;
+  }
+
   try {
     _micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
@@ -259,39 +266,99 @@ async function startVoice(canvas) {
     if (window.uiModule) window.uiModule.showError('Microphone access denied');
     return;
   }
+
   _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const src = _audioCtx.createMediaStreamSource(_micStream);
   _analyser = _audioCtx.createAnalyser();
   _analyser.fftSize = 512;
   src.connect(_analyser);
 
-  _recorder = new MediaRecorder(_micStream);
-  _chunks = [];
-  _recorder.ondataavailable = e => { if (e.data && e.data.size) _chunks.push(e.data); };
-  _recorder.start();
-  _recording = true;
+  try {
+    _pc = new RTCPeerConnection();
+    _pc.addTrack(_micStream.getAudioTracks()[0], _micStream);
 
+    _pc.ontrack = (e) => {
+      _audioEl = new Audio();
+      _audioEl.autoplay = true;
+      _audioEl.srcObject = e.streams[0];
+      _audioEl.play().catch(() => {});
+    };
+
+    _dc = _pc.createDataChannel('oai-events');
+    _dc.onopen = () => {
+      _setStatus('Connected — listening… (talk to interrupt)');
+    };
+    _dc.onmessage = (e) => { try { _handleEvent(JSON.parse(e.data)); } catch (err) {} };
+
+    const offer = await _pc.createOffer();
+    await _pc.setLocalDescription(offer);
+
+    // The HTTP request below starts the session — do NOT send session.start.
+    const resp = await fetch(
+      'https://api.openai.com/v1/realtime/calls',
+      {
+        method: 'POST',
+        body: offer.sdp,
+        headers: {
+          'Authorization': 'Bearer ' + ephemeral.value,
+          'Content-Type': 'application/sdp',
+        },
+      }
+    );
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      throw new Error('OpenAI SDP: HTTP ' + resp.status + ' ' + txt.slice(0, 200));
+    }
+    await _pc.setRemoteDescription({ type: 'answer', sdp: await resp.text() });
+  } catch (e) {
+    console.error('realtime connect failed', e);
+    _cleanup();
+    if (window.uiModule) window.uiModule.showError('Voice connect failed: ' + e.message);
+    return;
+  }
+
+  _active = true;
   _show(canvas);
-  const status = document.getElementById('doc-voice-status');
-  if (status) status.textContent = 'Listening… tap the mic to stop';
-  if (window.uiModule) window.uiModule.showToast('Listening — tap the mic to stop');
+  _setStatus('Listening… (talk over it to interrupt)');
 }
 
 async function stopVoice() {
-  if (!_recording || !_recorder) return;
-  _recording = false;
-  _recorder.onstop = async () => {
-    const type = _recorder.mimeType || 'audio/webm';
-    const blob = new Blob(_chunks, { type });
-    _hide();
-    _cleanup();
-    const status = document.getElementById('doc-voice-status');
-    if (status) status.textContent = 'Click the mic below to talk';
-    const text = await _transcribe(blob);
-    if (text) _insertAndSend(text);
-    else if (window.uiModule) window.uiModule.showError('No speech detected');
-  };
-  _recorder.stop();
+  if (!_active) return;
+  _active = false;
+  try { if (_dc) _dc.close(); } catch (e) {}
+  try { if (_pc) _pc.close(); } catch (e) {}
+  _hide();
+  _cleanup();
+  _setStatus('Click the mic to talk');
+}
+
+// ── TTS (browser, male British) — retained for plain read-aloud ────────────
+
+export function speak(text, opts = {}) {
+  if (!('speechSynthesis' in window)) return false;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const voices = window.speechSynthesis.getVoices();
+  const male = /male|daniel|george|arthur|oliver|ryan|james/i;
+  u.voice =
+    voices.find(v => /^en[-_]GB/i.test(v.lang) && male.test(v.name)) ||
+    voices.find(v => /^en[-_]GB/i.test(v.lang)) ||
+    voices.find(v => /^en/i.test(v.lang) && male.test(v.name)) ||
+    voices.find(v => /^en/i.test(v.lang)) || null;
+  u.lang = u.voice?.lang || 'en-GB';
+  u.pitch = opts.pitch ?? 0.9;
+  u.rate = opts.rate ?? 1.0;
+  window.speechSynthesis.speak(u);
+  return true;
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
+export function isRecording() { return _active; }
+
+export async function toggleVoice(canvas) {
+  if (_active) { await stopVoice(); return; }
+  await startVoice(canvas);
 }
 
 export function initVoice() {
@@ -299,11 +366,8 @@ export function initVoice() {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }
-  // Delegate: the voice canvas lives in the document panel (created lazily),
-  // so bind at the body level and resolve the canvas at click time.
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('#voice-btn')) {
-      // Open the dedicated "Voice agent" tab in the documents panel.
       import('./document.js').then(m => {
         if (m.openPanel) m.openPanel();
         if (m.switchToDoc) m.switchToDoc('__voice__');
@@ -315,3 +379,5 @@ export function initVoice() {
     }
   });
 }
+
+export default { speak, isRecording, toggleVoice, initVoice };

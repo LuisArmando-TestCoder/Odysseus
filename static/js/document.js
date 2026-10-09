@@ -3992,6 +3992,7 @@ import * as Modals from './modalManager.js';
           <canvas id="voice-canvas" style="width:100%;height:100%;border-radius:50%;"></canvas>
         </div>
         <div id="doc-voice-status" style="font:600 13px/1.2 system-ui;color:var(--color-muted,#888);text-align:center;">Click the mic below to talk</div>
+        <div id="doc-voice-transcript" style="width:100%;max-width:440px;flex:1;min-height:56px;max-height:38%;overflow:auto;font:13px/1.5 system-ui;color:var(--fg,#ddd);text-align:left;padding:10px 12px;border:1px solid var(--border,#333);border-radius:10px;background:transparent;"></div>
         <button type="button" id="doc-voice-mic-btn" class="doc-action-icon-btn" title="Talk" style="width:44px;height:44px;border-radius:50%;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
       </div>
       <!-- Action footer sits AFTER all the content/preview panes so it stays
