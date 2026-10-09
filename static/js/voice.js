@@ -240,25 +240,6 @@ function _handleEvent(evt) {
 async function startVoice(canvas) {
   if (_active) return;
 
-  let ephemeral;
-  try {
-    const r = await fetch(`${_apiBase()}/api/realtime/ephemeral`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-      credentials: 'same-origin',
-    });
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}));
-      throw new Error(e.detail || ('HTTP ' + r.status));
-    }
-    ephemeral = await r.json();
-  } catch (e) {
-    console.error('ephemeral key failed', e);
-    if (window.uiModule) window.uiModule.showError('Voice start failed: ' + e.message);
-    return;
-  }
-
   try {
     _micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
@@ -293,16 +274,14 @@ async function startVoice(canvas) {
     const offer = await _pc.createOffer();
     await _pc.setLocalDescription(offer);
 
-    // The HTTP request below starts the session — do NOT send session.start.
+    // Proxy the SDP offer through our backend (CSP-friendly; key stays server-side).
     const resp = await fetch(
-      'https://api.openai.com/v1/realtime/calls',
+      `${_apiBase()}/api/realtime/session`,
       {
         method: 'POST',
         body: offer.sdp,
-        headers: {
-          'Authorization': 'Bearer ' + ephemeral.value,
-          'Content-Type': 'application/sdp',
-        },
+        headers: { 'Content-Type': 'application/sdp' },
+        credentials: 'same-origin',
       }
     );
     if (!resp.ok) {

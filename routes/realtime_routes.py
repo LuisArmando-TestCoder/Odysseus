@@ -1,16 +1,17 @@
 # routes/realtime_routes.py
-"""OpenAI Realtime API — mint a short-lived ephemeral key so the browser can
-open a WebRTC voice session without ever seeing our API key.
+"""OpenAI Realtime API — unified WebRTC interface.
 
-The seamless "Advanced Voice Mode" experience is: the browser streams mic audio
-over WebRTC directly to OpenAI, receives streamed TTS audio back, and OpenAI's
-server-side VAD handles turn-taking and barge-in. The backend's only job here is
-to exchange our long-lived API key for a short-lived `ek_…` client secret.
+The browser creates an SDP offer and POSTs it here; this backend combines it
+with the session config and exchanges it for OpenAI's SDP answer over
+``POST /v1/realtime/calls``. The API key never leaves the server, and the
+browser only ever talks to this origin (CSP-friendly).
 """
 
+import json
 import logging
+
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from src.auth_helpers import effective_user
 from src.settings import load_settings
@@ -21,61 +22,47 @@ logger = logging.getLogger(__name__)
 def setup_realtime_routes() -> APIRouter:
     router = APIRouter(prefix="/api/realtime", tags=["realtime"])
 
-    @router.post("/ephemeral")
-    async def mint_ephemeral_key(request: Request):
-        """POST body (optional): { model, voice, instructions }. Returns an
-        ephemeral `client_secret` the browser uses as the WebRTC bearer token."""
+    @router.post("/session")
+    async def create_realtime_session(request: Request):
+        """Exchange a browser SDP offer for OpenAI's SDP answer (raw text)."""
         if not effective_user(request):
-            raise HTTPException(403, "Authentication required")
+            raise HTTPException(401, "Authentication required")
 
         settings = load_settings()
         api_key = settings.get("openai_api_key", "")
         if not api_key:
             raise HTTPException(400, "OpenAI API key not configured")
 
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        model = body.get("model") or settings.get("realtime_model", "gpt-realtime-2.1")
-        voice = body.get("voice") or settings.get("realtime_voice", "alloy")
-        instructions = body.get("instructions", "")
+        sdp = (await request.body()).decode("utf-8", "replace").strip()
+        if not sdp:
+            raise HTTPException(400, "An SDP offer is required")
 
-        # GA session shape: session.type + session.audio.output.voice.
-        session_payload = {
-            "session": {
-                "type": "realtime",
-                "model": model,
-                "audio": {"output": {"voice": voice}},
-            }
-        }
-        if instructions:
-            session_payload["session"]["instructions"] = instructions
+        model = settings.get("realtime_model", "gpt-realtime-2.1")
+        voice = settings.get("realtime_voice", "alloy")
+        session_config = json.dumps({
+            "type": "realtime",
+            "model": model,
+            "audio": {"output": {"voice": voice}},
+        })
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.post(
-                    "https://api.openai.com/v1/realtime/client_secrets",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
+                    "https://api.openai.com/v1/realtime/calls",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    files={
+                        "sdp": (None, sdp, "application/sdp"),
+                        "session": (None, session_config, "application/json"),
                     },
-                    json=session_payload,
                 )
         except httpx.HTTPError as e:
-            logger.error(f"Realtime ephemeral mint failed: {e}")
+            logger.error(f"Realtime session exchange failed: {e}")
             raise HTTPException(502, f"OpenAI unreachable: {e}")
 
-        if r.status_code != 200:
-            logger.error(f"Realtime ephemeral mint: {r.status_code} {r.text[:500]}")
+        if r.status_code not in (200, 201):
+            logger.error(f"Realtime session exchange: {r.status_code} {r.text[:500]}")
             raise HTTPException(r.status_code, r.text[:500])
 
-        data = r.json()
-        # GA response: { value: "ek_...", expires_at, session }.
-        client_secret = data.get("value", "")
-        if not client_secret:
-            raise HTTPException(502, "No ephemeral key (value) in OpenAI response")
-
-        return {"value": client_secret, "model": model, "voice": voice}
+        return Response(content=r.text, media_type="application/sdp")
 
     return router
