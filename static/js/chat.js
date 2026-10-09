@@ -3399,7 +3399,7 @@ import createResearchSynapse from './researchSynapse.js';
 
       const keepCount = msgIndex;
       try {
-        await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
+        await fetch(`${API_BASE}/api/session/${sessionId}/branch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keep_count: keepCount })
@@ -3483,7 +3483,7 @@ import createResearchSynapse from './researchSynapse.js';
     // Truncate backend to keep everything before this user message
     const keepCount = msgIndex;
     try {
-      await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
+      await fetch(`${API_BASE}/api/session/${sessionId}/branch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keep_count: keepCount })
@@ -3598,7 +3598,7 @@ import createResearchSynapse from './researchSynapse.js';
     const keepCount = userIndex;
 
     try {
-      await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
+      await fetch(`${API_BASE}/api/session/${sessionId}/branch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keep_count: keepCount })
@@ -4487,6 +4487,56 @@ import createResearchSynapse from './researchSynapse.js';
     }
   }
 
+  /**
+   * Show the message-version (branch) list for the current session and let the
+   * user switch branches. Each branch is a self-contained conversation, so
+   * switching never mixes contexts between versions.
+   */
+  export async function showBranches(sessionId) {
+    const sid = sessionId || (sessionModule && sessionModule.getCurrentSessionId());
+    if (!sid) return;
+    let data;
+    try {
+      const r = await fetch(`${API_BASE}/api/session/${sid}/branches`);
+      data = await r.json();
+    } catch (e) {
+      console.error('showBranches fetch failed', e);
+      return;
+    }
+    const branches = data.branches || [];
+    const active = data.active_branch || 'root';
+    if (!branches.length) {
+      import('./ui.js').then(m => m.showToast && m.showToast('No message versions yet'));
+      return;
+    }
+    const menu = document.createElement('div');
+    menu.style.cssText = 'position:fixed;top:60px;right:16px;z-index:99999;background:var(--bg,#fff);color:var(--fg,#111);border:1px solid var(--border,#ddd);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);padding:6px;min-width:260px;max-height:70vh;overflow:auto;';
+    const title = document.createElement('div');
+    title.textContent = 'Message versions';
+    title.style.cssText = 'font-weight:600;padding:6px 10px;font-size:13px;opacity:.8;';
+    menu.appendChild(title);
+    for (const b of branches) {
+      const item = document.createElement('div');
+      const isActive = b.branch_id === active;
+      const when = b.latest ? new Date(b.latest).toLocaleString() : '';
+      item.textContent = `${isActive ? '✓ ' : ''}${b.message_count} messages${when ? ' · ' + when : ''}`;
+      item.style.cssText = 'padding:8px 10px;cursor:pointer;border-radius:6px;font-size:13px;margin:2px 0;' +
+        (isActive ? 'background:var(--accent,#1a7f37);color:#fff;' : 'background:transparent;');
+      item.addEventListener('click', async () => {
+        try {
+          await fetch(`${API_BASE}/api/session/${sid}/branch/${encodeURIComponent(b.branch_id)}/activate`, { method: 'POST' });
+          location.reload();
+        } catch (e) { console.error(e); }
+      });
+      menu.appendChild(item);
+    }
+    document.body.appendChild(menu);
+    setTimeout(() => {
+      const h = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', h); } };
+      document.addEventListener('click', h);
+    }, 0);
+  }
+
   // Public API
   const chatModule = {
     init,
@@ -4512,6 +4562,7 @@ import createResearchSynapse from './researchSynapse.js';
     resendUserMessage,
     deleteMessage,
     rewriteWith,
+    showBranches,
     continueFrom,
     _appendViewReportLink,
     hasActiveStream,

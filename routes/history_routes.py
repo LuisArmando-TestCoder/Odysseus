@@ -103,6 +103,45 @@ def setup_history_routes(session_manager) -> APIRouter:
             logger.error(f"Truncate error {session_id}: {e}")
             raise HTTPException(500, str(e))
 
+    @router.post("/api/session/{session_id}/branch")
+    async def fork_branch(request: Request, session_id: str):
+        """Fork the conversation: copy the first `keep_count` messages onto a
+        new branch (the old branch/tail is preserved for navigation)."""
+        _verify_session_owner(request, session_id)
+        try:
+            body = await request.json()
+            keep_count = int(body.get("keep_count", 0))
+            branch_id = session_manager.fork_branch(session_id, keep_count)
+            if not branch_id:
+                raise HTTPException(404, "Session not found")
+            return {"status": "ok", "branch_id": branch_id}
+        except KeyError:
+            raise HTTPException(404, "Session not found")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Fork branch error {session_id}: {e}")
+            raise HTTPException(500, str(e))
+
+    @router.get("/api/session/{session_id}/branches")
+    async def list_branches(request: Request, session_id: str):
+        """List the session's message branches (versions)."""
+        _verify_session_owner(request, session_id)
+        session = session_manager.get_session(session_id)
+        branches = session_manager.list_branches(session_id)
+        return {
+            "active_branch": getattr(session, "active_branch", "root") or "root",
+            "branches": branches,
+        }
+
+    @router.post("/api/session/{session_id}/branch/{branch_id}/activate")
+    async def activate_branch(request: Request, session_id: str, branch_id: str):
+        """Switch the session's active branch (message version)."""
+        _verify_session_owner(request, session_id)
+        if not session_manager.activate_branch(session_id, branch_id):
+            raise HTTPException(404, "Session or branch not found")
+        return {"status": "ok", "branch_id": branch_id or "root"}
+
     @router.post("/api/session/{session_id}/message")
     async def add_message(request: Request, session_id: str):
         """Add a message to a session (for slash command persistence)."""

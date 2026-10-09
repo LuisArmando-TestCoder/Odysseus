@@ -6,6 +6,7 @@ Summarizes older messages via the same LLM, preserving key context.
 """
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from src.model_context import get_context_length, estimate_tokens
@@ -47,6 +48,80 @@ What is the system/code/task state right now? What was the last thing discussed?
 - Specific values: model names, ports, paths, credentials references, versions
 
 Keep the summary under 1000 tokens. Be dense — every token should carry information. Do not include pleasantries or meta-commentary."""
+
+# ── Hierarchical (recursive) compression ──────────────────────────────────────
+# Batches of messages are summarized into dense "factual points" (level 1).
+# Once enough level-N summaries accumulate, they are merged losslessly into a
+# level-(N+1) "patch". Context keeps only the SPINE — the newest summary at
+# every level plus the recent raw messages — so any-length conversation can be
+# compressed without losing information.
+SUMMARY_MERGE_SIZE = 3   # merge this many same-level summaries into one higher-level summary
+
+FACTUAL_POINTS_PROMPT = """You are compressing a chunk of conversation into lossless factual points. Distill ONLY durable facts, decisions, and state — no pleasantries, no meta-commentary.
+
+Output a flat list of dense bullet points. Each bullet must be self-contained and carry concrete information (names, ids, paths, URLs, numbers, decisions, errors and their fixes, open questions). Preserve every fact — do not drop, merge ambiguously, or editorialize. If two facts conflict, keep both and note the conflict."""
+
+PATCH_PROMPT = """You are merging several lower-level conversation summaries into one higher-level summary, losslessly. Preserve every fact across all inputs — this is a compression step, not a rewrite.
+
+Output a flat list of dense bullet points. Do not drop or blur any fact; if two facts conflict or duplicate, resolve duplicates but keep the conflict explicit. Keep concrete identifiers intact."""
+
+_SUMMARY_LEVEL_RE = re.compile(r"^\[(?:Conversation summary|Summary L(\d+))\]", re.IGNORECASE)
+
+
+def _summary_level(content: str) -> int:
+    """Return the hierarchy level of a summary message (1 = batch, 2+ = patch)."""
+    m = _SUMMARY_LEVEL_RE.match(content or "")
+    if not m:
+        return 0
+    if m.group(1) is None:
+        return 1  # legacy "[Conversation summary]" == level 1
+    return int(m.group(1))
+
+
+def _summary_body(content: str) -> str:
+    """Strip the summary marker, returning the raw summary text."""
+    m = _SUMMARY_LEVEL_RE.match(content or "")
+    return content[m.end():].strip() if m else (content or "").strip()
+
+
+async def _merge_levels(levels: Dict[int, List[str]], merge_size: int, summarizer) -> Dict[int, List[str]]:
+    """Bottom-up recursive merge: while any level has >= merge_size summaries,
+    merge the oldest `merge_size` into one summary at the next level up.
+
+    `summarizer` is an async callable (list[str]) -> str that losslessly merges.
+    Returns the merged levels dict (lists still in chronological order).
+    """
+    while True:
+        merged_any = False
+        for level in sorted(levels.keys()):
+            while len(levels[level]) >= merge_size:
+                chunk = levels[level][:merge_size]
+                levels[level] = levels[level][merge_size:]
+                try:
+                    merged = await summarizer(chunk)
+                    if merged and merged.strip():
+                        levels.setdefault(level + 1, []).append(merged.strip())
+                        merged_any = True
+                        continue
+                except Exception as e:
+                    logger.error(f"hierarchical merge L{level} failed: {e}")
+                # On failure, keep the chunk as-is at the next level (no data loss).
+                levels.setdefault(level + 1, []).extend(chunk)
+                merged_any = True
+        if not merged_any:
+            break
+    return levels
+
+
+def _summary_spine(levels: Dict[int, List[str]]) -> List[Dict[str, str]]:
+    """Build the compressed-context spine: the NEWEST summary at every level,
+    ordered highest level first so the most-compressed overview leads."""
+    spine = []
+    for level in sorted(levels.keys(), reverse=True):
+        for body in levels[level][-1:]:  # newest at this level
+            label = f"[Conversation summary]" if level == 1 else f"[Summary L{level}]"
+            spine.append({"role": "system", "content": f"{label}\n{body}"})
+    return spine
 
 
 def _sanitize_tool_messages(msgs: List[Dict]) -> List[Dict]:
@@ -255,14 +330,19 @@ async def maybe_compact(
         f"Context at {pct:.1f}% ({used}/{context_length} tokens) — compacting"
     )
 
-    # Split into system preface and conversation
-    system_msgs = []
-    convo_msgs = []
+    # Split into system preface, prior summaries (by level), and conversation.
+    system_msgs: List[Dict] = []
+    convo_msgs: List[Dict] = []
+    summary_levels: Dict[int, List[str]] = {}
     for msg in messages:
-        if msg.get("role") == "system":
-            system_msgs.append(msg)
-        else:
+        if msg.get("role") != "system":
             convo_msgs.append(msg)
+            continue
+        lvl = _summary_level(msg.get("content", ""))
+        if lvl > 0:
+            summary_levels.setdefault(lvl, []).append(_summary_body(msg.get("content", "")))
+        else:
+            system_msgs.append(msg)
 
     if len(convo_msgs) < 4:
         return messages, context_length, False
@@ -272,81 +352,67 @@ async def maybe_compact(
     older = convo_msgs[:split_point]
     recent = convo_msgs[split_point:]
 
-    # Build the text to summarize
-    convo_text = "\n".join(
-        f"{msg['role'].upper()}: {msg.get('content', '')[:2000]}"
-        for msg in older
-    )
-
-    # Count prior compactions from existing summary messages
-    compaction_count = sum(
-        1 for m in system_msgs
-        if "[Conversation summary" in m.get("content", "")
-    )
-
     # Use utility model if configured, otherwise fall back to session model
     util_url, util_model, util_headers = resolve_endpoint("utility")
     compact_url = util_url or endpoint_url
     compact_model = util_model or model
     compact_headers = util_headers if util_url else headers
 
-    prompt = SELF_SUMMARY_SYSTEM_PROMPT.replace(
-        "{count}", str(len(older))
-    ).replace(
-        "{n}", str(compaction_count + 1)
-    )
-    summary_messages = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": convo_text},
-    ]
-
-    try:
-        summary = await llm_call_async(
-            compact_url,
-            compact_model,
-            summary_messages,
-            temperature=0.2,
-            max_tokens=SUMMARY_MAX_TOKENS,
-            headers=compact_headers,
-            timeout=30,
+    async def _call(prompt: str, text: str) -> str:
+        sm = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": text},
+        ]
+        return await llm_call_async(
+            compact_url, compact_model, sm,
+            temperature=0.2, max_tokens=SUMMARY_MAX_TOKENS,
+            headers=compact_headers, timeout=30,
         )
+
+    # Summarize the older chunk into a new level-1 batch of factual points.
+    convo_text = "\n".join(
+        f"{msg['role'].upper()}: {msg.get('content', '')[:2000]}"
+        for msg in older
+    )
+    try:
+        batch = await _call(FACTUAL_POINTS_PROMPT, convo_text)
     except Exception as e:
         logger.error(f"Compaction summary failed: {e}")
-        return system_msgs + recent, context_length, False
+        return system_msgs + _summary_spine(summary_levels) + recent, context_length, False
+    if not (batch or "").strip():
+        return system_msgs + _summary_spine(summary_levels) + recent, context_length, False
 
-    summary_msg = {
-        "role": "system",
-        "content": f"[Conversation summary — earlier messages were compacted]\n{summary}",
-    }
+    summary_levels.setdefault(1, []).append(batch.strip())
 
-    compacted = system_msgs + [summary_msg] + recent
+    # Recursively merge lower-level summaries into higher-level patches.
+    async def _merger(texts: List[str]) -> str:
+        return await _call(PATCH_PROMPT, "\n\n---\n\n".join(texts))
+    summary_levels = await _merge_levels(summary_levels, SUMMARY_MERGE_SIZE, _merger)
 
-    # Update session history to match. Pass len(system_msgs) so the
-    # recent_history slice in _update_session_history uses the correct
-    # offset — session.history INCLUDES the system messages, but
-    # split_point is indexed against convo_msgs which does NOT. Without
-    # this, the slice drops the leading system message(s).
-    _update_session_history(session, split_point, summary, system_msg_count=len(system_msgs))
+    spine = _summary_spine(summary_levels)
+    compacted = system_msgs + spine + recent
+
+    # Persist the new hierarchy to the in-memory session history.
+    _update_session_history(session, split_point, summary_levels, system_msg_count=len(system_msgs))
 
     new_used = estimate_tokens(compacted)
     logger.info(
         f"Compacted: {used} -> {new_used} tokens "
-        f"({len(older)} messages summarized, {len(recent)} kept)"
+        f"({len(older)} messages summarized into {len(spine)} summary spine entries, {len(recent)} kept)"
     )
 
     return compacted, context_length, True
 
 
-def _update_session_history(session, split_point: int, summary: str,
+def _update_session_history(session, split_point: int, summary_levels: Dict[int, List[str]],
                             system_msg_count: int = 0):
-    """Update the in-memory session history after compaction.
+    """Update the in-memory session history after hierarchical compaction.
 
     `split_point` is the index in `convo_msgs` (system-stripped). The
     in-memory `session.history` includes leading system messages, so the
     actual recent-history slice starts at `system_msg_count + split_point`.
-    Prepending `session.history[:system_msg_count]` to the new history
-    preserves persona, preset, and RAG system messages that would
-    otherwise be dropped.
+    The compressed summary spine (newest summary at every level) is prepended,
+    and the leading system messages are preserved.
     """
     if not session or not hasattr(session, "history"):
         return
@@ -355,16 +421,17 @@ def _update_session_history(session, split_point: int, summary: str,
     if effective_split >= len(session.history):
         return
 
-    # Keep the recent messages, prepend summary AND the leading system
-    # messages so the system prompt survives compaction.
     system_prefix = list(session.history[:system_msg_count])
     recent_history = session.history[effective_split:]
-    summary_msg = ChatMessage(
-        role="system",
-        content=f"[Conversation summary]\n{summary}",
-        metadata={"compacted": True, "summarized_count": split_point},
-    )
-    new_history = system_prefix + [summary_msg] + recent_history
+    summary_msgs = [
+        ChatMessage(
+            role="system",
+            content=s["content"],
+            metadata={"compacted": True, "summarized_count": split_point},
+        )
+        for s in _summary_spine(summary_levels)
+    ]
+    new_history = system_prefix + summary_msgs + recent_history
     try:
         from core import models as _core_models
         manager = getattr(_core_models, "_session_manager", None)

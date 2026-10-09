@@ -535,6 +535,21 @@ function createSessionItem(s) {
 
   // Rename is already appended above (line 393)
 
+  // "Message versions" — navigate the branch tree for this session
+  const branchesItem = document.createElement('div');
+  branchesItem.className = 'dropdown-item-compact';
+  branchesItem.innerHTML = _icon('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="6" y1="9" x2="6" y2="15"/><path d="M9 6h11"/><path d="M9 18h11"/></svg>') + '<span>Message versions</span>';
+  branchesItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.style.display = 'none';
+    if (window.chatModule && window.chatModule.showBranches) {
+      window.chatModule.showBranches(s.id);
+    } else {
+      import('./chat.js').then(m => m.showBranches && m.showBranches(s.id)).catch(() => {});
+    }
+  });
+  dropdown.appendChild(branchesItem);
+
   // "Select" — enter bulk select mode with this session pre-selected
   if (!isOpenClaw) {
     const selectMoreItem = document.createElement('div');

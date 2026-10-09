@@ -293,6 +293,9 @@ import * as Modals from './modalManager.js';
     if (!_anyTab && isOpen && !activeDocId) {
       html += `<div class="doc-tab active doc-tab-ghost" title="New document — start typing"><span class="doc-tab-title">Untitled</span></div>`;
     }
+    // Persistent "Voice agent" tab — the WebGL FFT shader lives here.
+    const _voiceActive = activeDocId === '__voice__';
+    html += `<div class="doc-tab${_voiceActive ? ' active' : ''} doc-tab-voice" data-doc-id="__voice__" title="Voice agent"><span class="doc-tab-title">🎤 Voice</span></div>`;
     html += `<button class="doc-tab-new" id="doc-tab-new-btn" title="New document"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>`;
     html += '</div>';
     html += '<button class="doc-tab-arrow doc-tab-arrow-right" id="doc-tab-right" title="Scroll right">&#x203A;</button>';
@@ -3441,7 +3444,32 @@ import * as Modals from './modalManager.js';
     _discardEmail();
   }
 
+  function _showVoicePane() {
+    const hide = ['doc-editor-wrap', 'doc-email-richbody', 'doc-email-actions',
+      'doc-md-preview', 'doc-csv-preview', 'doc-html-preview', 'doc-pdf-view',
+      'doc-actions-footer', 'doc-md-toolbar', 'doc-path-label'];
+    hide.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+    const pane = document.getElementById('doc-voice-pane');
+    if (pane) pane.style.display = 'flex';
+  }
+
+  function _hideVoicePane() {
+    const pane = document.getElementById('doc-voice-pane');
+    if (pane) pane.style.display = 'none';
+    const wrap = document.getElementById('doc-editor-wrap');
+    if (wrap) wrap.style.display = '';
+    const footer = document.getElementById('doc-actions-footer');
+    if (footer) footer.style.display = '';
+  }
+
   function switchToDoc(docId) {
+    if (docId === '__voice__') {
+      activeDocId = '__voice__';
+      _showVoicePane();
+      renderTabs();
+      return;
+    }
+    _hideVoicePane();
     if (!docs.has(docId)) return;
     _hideLoadingOverlay();
     if (_diffModeActive) exitDiffMode(true);
@@ -3956,6 +3984,15 @@ import * as Modals from './modalManager.js';
       <iframe id="doc-html-preview" class="doc-html-preview" sandbox="allow-scripts allow-modals" style="display:none"></iframe>
       <div id="doc-pdf-view" style="display:none;width:100%;flex:1;min-height:0;overflow:auto;background:#525659;padding:20px 0;position:relative;">
         <div id="doc-pdf-save-pill" style="display:none;position:absolute;top:8px;right:14px;padding:4px 10px;border-radius:12px;font-size:11px;z-index:5;pointer-events:none;background:transparent;color:transparent;"></div>
+      </div>
+      <!-- Voice agent pane — the WebGL FFT shader lives here, centered, as a
+           dedicated agent tab. -->
+      <div id="doc-voice-pane" class="doc-voice-pane" style="display:none;flex:1;min-height:0;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:16px;">
+        <div style="position:relative;width:min(46vh,72%);max-width:360px;aspect-ratio:1/1;">
+          <canvas id="voice-canvas" style="width:100%;height:100%;border-radius:50%;"></canvas>
+        </div>
+        <div id="doc-voice-status" style="font:600 13px/1.2 system-ui;color:var(--color-muted,#888);text-align:center;">Click the mic below to talk</div>
+        <button type="button" id="doc-voice-mic-btn" class="doc-action-icon-btn" title="Talk" style="width:44px;height:44px;border-radius:50%;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
       </div>
       <!-- Action footer sits AFTER all the content/preview panes so it stays
            pinned to the bottom no matter which pane (editor / md-preview /
@@ -9553,6 +9590,7 @@ const documentModule = {
   init,
   openPanel,
   closePanel,
+  switchToDoc,
   swapSide,
   createDocument,
   newDocument,

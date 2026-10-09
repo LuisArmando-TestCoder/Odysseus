@@ -18,6 +18,7 @@ import chatRenderer from './js/chatRenderer.js';
 import sessionModule from './js/sessions.js';
 import memoryModule from './js/memory.js';
 import voiceRecorderModule from './js/voiceRecorder.js';
+import voiceModule from './js/voice.js';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';
@@ -337,6 +338,22 @@ function initializeEventListeners() {
       // falsely report "Copied".
       if (!transcript.trim()) { uiModule.showToast('Nothing to copy yet'); return; }
       await uiModule.copyToClipboard(transcript);
+    });
+  }
+
+  // Message versions (branch tree)
+  const exportBranchesBtn = el('export-branches-btn');
+  if (exportBranchesBtn) {
+    exportBranchesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportMenu.classList.remove('open');
+      const sid = sessionModule.getCurrentSessionId();
+      if (!sid) { uiModule.showToast('Start a chat first'); return; }
+      if (window.chatModule && window.chatModule.showBranches) {
+        window.chatModule.showBranches(sid);
+      } else {
+        import('./chat.js').then(m => m.showBranches && m.showBranches(sid)).catch(() => {});
+      }
     });
   }
 
@@ -3974,6 +3991,7 @@ function startOdysseusApp() {
   
   // Ensure proper initial state
   voiceRecorderModule.init();
+  voiceModule.initVoice();
   if (censorModule) censorModule.init();
 
   // Auto-focus message input on load

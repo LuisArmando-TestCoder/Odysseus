@@ -49,6 +49,8 @@ class STTService:
             return True  # handled client-side
         if provider == "local":
             return self._get_whisper() is not None
+        if provider == "openrouter":
+            return True  # key resolved at call time
         if provider.startswith("endpoint:"):
             return True  # assume reachable
         return False
@@ -151,6 +153,54 @@ class STTService:
             logger.error(f"API STT transcription failed: {e}")
             return None
 
+    # ── OpenRouter Whisper (base64 JSON) ──
+
+    def _openrouter_key(self) -> Optional[str]:
+        import os
+        key = os.environ.get("OPENROUTER_API_KEY")
+        if key:
+            return key
+        from src.database import SessionLocal, ModelEndpoint
+        db = SessionLocal()
+        try:
+            ep = db.query(ModelEndpoint).filter(
+                ModelEndpoint.base_url.like("%openrouter.ai%")
+            ).first()
+            if ep and ep.api_key:
+                return ep.api_key
+        finally:
+            db.close()
+        return None
+
+    def _transcribe_openrouter(self, audio_bytes: bytes, model: str, audio_format: str = "webm") -> Optional[str]:
+        import base64
+        key = self._openrouter_key()
+        if not key:
+            logger.error("OpenRouter STT: no API key (set OPENROUTER_API_KEY or configure an OpenRouter endpoint)")
+            return None
+        url = "https://openrouter.ai/api/v1/audio/transcriptions"
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model or "openai/whisper-large-v3-turbo",
+            "input_audio": {
+                "data": base64.b64encode(audio_bytes).decode("ascii"),
+                "format": audio_format,
+            },
+        }
+        try:
+            r = httpx.post(url, headers=headers, json=payload, timeout=60)
+            r.raise_for_status()
+            result = r.json()
+            text = result.get("text", "")
+            logger.info(f"OpenRouter STT: {len(text)} chars (model={model})")
+            return text
+        except Exception as e:
+            logger.error(f"OpenRouter STT transcription failed: {e}")
+            return None
+
     # ── Public interface ──
 
     def transcribe(self, audio_bytes: bytes) -> Optional[str]:
@@ -166,6 +216,8 @@ class STTService:
 
         if provider == "local":
             return self._transcribe_local(audio_bytes, language)
+        elif provider == "openrouter":
+            return self._transcribe_openrouter(audio_bytes, model)
         elif provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
             return self._transcribe_api(audio_bytes, endpoint_id, model, language)
@@ -192,6 +244,8 @@ class STTService:
             stats["model_loaded"] = whisper is not None
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
+        elif provider == "openrouter":
+            stats["model"] = settings["stt_model"]
         elif provider.startswith("endpoint:"):
             stats["endpoint_id"] = provider.split(":", 1)[1]
 

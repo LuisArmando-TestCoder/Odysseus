@@ -12,7 +12,7 @@ import json
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 
 from .database import Session as DbSession, ChatMessage as DbChatMessage, Document as DbDocument, SessionLocal
 from .models import Session, ChatMessage
@@ -117,41 +117,34 @@ class SessionManager:
             history=[],
             owner=getattr(db_session, "owner", None),
             is_important=getattr(db_session, "is_important", False) or False,
+            active_branch=getattr(db_session, "active_branch", None) or "root",
         )
         session.message_count = getattr(db_session, "message_count", 0) or 0
         return session
 
     def _db_to_session(self, db_session: DbSession, db) -> Optional[Session]:
         """Convert a database session to a Session object."""
+        active_branch = getattr(db_session, "active_branch", None) or "root"
         history = []
 
-        # Try relationship first, then direct query
-        if db_session.messages:
-            for db_msg in db_session.messages:
-                meta = json.loads(db_msg.meta_data) if db_msg.meta_data else {}
-                if meta is None: meta = {}
-                meta['_db_id'] = db_msg.id
-                meta.setdefault('timestamp', _message_timestamp_iso(db_msg.timestamp))
-                history.append(ChatMessage(
-                    role=db_msg.role,
-                    content=_parse_msg_content(db_msg.content),
-                    metadata=meta,
-                ))
-        else:
-            db_messages = db.query(DbChatMessage).filter(
-                DbChatMessage.session_id == db_session.id
-            ).order_by(DbChatMessage.timestamp).all()
+        db_messages = db.query(DbChatMessage).filter(
+            DbChatMessage.session_id == db_session.id
+        ).order_by(DbChatMessage.timestamp).all()
 
-            for db_msg in db_messages:
-                meta = json.loads(db_msg.meta_data) if db_msg.meta_data else {}
-                if meta is None: meta = {}
-                meta['_db_id'] = db_msg.id
-                meta.setdefault('timestamp', _message_timestamp_iso(db_msg.timestamp))
-                history.append(ChatMessage(
-                    role=db_msg.role,
-                    content=_parse_msg_content(db_msg.content),
-                    metadata=meta,
-                ))
+        for db_msg in db_messages:
+            # Message-version tree: only hydrate the currently-active branch.
+            branch = getattr(db_msg, "branch_id", None) or "root"
+            if branch != active_branch:
+                continue
+            meta = json.loads(db_msg.meta_data) if db_msg.meta_data else {}
+            if meta is None: meta = {}
+            meta['_db_id'] = db_msg.id
+            meta.setdefault('timestamp', _message_timestamp_iso(db_msg.timestamp))
+            history.append(ChatMessage(
+                role=db_msg.role,
+                content=_parse_msg_content(db_msg.content),
+                metadata=meta,
+            ))
 
         if not history:
             return None
@@ -175,6 +168,7 @@ class SessionManager:
             history=history,
             owner=getattr(db_session, 'owner', None),
             is_important=getattr(db_session, 'is_important', False) or False,
+            active_branch=active_branch,
         )
 
         session.message_count = getattr(db_session, 'message_count', len(history))
@@ -204,6 +198,8 @@ class SessionManager:
         try:
             msg_id = str(uuid.uuid4())
             msg_time = datetime.utcnow()
+            _sess = self.sessions.get(session_id)
+            _branch = getattr(_sess, "active_branch", "root") if _sess else "root"
             if message.metadata is None:
                 message.metadata = {}
             message.metadata.setdefault('timestamp', _message_timestamp_iso(msg_time))
@@ -220,6 +216,7 @@ class SessionManager:
                 content=_content,
                 meta_data=json.dumps(message.metadata) if message.metadata else None,
                 timestamp=msg_time,
+                branch_id=_branch,
             )
             db.add(db_message)
 
@@ -259,8 +256,12 @@ class SessionManager:
                 DbChatMessage.session_id == session_id
             ).order_by(DbChatMessage.timestamp).all()
 
+            # Only delete from the active branch — other branches are preserved.
+            branch = getattr(session, "active_branch", "root") or "root"
+            active_msgs = [m for m in db_messages if (getattr(m, "branch_id", None) or "root") == branch]
+
             deleted = 0
-            for msg in db_messages[keep_count:]:
+            for msg in active_msgs[keep_count:]:
                 db.delete(msg)
                 deleted += 1
 
@@ -284,12 +285,117 @@ class SessionManager:
         finally:
             db.close()
 
-    def replace_messages(self, session_id: str, messages: list) -> bool:
-        """Replace a session's persisted and in-memory history atomically."""
+    def fork_branch(self, session_id: str, keep_count: int = 0) -> Optional[str]:
+        """Fork the conversation: copy the first `keep_count` messages into a
+        fresh branch and make it active. The old branch (with its full tail) is
+        preserved so the user can navigate back to it later."""
         session = self.get_session(session_id)
+        if not session:
+            return None
+        prefix = list(session.history[:keep_count])
+        new_branch = str(uuid.uuid4())
+        session.active_branch = new_branch
+        session.history = prefix
+        session.message_count = len(prefix)
+
         db = SessionLocal()
         try:
-            db.query(DbChatMessage).filter(DbChatMessage.session_id == session_id).delete()
+            now = datetime.utcnow()
+            for i, msg in enumerate(prefix):
+                new_id = str(uuid.uuid4())
+                _content = msg.content
+                if isinstance(_content, list):
+                    _content = json.dumps(_content)
+                # Copy metadata but drop the stale DB id (new rows get new ids).
+                _meta = {k: v for k, v in (msg.metadata or {}).items() if k != '_db_id'}
+                db.add(DbChatMessage(
+                    id=new_id,
+                    session_id=session_id,
+                    role=msg.role,
+                    content=_content,
+                    meta_data=json.dumps(_meta) if _meta else None,
+                    timestamp=now + timedelta(microseconds=i),
+                    branch_id=new_branch,
+                ))
+                # Keep the in-memory message's DB id in sync with its new row so
+                # later edits/deletes target the NEW branch, not the old one.
+                if msg.metadata is None:
+                    msg.metadata = {}
+                msg.metadata['_db_id'] = new_id
+            db_session = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if db_session:
+                db_session.active_branch = new_branch
+                db_session.message_count = keep_count
+            db.commit()
+        except Exception as e:
+            logger.error(f"fork_branch {session_id}: {e}")
+            db.rollback()
+        finally:
+            db.close()
+        return new_branch
+
+    def list_branches(self, session_id: str) -> List[Dict[str, Any]]:
+        """Return the session's message branches (id, count, latest ts)."""
+        db = SessionLocal()
+        try:
+            msgs = db.query(DbChatMessage).filter(
+                DbChatMessage.session_id == session_id
+            ).order_by(DbChatMessage.timestamp).all()
+        finally:
+            db.close()
+        counts: Dict[str, int] = {}
+        latest: Dict[str, Any] = {}
+        for m in msgs:
+            bid = getattr(m, "branch_id", None) or "root"
+            counts[bid] = counts.get(bid, 0) + 1
+            latest[bid] = m.timestamp
+        branches = [
+            {
+                "branch_id": bid,
+                "message_count": counts[bid],
+                "latest": (latest[bid].isoformat() + "Z") if latest.get(bid) else None,
+            }
+            for bid in counts
+        ]
+        # Root first, then most-recently-active.
+        branches.sort(key=lambda b: (b["branch_id"] == "root", b["latest"] or ""), reverse=True)
+        return branches
+
+    def activate_branch(self, session_id: str, branch_id: str) -> bool:
+        """Switch the active branch and reload its message history."""
+        branch_id = branch_id or "root"
+        session = self.get_session(session_id)
+        if not session:
+            return False
+        session.active_branch = branch_id
+        db = SessionLocal()
+        try:
+            db_session = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if db_session:
+                db_session.active_branch = branch_id
+                db.commit()
+        except Exception as e:
+            logger.error(f"activate_branch {session_id}: {e}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
+        self._load_session_from_db(session_id)
+        return True
+
+    def replace_messages(self, session_id: str, messages: list) -> bool:
+        """Replace a session's persisted and in-memory history atomically.
+
+        Branch-aware: only the ACTIVE branch's messages are replaced; other
+        branches are preserved (message-version tree)."""
+        session = self.get_session(session_id)
+        branch = getattr(session, "active_branch", "root") or "root"
+        db = SessionLocal()
+        try:
+            rows = db.query(DbChatMessage).filter(DbChatMessage.session_id == session_id).all()
+            for r in rows:
+                if (getattr(r, "branch_id", None) or "root") == branch:
+                    db.delete(r)
             now = datetime.now(timezone.utc)
             for i, message in enumerate(messages):
                 msg_id = str(uuid.uuid4())
@@ -300,6 +406,7 @@ class SessionManager:
                     content=message.content,
                     meta_data=json.dumps(message.metadata) if message.metadata else None,
                     timestamp=now + timedelta(microseconds=i),
+                    branch_id=branch,
                 )
                 db.add(db_message)
                 if message.metadata is None:

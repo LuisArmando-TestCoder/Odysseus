@@ -122,6 +122,8 @@ class Session(TimestampMixin, Base):
     total_output_tokens = Column(Integer, default=0)
     mode = Column(String, nullable=True)  # 'agent', 'chat', or 'research'
     crew_member_id = Column(String, nullable=True)  # links to crew_members.id
+    # Currently-active message branch for the version tree.
+    active_branch = Column(String, nullable=True, default="root")
 
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -172,6 +174,12 @@ class ChatMessage(Base):
 
     # Timestamp
     timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    # Branch id for message-version trees: messages sharing a branch_id form
+    # one linear conversation; editing/regenerating forks a new branch_id so
+    # the old branch survives and the user can navigate between versions
+    # without the branches cross-contaminating.
+    branch_id = Column(String, nullable=True, index=True)
     
     # Relationship to Session
     session = relationship("Session", back_populates="messages")
@@ -1201,6 +1209,26 @@ def _migrate_sync_documents_to_files():
     except Exception as e:
         logging.getLogger(__name__).warning(f"documents-to-files migration: {e}")
 
+def _migrate_add_message_branch():
+    """Add message-version-tree columns: chat_messages.branch_id and
+    sessions.active_branch. Existing messages are backfilled onto a single
+    'root' branch so they remain the active conversation."""
+    try:
+        with engine.connect() as conn:
+            msg_cols = {r[1] for r in conn.execute(text("PRAGMA table_info(chat_messages)"))}
+            if "branch_id" not in msg_cols:
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN branch_id VARCHAR"))
+                logging.getLogger(__name__).info("Added branch_id column to chat_messages")
+            sess_cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))}
+            if "active_branch" not in sess_cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN active_branch VARCHAR DEFAULT 'root'"))
+                logging.getLogger(__name__).info("Added active_branch column to sessions")
+            # Backfill legacy rows onto the root branch.
+            conn.execute(text("UPDATE chat_messages SET branch_id = 'root' WHERE branch_id IS NULL"))
+            conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"message branch migration: {e}")
+
 def _migrate_add_task_automation_columns():
     """Add automation columns to scheduled_tasks table if missing."""
     new_cols = {
@@ -1573,6 +1601,7 @@ def init_db():
     _migrate_add_doc_source_email_cols()
     _migrate_add_document_file_path_column()
     _migrate_sync_documents_to_files()
+    _migrate_add_message_branch()
     _migrate_add_oauth_config()
     _migrate_add_task_automation_columns()
     _migrate_add_disabled_tools()
