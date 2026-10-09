@@ -925,6 +925,29 @@ def llm_call_with_fallback(candidates, messages, **kwargs) -> str:
     raise last_err if last_err else HTTPException(503, "All fallback candidates failed")
 
 
+# ── Cost ledger hooks (sidecar; never touches session history/context) ──────
+
+def _ledger_record_sync_usage(provider: str, model: str, data) -> None:
+    try:
+        u = data.get("usage") if isinstance(data, dict) else None
+        if not isinstance(u, dict):
+            return
+        from src.cost_ledger import record, record_openrouter_usage
+        if provider == "openrouter":
+            record_openrouter_usage(model, u)
+        else:
+            record(provider=provider or "", model=model or "",
+                   input_tokens=u.get("prompt_tokens", u.get("input_tokens", 0)) or 0,
+                   output_tokens=u.get("completion_tokens", u.get("output_tokens", 0)) or 0,
+                   base_usd=None)
+    except Exception as e:
+        logger.debug(f"cost ledger (sync) skipped: {e}")
+
+
+def _ledger_record_stream_usage(provider: str, model: str, u) -> None:
+    _ledger_record_sync_usage(provider, model, {"usage": u})
+
+
 async def llm_call_async_with_fallback(candidates, messages, **kwargs) -> str:
     """Async variant of `llm_call_with_fallback` — same semantics."""
     cands = [c for c in (candidates or []) if c and c[0] and c[1]]
@@ -1012,6 +1035,8 @@ async def llm_call_async(
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
+        if provider == "openrouter":
+            payload["usage"] = {"include": True}   # exact per-call cost for the cost ledger
 
     if _is_host_dead(target_url):
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
@@ -1036,6 +1061,7 @@ async def llm_call_async(
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
+            _ledger_record_sync_usage(provider, model, data)
             try:
                 if provider == "anthropic":
                     response = _parse_anthropic_response(data)
@@ -1132,6 +1158,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             payload.pop("temperature", None)
         if provider not in {"openrouter", "groq"}:
             payload["stream_options"] = {"include_usage": True}
+        if provider == "openrouter":
+            payload["usage"] = {"include": True}   # final chunk carries exact cost
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
@@ -1325,6 +1353,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
 
     try:
         client = _get_http_client()
+        _ledger_done = False
         async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
             _clear_host_dead(target_url)
             if r.status_code != 200:
@@ -1350,6 +1379,9 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                         if data.strip():
                             if data.startswith("{"):
                                 j = json.loads(data)
+                                if isinstance(j.get("usage"), dict) and not _ledger_done:
+                                    _ledger_done = True
+                                    _ledger_record_stream_usage(provider, model, j["usage"])
                                 # Usage chunk (from stream_options)
                                 _choices = j.get("choices") or []
                                 _delta0 = _choices[0].get("delta") if _choices else None

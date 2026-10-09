@@ -126,6 +126,39 @@ DEFAULT_SETTINGS = {
     "utility_model_fallbacks": [],
     "teacher_model": "",
     "teacher_enabled": False,
+    # ── Voice mode (GPT-Live WebRTC + multi-agent voice→chat pipeline) ──
+    "realtime_model": "gpt-live-1",
+    "realtime_voice": "",
+    # Advanced voice persona: the name the assistant answers to, and the
+    # GPT-Live voice. "vesper" is a warm male voice; the British accent and
+    # deep register come from the persona instructions.
+    "voice_assistant_name": "Alfred",
+    "voice_assistant_voice": "vesper",
+    "realtime_instructions": (
+        "You are Odysseus, a calm, sharp, Jarvis-like voice companion. Speak "
+        "naturally and concisely. When the user asks for something that needs "
+        "real work (research, files, email, calendar, code), acknowledge it "
+        "briefly — a separate agent forwards it to the chat and executes it."
+    ),
+    # JEV decision maker (OpenRouter Decisions API). Reuses the OpenRouter key.
+    "jev_enabled": True,
+    "jev_model": "~typesafe/jev-latest",
+    # Probability threshold above which JEV's should_act triggers a forge.
+    "voice_act_threshold": 0.5,
+    # Voice memory: raw turns per level-1 batch, and same-level summaries
+    # merged into one higher-level summary.
+    "voice_batch_size": 20,
+    # ── API cost ledger (sidecar; never part of any chat context) ──
+    # OpenRouter credit top-up fee added on top of the exact per-call cost.
+    "openrouter_fee_pct": 5.5,
+    # GPT-Live (OpenAI direct) rates, USD per 1M tokens — verify against
+    # OpenAI's current pricing page and adjust.
+    "realtime_price_audio_in": 32.0,
+    "realtime_price_audio_out": 64.0,
+    "realtime_price_text_in": 4.0,
+    "realtime_price_text_out": 16.0,
+    "realtime_price_cached_in": 0.40,
+    "voice_merge_size": 3,
     # Skills: minimum self-reported confidence for an auto-written (LLM-authored)
     # DRAFT skill to be injected into the agent prompt. Published skills always
     # qualify. Keeps low-confidence auto-skills out of context until they're

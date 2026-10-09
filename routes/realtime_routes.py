@@ -15,6 +15,7 @@ import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
 from src.auth_helpers import effective_user
 from src.settings import load_settings
@@ -32,6 +33,38 @@ Rules:
 - Output ONLY valid JSON, one of:
   {"send": false}
   {"send": true, "message": "<the message>"}"""
+
+
+def build_persona(settings: dict) -> str:
+    """The voice assistant's identity, voice and way of thinking."""
+    name = (settings.get("voice_assistant_name") or "Alfred").strip()[:40] or "Alfred"
+    return (
+        f"IDENTITY: Your name is {name}. You are the voice of the Odysseus system — a Jarvis-style "
+        f"personal AI. If asked who or what you are, you are {name}. Never call yourself ChatGPT, GPT, "
+        "an OpenAI model or 'an AI language model', and don't name the company or model behind you; "
+        "if pressed, say you run on the Odysseus system.\n"
+        "VOICE & MANNER: Speak with a deep, calm, male voice and a refined British (Received "
+        "Pronunciation) accent — measured pace, warm low register, crisp diction. Be unfailingly "
+        "respectful (address the user as 'sir' now and then, never servile), with a dry, witty, lightly "
+        "sarcastic edge, like Jarvis. Wit never replaces substance; keep spoken replies concise.\n"
+        "HOW YOU THINK:\n"
+        "- Systems thinking: see the whole — parts, feedback loops, delays, second-order effects, leverage points.\n"
+        "- First principles: break problems down to fundamental truths and rebuild from there; reasoning by analogy is a last resort.\n"
+        "- Homeostasis and homeodynamics: ask what keeps the system stable, what drives it to adapt, which "
+        "forces are in balance or out of it, and how to steer it toward a healthy dynamic equilibrium.\n"
+        "- Adversarial: stress-test assumptions — including the user's and your own. Name the weakest link, "
+        "the counterexample, the failure mode — politely, with wit, never dismissively.\n"
+        "- Everything is possible: treat 'impossible' as a constraint to engineer around. Find the path — "
+        "the cost, the trade-off, the first step — rather than reasons to stop."
+    )
+
+
+VOICE_CONTRACT = (
+    "How work is split: answer conversation and general-knowledge questions yourself. When the "
+    "user asks for something that needs real work (research, files, email, calendar, code), "
+    "acknowledge it briefly — a separate agent forwards it to the chat and executes it, and "
+    "you'll be told the result. Never claim you did such a task yourself."
+)
 
 
 def setup_realtime_routes() -> APIRouter:
@@ -53,21 +86,34 @@ def setup_realtime_routes() -> APIRouter:
         except Exception:
             raise HTTPException(400, "JSON body required")
 
-        sdp = (body.get("sdp") or "").strip()
-        if not sdp:
+        # Do NOT .strip() the SDP: every SDP line (including the last) must end
+        # in CRLF. Stripping removed the final "\r\n" and OpenAI's SDP parser
+        # failed with "failed to unmarshal SDP: EOF". Normalize line endings
+        # instead and guarantee the trailing CRLF.
+        sdp = body.get("sdp") or ""
+        if not isinstance(sdp, str) or not sdp.strip():
             raise HTTPException(400, "An SDP offer is required")
+        sdp = sdp.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+        sdp = "\r\n".join(line.rstrip() for line in sdp.split("\n") if line.strip()) + "\r\n"
+        if not sdp.startswith("v=0"):
+            raise HTTPException(400, "Malformed SDP offer")
         logger.info(f"GPT-Live SDP offer received: {len(sdp)} bytes | head={sdp[:80]!r}")
 
         model = settings.get("realtime_model", "gpt-live-1")
         instructions = settings.get(
             "realtime_instructions", "Be concise and conversational."
         )
+        # Persona first, then the user's own instructions, then how work is
+        # split with the chat agent (always present, even with old settings).
+        instructions = (build_persona(settings) + "\n\n" + (instructions or "").strip()
+                        + "\n\n" + VOICE_CONTRACT)
 
+        session_cfg = {"model": model, "instructions": instructions}
+        voice = (settings.get("voice_assistant_voice") or "").strip()
+        if voice:
+            session_cfg["voice"] = voice
         payload = {
-            "session": {
-                "model": model,
-                "instructions": instructions,
-            },
+            "session": session_cfg,
             "transport": {"type": "webrtc", "sdp": sdp},
         }
 
@@ -78,6 +124,16 @@ def setup_realtime_routes() -> APIRouter:
                     headers={"Authorization": f"Bearer {api_key}"},
                     json=payload,
                 )
+                # If GPT-Live doesn't accept the voice field/value, connect
+                # anyway with its default voice rather than failing the call.
+                if r.status_code == 400 and voice and "voice" in r.text.lower():
+                    logger.warning(f"GPT-Live rejected voice {voice!r}; retrying with default voice: {r.text[:200]}")
+                    session_cfg.pop("voice", None)
+                    r = await client.post(
+                        "https://api.openai.com/v1/live/sessions",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        json=payload,
+                    )
         except httpx.HTTPError as e:
             logger.error(f"GPT-Live session exchange failed: {e}")
             raise HTTPException(502, f"OpenAI unreachable: {e}")
@@ -135,5 +191,122 @@ def setup_realtime_routes() -> APIRouter:
         if send and not message:
             return {"send": False}
         return {"send": send, "message": message}
+
+    # ── Advanced voice mode: multi-agent pipeline ──────────────────────────
+
+    def _voice_id(raw) -> str:
+        vid = str(raw or "default").strip()[:80]
+        return "".join(c for c in vid if c.isalnum() or c in "-_") or "default"
+
+    @router.get("/status")
+    async def voice_status(request: Request):
+        """Capabilities for the voice HUD: realtime key, JEV, utility model."""
+        if not effective_user(request):
+            raise HTTPException(401, "Authentication required")
+        from src.decisions import jev_available, jev_settings
+        settings = load_settings()
+        url, model, _ = resolve_endpoint("utility")
+        return {
+            "realtime": bool(settings.get("openai_api_key")),
+            "realtime_model": settings.get("realtime_model", "gpt-live-1"),
+            "jev": jev_available(),
+            "jev_model": jev_settings()["model"],
+            "utility_model": model or "",
+            "utility": bool(url and model),
+            "threshold": settings.get("voice_act_threshold", 0.5),
+            "assistant_name": (settings.get("voice_assistant_name") or "Alfred").strip()[:40] or "Alfred",
+        }
+
+    @router.post("/pipeline")
+    async def voice_pipeline(request: Request):
+        """Run observer → compressor → JEV decider → forger, streaming each
+        stage as Server-Sent Events (``data: {json}``)."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        turns = body.get("turns") or []
+        if not isinstance(turns, list):
+            raise HTTPException(400, "turns must be a list")
+        turns = [
+            {"speaker": str(t.get("speaker", ""))[:16], "text": str(t.get("text", ""))[:4000]}
+            for t in turns[:80] if isinstance(t, dict)
+        ]
+        from services.voice.pipeline import run_pipeline
+
+        async def _gen():
+            try:
+                async for ev in run_pipeline(
+                    owner=str(user),
+                    voice_id=_voice_id(body.get("voice_id")),
+                    turns=turns,
+                    chat_session_id=(body.get("chat_session_id") or None),
+                    force=bool(body.get("force")),
+                    settle=bool(body.get("settle")),
+                ):
+                    yield "data: " + json.dumps(ev, ensure_ascii=False, default=str) + "\n\n"
+            except Exception as e:
+                logger.error(f"voice pipeline crashed: {e}", exc_info=True)
+                yield "data: " + json.dumps({"type": "done", "send": False, "reason": "error",
+                                             "error": str(e)[:200]}) + "\n\n"
+
+        return StreamingResponse(_gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @router.get("/memory")
+    async def voice_memory(request: Request, voice_id: str = "default"):
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        from services.voice.memory import get_voice_memory
+        mem = get_voice_memory(str(user), _voice_id(voice_id))
+        return {"stats": mem.stats(), "spine": mem.spine()}
+
+    @router.post("/memory/ingest")
+    async def voice_memory_ingest(request: Request):
+        """Fold chat-thread turns (what was sent + what the chat agent answered)
+        into the voice memory so they're compressed alongside the voice
+        conversation. Non-blocking: compaction runs in the background."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        turns = body.get("turns") or []
+        if not isinstance(turns, list):
+            raise HTTPException(400, "turns must be a list")
+        allowed = {"chat_user", "chat_ai"}
+        clean = [
+            {"speaker": str(t.get("speaker")), "text": str(t.get("text", ""))[:6000], "final_break": True}
+            for t in turns[:40]
+            if isinstance(t, dict) and str(t.get("speaker")) in allowed
+        ]
+        from services.voice.memory import get_voice_memory
+        from src.cost_ledger import set_cost_scope
+        set_cost_scope(body.get("chat_session_id") or None, "voice-compress", str(user))
+        mem = get_voice_memory(str(user), _voice_id(body.get("voice_id")))
+        added = mem.add_turns(clean)
+        if added:
+            mem.schedule_compaction()
+        return {"ok": True, "added": added, "stats": mem.stats()}
+
+    @router.post("/memory/reset")
+    async def voice_memory_reset(request: Request):
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        from services.voice.memory import get_voice_memory
+        mem = get_voice_memory(str(user), _voice_id(body.get("voice_id")))
+        mem.reset()
+        return {"ok": True, "stats": mem.stats()}
 
     return router

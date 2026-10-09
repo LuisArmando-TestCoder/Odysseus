@@ -156,21 +156,9 @@ class STTService:
     # ── OpenRouter Whisper (base64 JSON) ──
 
     def _openrouter_key(self) -> Optional[str]:
-        import os
-        key = os.environ.get("OPENROUTER_API_KEY")
-        if key:
-            return key
-        from src.database import SessionLocal, ModelEndpoint
-        db = SessionLocal()
-        try:
-            ep = db.query(ModelEndpoint).filter(
-                ModelEndpoint.base_url.like("%openrouter.ai%")
-            ).first()
-            if ep and ep.api_key:
-                return ep.api_key
-        finally:
-            db.close()
-        return None
+        # Shared resolver (also used by the JEV Decisions voice pipeline).
+        from src.endpoint_resolver import resolve_openrouter_key
+        return resolve_openrouter_key()
 
     def _transcribe_openrouter(self, audio_bytes: bytes, model: str, audio_format: str = "webm") -> Optional[str]:
         import base64

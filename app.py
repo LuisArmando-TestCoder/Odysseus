@@ -597,6 +597,8 @@ logger.info("STT service initialized (provider managed via settings)")
 # OpenAI Realtime (WebRTC voice)
 from routes.realtime_routes import setup_realtime_routes
 app.include_router(setup_realtime_routes())
+from routes.cost_routes import setup_cost_routes
+app.include_router(setup_cost_routes())
 logger.info("OpenAI Realtime routes initialized")
 
 # Documents (artifacts/canvas)

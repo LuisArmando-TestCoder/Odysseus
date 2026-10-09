@@ -35369,3 +35369,13 @@ body.theme-frosted .modal {
   font-family: 'Fira Code', ui-monospace, monospace;
   color: var(--accent, var(--red));
 }
+
+/* Per-chat API cost badge (sidecar cost ledger) */
+.session-item .session-cost {
+  flex: none; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  font: 600 10px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums; letter-spacing: .02em;
+  color: var(--text-secondary, #8a94a3); background: rgba(127, 127, 127, .12);
+  white-space: nowrap; opacity: .85;
+}
+.session-item:hover .session-cost, .session-item.active .session-cost { opacity: 1; }

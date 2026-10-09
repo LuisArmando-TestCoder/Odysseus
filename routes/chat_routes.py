@@ -608,6 +608,11 @@ def setup_chat_routes(
             # the outer scope. (Was `nonlocal` but never reassigned.)
             research_sources = None
             web_sources = ctx.web_sources
+            try:
+                from src.cost_ledger import set_cost_scope
+                set_cost_scope(session, "chat")
+            except Exception:
+                pass
 
             # Register active stream for partial-save safety net
             _active_streams[session] = {"status": "streaming", "partial": "", "query": message, "is_research": do_research, "mode": _effective_mode}

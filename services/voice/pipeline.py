@@ -1,0 +1,361 @@
+# services/voice/pipeline.py
+"""Multi-agent voice → chat pipeline (fast, duplicate-proof).
+
+    live voice turns
+          │
+          ▼
+    ① GATE      — instant local check: is there NEW, substantive user speech
+                  since the last evaluation? (no model call)
+          │
+          ▼
+    ② MEMORY    — snapshot of the hierarchical spine (compression keeps
+                  running in the background; we never block on it)
+          │
+          ▼
+    ③ DECIDER   — ONE JEV call (LLM fallback) with typed questions:
+                  should_send · ready · already_sent · intent · urgency
+          │
+          ▼
+    ④ FORGER    — one self-contained chat message from the NEW speech,
+                  using memory only to resolve references.
+          │
+          ▼
+    duplicate guard (token similarity vs. recently sent) → frontend queue
+
+Duplicate-proofing is deterministic: every user turn carries a sequence
+number; once the decider has evaluated speech that the user finished
+(ready), it is *consumed* and can never trigger another forge. A per-memory
+lock serialises concurrent runs.
+"""
+
+import asyncio
+import json
+import logging
+import re
+import time
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+from src.decisions import DecisionsUnavailable, jev_available, jev_decide
+from src.endpoint_resolver import resolve_endpoint
+from src.llm_core import llm_call_async
+from services.voice.memory import chat_summary_spine, get_voice_memory
+
+logger = logging.getLogger(__name__)
+
+INTENTS = {
+    "task": "Do something: create, edit, send, schedule, run, change a file/email/calendar/code",
+    "question": "Answer a factual or analytical question that needs the chat agent",
+    "research": "Look something up on the web or do deep research",
+    "remember": "Store a fact, preference, or note for later",
+    "followup": "Refine, correct, or continue something already sent to the chat",
+    "none": "Small talk, thinking out loud, acknowledgement — nothing to send",
+}
+
+SPEAKER_LEGEND = (
+    "USER = the human speaking in the voice call; ASSISTANT = the voice model (GPT-Live); "
+    "CHAT_USER = a message already sent into the chat thread; CHAT_AI = the chat agent's answer in the thread."
+)
+
+DECIDER_FALLBACK_PROMPT = """You are the decision maker of a voice→chat pipeline. You receive a hierarchical
+memory of a live voice conversation (highest summary layer, newest summary of each level, current raw batch),
+the chat thread's own summary, and messages already sent to the chat.
+Judge ONLY new_user_speech; the rest is context.
+Answer ONLY with JSON:
+{"should_send": 0..1, "ready": 0..1, "already_sent": 0..1,
+ "intent": "task|question|research|remember|followup|none", "urgency": 0|1|2}
+- should_send: probability the user wants something done, looked up, answered or remembered — implicit and
+  indirect requests count ("I want to see…", "bring me…", "what time is it")
+- ready: probability the user has finished expressing it (not mid-sentence / still thinking)
+- already_sent: probability the same request is literally in already_sent_to_chat or a CHAT_USER turn
+  (ASSISTANT acknowledgements like "I'll check" do NOT count)"""
+
+FORGER_PROMPT = """You are the message forger of a voice→chat pipeline. A separate chat agent will execute
+your message but CANNOT hear the voice conversation. Write exactly ONE message, in the user's own first-person
+voice, that the chat agent can act on directly.
+The request is ONLY what is in NEW USER SPEECH. Use the context and memory solely to resolve references
+("it", "that file", "the meeting") and to fill in names, values, dates and constraints the user mentioned.
+Speakers: USER = human; ASSISTANT = voice model; CHAT_USER = already sent; CHAT_AI = the chat agent's answer.
+Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
+Concise, no preamble, no mention of "voice" or "transcript".
+Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}"""
+
+
+def _ev(**kw) -> Dict[str, Any]:
+    kw.setdefault("ts", time.time())
+    return kw
+
+
+def _parse_json(raw: str) -> Dict[str, Any]:
+    m = re.search(r"\{.*\}", raw or "", re.DOTALL)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _f(x, default=0.0) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return default
+
+
+def _threshold() -> float:
+    try:
+        from src.settings import load_settings
+        return max(0.05, min(0.99, float(load_settings().get("voice_act_threshold", 0.5))))
+    except Exception:
+        return 0.5
+
+
+async def _utility(owner: Optional[str], system: str, user: str, max_tokens: int = 400) -> str:
+    url, model, headers = resolve_endpoint("utility", owner=owner or None)
+    if not url or not model:
+        raise RuntimeError("No utility/default model configured")
+    return await llm_call_async(
+        url, model,
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.1, max_tokens=max_tokens, headers=headers, timeout=30,
+    )
+
+
+def _fmt(turns: List[Dict[str, Any]]) -> str:
+    return "\n".join(f"{t['speaker'].upper()}: {t['text']}" for t in turns)
+
+
+def _lock_for(mem) -> asyncio.Lock:
+    lock = getattr(mem, "_pipe_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        mem._pipe_lock = lock
+    return lock
+
+
+async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str, Any]:
+    """One decision call. JEV when available; LLM fallback otherwise."""
+    if use_jev:
+        try:
+            ans = await jev_decide(state, {
+                "should_send": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does new_user_speech contain anything the user wants done, looked up, answered or remembered — "
+                        "including IMPLICIT or INDIRECT requests ('I want to see…', 'bring me…', 'what time is it', "
+                        "'it'd be nice to know…', 'have you seen…', wishes, rhetorical asks, half-finished instructions)? "
+                        "Filler, acknowledgements, small talk, and questions about the call itself ('can you hear me', "
+                        "'are you there') are false."
+                    ),
+                    "criteria": {"true": "Any explicit, implicit or indirect request, question, task or info to keep",
+                                 "false": "Only filler / acknowledgement / small talk"},
+                },
+                "ready": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the request in new_user_speech clear enough to act on? Spoken requests are full of fillers "
+                        "('um', 'uh', 'let's say') and trailing words — that is still ready if the intent is clear."
+                    ),
+                    "criteria": {"true": "Intent is clear enough to act on", "false": "Genuinely cut off before the request was stated"},
+                },
+                "already_sent": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is essentially the same request already listed in already_sent_to_chat or as a CHAT_USER turn? "
+                        "ASSISTANT acknowledgements ('I'll check', 'on it', 'still waiting') do NOT mean it was sent. "
+                        "If already_sent_to_chat is empty and there are no CHAT_USER turns, this is false."
+                    ),
+                    "criteria": {"true": "The same request is literally in already_sent_to_chat / CHAT_USER",
+                                 "false": "Not in that list (acknowledgements don't count)"},
+                },
+                "intent": {
+                    "type": "choice",
+                    "instructions": "What kind of action does the user want from the chat agent?",
+                    "criteria": INTENTS,
+                },
+                "urgency": {
+                    "type": "score",
+                    "instructions": "How urgent is it for the user?",
+                    "criteria": ["Whenever", "Soon", "Right now"],
+                },
+            })
+            return {
+                "engine": "jev",
+                "should_send": _f(ans["should_send"]["value"]),
+                "ready": _f(ans["ready"]["value"], 1.0),
+                "already_sent": _f(ans["already_sent"]["value"]),
+                "intent": ans["intent"]["value"] or "none",
+                "intent_confidence": ans["intent"].get("confidence"),
+                "urgency": ans["urgency"]["value"],
+            }
+        except DecisionsUnavailable as e:
+            logger.info(f"voice decider: JEV unavailable → LLM fallback ({e})")
+
+    data = _parse_json(await _utility(owner, DECIDER_FALLBACK_PROMPT,
+                                      json.dumps(state, ensure_ascii=False)[:9000], 100))
+    return {
+        "engine": "llm",
+        "should_send": _f(data.get("should_send")),
+        "ready": _f(data.get("ready", 1), 1.0),
+        "already_sent": _f(data.get("already_sent")),
+        "intent": data.get("intent") or "none",
+        "urgency": data.get("urgency", 0),
+    }
+
+
+async def run_pipeline(
+    owner: str,
+    voice_id: str,
+    turns: List[Dict[str, Any]],
+    chat_session_id: Optional[str] = None,
+    force: bool = False,
+    settle: bool = False,
+) -> AsyncIterator[Dict[str, Any]]:
+    from src.cost_ledger import set_cost_scope
+    set_cost_scope(chat_session_id or None, "voice-pipeline", owner)
+    mem = get_voice_memory(owner, voice_id)
+    mem.add_turns(turns)
+    use_jev = jev_available()
+    yield _ev(type="hello", engine="jev" if use_jev else "llm", memory=mem.stats())
+
+    # The decision path owns the utility model while it runs; compression is a
+    # background nice-to-have that starts only once this run is finished.
+    mem.pipeline_active += 1
+    try:
+        async for ev in _run_locked(mem, owner, chat_session_id, force, use_jev, settle):
+            yield ev
+    finally:
+        mem.pipeline_active = max(0, mem.pipeline_active - 1)
+        mem.schedule_compaction()
+
+
+async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False) -> AsyncIterator[Dict[str, Any]]:
+    async with _lock_for(mem):
+        # ① GATE ──────────────────────────────────────────────────────────────
+        t0 = time.time()
+        yield _ev(type="stage", stage="observe", status="running")
+        new_user = mem.new_user_turns()
+        new_text = " ".join(t["text"] for t in new_user).strip()
+        words = len(new_text.split())
+        if force and not new_user:
+            # "Send now" with nothing new: forge from the latest user speech.
+            new_user = [t for t in mem.recent_turns(8) if t["speaker"] == "user"][-2:]
+            new_text = " ".join(t["text"] for t in new_user).strip()
+            words = len(new_text.split())
+        gate = force or words >= 3
+        yield _ev(type="stage", stage="observe", status="done" if gate else "idle",
+                  score=1.0 if gate else 0.0, words=words, ms=int((time.time() - t0) * 1000))
+        if not new_text or not gate:
+            yield _ev(type="done", send=False, reason="no-new-speech" if not new_text else "too-short")
+            return
+
+        # ② MEMORY SNAPSHOT (no waiting on compression) ─────────────────────
+        t0 = time.time()
+        yield _ev(type="stage", stage="compress", status="running")
+        spine = mem.spine()
+        chat_txt = chat_summary_spine(chat_session_id, owner)
+        yield _ev(type="stage", stage="compress", status="done", ms=int((time.time() - t0) * 1000),
+                  depth=len(spine["layers"]), live=len(spine["current_batch"]))
+
+        # ③ DECIDER ───────────────────────────────────────────────────────────
+        t0 = time.time()
+        yield _ev(type="stage", stage="decide", status="running", engine="jev" if use_jev else "llm")
+        if force:
+            decision = {"engine": "manual", "should_send": 1.0, "ready": 1.0, "already_sent": 0.0,
+                        "intent": "task", "urgency": 1}
+        else:
+            state = {
+                "speaker_legend": SPEAKER_LEGEND,
+                "new_user_speech": new_text,
+                "recent_context": mem.recent_turns(8),
+                "already_sent_to_chat": spine["recently_sent"],
+                "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),
+                "chat_thread_summary": chat_txt[:2000],
+            }
+            try:
+                from src.cost_ledger import cost_scope
+                with cost_scope(source="voice-decide"):
+                    decision = await _decide(owner, state, use_jev)
+            except Exception as e:
+                logger.warning(f"voice decider failed: {e}")
+                yield _ev(type="stage", stage="decide", status="error", error=str(e)[:200])
+                yield _ev(type="done", send=False, reason="decider-error")
+                return
+
+        thr = _threshold()
+        # Spoken requests ramble; "ready" only holds back speech that was
+        # genuinely cut off, and a settle re-run (after the user went quiet)
+        # always counts as ready.
+        ready = settle or decision.get("ready", 1.0) >= 0.35
+        # JEV's duplicate score is only trusted when something was actually
+        # sent — the deterministic guards (consumption + similarity) do the rest.
+        has_sent = bool(spine["recently_sent"]) or any(
+            t["speaker"] == "chat_user" for t in mem.recent_turns(8))
+        dup = has_sent and decision.get("already_sent", 0) >= 0.8
+        send = (
+            decision.get("should_send", 0) >= thr
+            and ready
+            and not dup
+            and decision.get("intent") != "none"
+        )
+        decision["threshold"] = thr
+        decision["send"] = send
+        # Finished speech is consumed whether or not it was actionable, so the
+        # same words are never re-evaluated (or re-forged) on the next turn.
+        if ready or force:
+            mem.consume()
+        ms = int((time.time() - t0) * 1000)
+        yield _ev(type="decision", decision=decision, ms=ms)
+        yield _ev(type="stage", stage="decide", status="done" if send else "idle", ms=ms, engine=decision.get("engine"))
+        if not send:
+            if not ready:
+                reason = "not-ready"
+            elif dup:
+                reason = "duplicate"
+            else:
+                reason = "below-threshold"
+            yield _ev(type="done", send=False, reason=reason)
+            return
+
+        # ④ FORGER ────────────────────────────────────────────────────────────
+        t0 = time.time()
+        yield _ev(type="stage", stage="forge", status="running")
+        forger_input = (
+            f"Intent: {decision.get('intent')} · urgency: {decision.get('urgency')}\n\n"
+            f"=== NEW USER SPEECH (the request) ===\n{new_text}\n\n"
+            f"=== Recent context ===\n{_fmt(mem.recent_turns(8))}\n\n"
+            f"=== Memory ===\n{mem.spine_text(include_live=False)[:4000] or '(none)'}\n\n"
+            f"=== Chat thread so far ===\n{chat_txt[:3000] or '(empty)'}\n\n"
+            f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")
+        )
+        try:
+            from src.cost_ledger import cost_scope
+            with cost_scope(source="voice-forge"):
+                raw = await _utility(owner, FORGER_PROMPT, forger_input[:14000], 500)
+            data = _parse_json(raw)
+            message = (data.get("message") or "").strip()
+            title = (data.get("title") or "").strip()[:60]
+            if not message and raw and not raw.strip().startswith("{"):
+                message = raw.strip()
+        except Exception as e:
+            logger.warning(f"voice forger failed: {e}")
+            yield _ev(type="stage", stage="forge", status="error", error=str(e)[:200])
+            yield _ev(type="done", send=False, reason="forger-error")
+            return
+        if not message:
+            yield _ev(type="stage", stage="forge", status="error", error="empty message")
+            yield _ev(type="done", send=False, reason="forger-empty")
+            return
+
+        dup = mem.is_duplicate(message)
+        if dup:
+            yield _ev(type="stage", stage="forge", status="idle", ms=int((time.time() - t0) * 1000))
+            yield _ev(type="done", send=False, reason="duplicate", duplicate_of=dup[:160])
+            return
+
+        mem.record_sent(message, decision)
+        yield _ev(type="stage", stage="forge", status="done", ms=int((time.time() - t0) * 1000))
+        yield _ev(type="forged", title=title or (decision.get("intent") or "Request").title(),
+                  message=message, intent=decision.get("intent"), urgency=decision.get("urgency"))
+        yield _ev(type="memory", memory=mem.stats())
+        yield _ev(type="done", send=True)

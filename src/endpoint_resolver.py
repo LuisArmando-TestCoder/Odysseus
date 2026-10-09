@@ -362,6 +362,30 @@ def resolve_vision_fallback_candidates() -> list:
     return _resolve_fallback_candidates("vision_model_fallbacks")
 
 
+def resolve_openrouter_key() -> Optional[str]:
+    """Return an OpenRouter API key: env var first, then any configured
+    OpenRouter ModelEndpoint. Shared by STT (Whisper) and JEV Decisions."""
+    import os
+    key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    if key:
+        return key
+    db = SessionLocal()
+    try:
+        eps = db.query(ModelEndpoint).filter(
+            ModelEndpoint.base_url.like("%openrouter.ai%")
+        ).all()
+        for ep in eps:
+            if getattr(ep, "is_enabled", True) is False:
+                continue
+            if ep.api_key:
+                return ep.api_key
+    except Exception as e:
+        logger.debug(f"OpenRouter key lookup failed: {e}")
+    finally:
+        db.close()
+    return None
+
+
 def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) -> list:
     out = []
     try:

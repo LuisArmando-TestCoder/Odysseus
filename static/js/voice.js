@@ -1,40 +1,100 @@
-// voice.js — Real-time voice conversation via OpenAI Realtime API (WebRTC),
-// with a FFT-driven fluid shader. The mic streams continuously; OpenAI's
-// server-side VAD handles turn-taking and barge-in, so it feels like a phone
-// call — no record-then-send.
-
-let _micStream = null;
-let _audioCtx = null;
-let _analyser = null;
-let _pc = null;
-let _dc = null;
-let _audioEl = null;
-let _active = false;
-
-// ── Reasoning → chat queue ──────────────────────────────────────────────────
-let _transcriptBuffer = [];   // {speaker, text} not yet sent to the reasoner
-let _reasonDebounce = null;
-let _reasoning = false;
-let _queue = [];              // chat messages awaiting dispatch
-let _dispatcherTimer = null;
-let _lastReasonAt = 0;
-
-let _canvas = null;
-let _gl = null;
-let _raf = 0;
-let _fftLoc = null;
-let _timeLoc = null;
-let _resLoc = null;
-let _freqData = null;
-let _t0 = 0;
+// voice.js — Odysseus Advanced Voice Mode.
+//
+// Full-screen, Jarvis-style voice HUD on top of GPT-Live (OpenAI realtime over
+// WebRTC; the API key stays server-side). The chat keeps using whatever model
+// the user selected — voice never replaces it, it *drives* it:
+//
+//   mic ─► GPT-Live (talks back, barge-in via server VAD)
+//            │ transcripts
+//            ▼
+//   /api/realtime/pipeline  (SSE)
+//     ① Observer   → is anything here worth acting on?
+//     ② Compressor → hierarchical voice memory (highest layer, newest of every
+//                    level, current raw batch) — quasi-infinite & reliable
+//     ③ Decider    → JEV calibrated decisions (act / ready / duplicate / intent / urgency)
+//     ④ Forger     → one self-contained chat message
+//            │
+//            ▼
+//   queue ─► dispatched to the chat only when nothing is executing
+//            └─► when the chat answers, GPT-Live speaks a short summary back.
 
 const BANDS = 64;
+const STATE_COLORS = {
+  idle:       [0.36, 0.62, 0.78],
+  connecting: [0.45, 0.70, 1.00],
+  listening:  [0.30, 0.86, 1.00],
+  user:       [0.35, 1.00, 0.82],
+  speaking:   [1.00, 0.72, 0.32],
+  muted:      [0.52, 0.56, 0.62],
+  error:      [1.00, 0.36, 0.40],
+};
+const THINK_COLOR = [0.68, 0.48, 1.00];
+const STATE_LABELS = {
+  idle:       ['STANDBY', 'Tap the core or press Space to connect'],
+  connecting: ['LINKING', 'Establishing neural link…'],
+  listening:  ['LISTENING', 'Speak naturally — interrupt any time'],
+  user:       ['HEARING YOU', 'Go on…'],
+  speaking:   ['RESPONDING', 'Talk over me to interrupt'],
+  muted:      ['MUTED', 'Press M to unmute'],
+  error:      ['LINK FAILURE', 'Tap the core to retry'],
+};
+const STAGES = ['observe', 'compress', 'decide', 'forge'];
+const INTENT_LABELS = {
+  task: 'Task', question: 'Question', research: 'Research',
+  remember: 'Remember', followup: 'Follow-up', none: 'None',
+};
 
-function _apiBase() {
-  return window.location.origin;
-}
+// ── Connection state ────────────────────────────────────────────────────────
+let _micStream = null, _audioCtx = null, _micAnalyser = null, _outAnalyser = null;
+let _pc = null, _dc = null, _audioEl = null;
+let _active = false, _connecting = false, _muted = false;
+let _state = 'idle';
+let _callStart = 0, _timerInt = 0;
 
-// ── Shader sources ──────────────────────────────────────────────────────────
+// ── Pipeline / queue state ──────────────────────────────────────────────────
+let _voiceId = 'global';
+let _pending = [];            // turns not yet sent to the pipeline
+let _pipeTimer = 0, _pipeBusy = false, _pipeRerun = false, _pipeAbort = null;
+let _queue = [];              // {id, title, message, intent, urgency, status}
+let _awaiting = null;         // {id, sid, sawBusy, since}
+let _opts = { review: false, speak: true };
+
+// ── Chat mirror state ───────────────────────────────────────────────────────
+let _chatObs = null, _chatTickInt = 0, _chatRenderT = 0;
+let _costTick = 0, _costSid = undefined;
+let _chatSid = null, _chatWasBusy = false;
+let _injectOK = true, _lastInjectAt = 0;
+let _respActive = false, _pendingBriefs = [];   // GPT-Live is mid-response → briefings wait
+
+// ── Event diagnostics ───────────────────────────────────────────────────────
+const _eventTypes = new Map();   // type → count
+let _transcriptSeen = false, _diagT = 0;
+
+// ── Transcript streaming ────────────────────────────────────────────────────
+let _aiLine = null, _aiText = '', _aiFinalizeT = 0;
+let _userLine = null, _userText = '', _userFinalizeT = 0;
+
+// ── Render (WebGL) ──────────────────────────────────────────────────────────
+let _canvas = null, _gl = null, _raf = 0, _prog = null, _tex = null;
+let _u = {};
+let _fftBytes = new Uint8Array(BANDS);
+let _tmpBands = new Uint8Array(BANDS);   // reused every frame — no per-frame allocation
+let _t0 = performance.now();
+let _col = STATE_COLORS.idle.slice();
+let _lvl = 0, _out = 0, _think = 0, _thinkTarget = 0;
+let _lastCssAt = 0, _lastCssR = -1, _lastCssG = -1, _lastCssB = -1, _lastCssE = -1;
+let _scale = 1, _scaleAt = 0, _lastFrameAt = 0;
+
+let _root = null;
+let _assistantName = 'ALFRED';
+let _keyHandler = null;
+
+const $ = (sel) => (_root ? _root.querySelector(sel) : null);
+const _api = (p) => `${window.location.origin}${p}`;
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SHADERS — arc-reactor core
+// ═══════════════════════════════════════════════════════════════════════════
 
 const VERT = `
 attribute vec2 a_pos;
@@ -45,370 +105,1620 @@ const FRAG = `
 precision highp float;
 uniform vec2 u_res;
 uniform float u_time;
-uniform float u_fft[BANDS];
+uniform sampler2D u_fft;
+uniform float u_level;
+uniform float u_out;
+uniform vec3 u_color;
+uniform float u_think;
+#define TAU 6.28318530718
 
-float hash(vec3 p) {
-  p = fract(p * 0.3183099 + 0.1);
-  p *= 17.0;
-  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
-float noise(vec3 x) {
-  vec3 i = floor(x);
-  vec3 f = fract(x);
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
-                 mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-             mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-                 mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
-float fbm(vec3 p) {
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 5; i++) {
-    v += a * noise(p);
-    p = p * 2.02 + vec3(11.0);
-    a *= 0.5;
-  }
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 7.1; a *= 0.5; }
   return v;
 }
+float fft(float x) { return texture2D(u_fft, vec2(clamp(x, 0.0, 1.0), 0.5)).r; }
+float ring(float r, float rad, float w) { return smoothstep(w, 0.0, abs(r - rad)); }
+
 void main() {
   vec2 uv = (2.0 * gl_FragCoord.xy - u_res) / min(u_res.x, u_res.y);
   float r = length(uv);
-  if (r > 1.0) discard;
+  float a = atan(uv.y, uv.x);
+  float an = a / TAU + 0.5;
+  float t = u_time;
+  float e = clamp(max(u_level, u_out), 0.0, 1.0);
+  vec3 c = u_color;
+  vec3 col = vec3(0.0);
 
-  float bass = 0.0, mid = 0.0, hi = 0.0;
-  for (int i = 0; i < BANDS; i++) {
-    float v = u_fft[i];
-    if (i < 4) bass += v;
-    else if (i < 24) mid += v;
-    else hi += v;
+  // ── plasma core ──
+  float coreR = 0.19 + 0.07 * e + 0.012 * sin(t * 2.1);
+  vec2 warp = vec2(fbm(uv * 3.0 + t * 0.25), fbm(uv * 3.0 - t * 0.21));
+  float n = fbm(uv * 5.0 + warp * 1.6 + vec2(t * 0.4, -t * 0.3));
+  float core = smoothstep(coreR, 0.0, r);
+  col += c * core * (0.55 + 0.9 * n);
+  col += vec3(1.0) * pow(core, 3.0) * (0.45 + 0.9 * e);
+  col += c * exp(-r * r * 13.0) * (0.22 + 0.7 * e);
+  col += c * ring(r, coreR + 0.035, 0.006) * (0.7 + 0.6 * e);
+
+  // ── radial spectrum (mirrored) ──
+  float fx = abs(an * 2.0 - 1.0);
+  float s = fft(fx * 0.85);
+  float seg = fract(an * 120.0);
+  float bar = smoothstep(0.12, 0.24, seg) * smoothstep(0.88, 0.76, seg);
+  float r0 = 0.39;
+  float r1 = r0 + 0.035 + s * 0.27;
+  float inBar = step(r0, r) * smoothstep(r1, r1 - 0.012, r);
+  col += mix(c, vec3(1.0), s * 0.55) * bar * inBar * (0.3 + 1.3 * s);
+  col += c * ring(r, 0.375, 0.004) * 0.75;
+
+  // ── instrument rings ──
+  float tk = fract(an * 72.0);
+  col += c * ring(r, 0.745, 0.012) * step(tk, 0.1) * 0.5;
+  col += c * ring(r, 0.705, 0.0025) * 0.35;
+  float arc1 = step(fract((an + t * 0.035) * 6.0), 0.62);
+  col += c * ring(r, 0.805, 0.0065) * arc1 * 0.9;
+  float arc2 = step(fract((an - t * 0.022) * 3.0), 0.33);
+  col += c * ring(r, 0.875, 0.004) * arc2 * 0.65;
+  float dash = step(fract((an + t * 0.07) * 48.0), 0.45);
+  col += c * ring(r, 0.935, 0.003) * dash * 0.4;
+
+  // ── thinking: radar sweep + orbiting satellites ──
+  float sweep = fract(an - t * 0.33);
+  float band = step(0.40, r) * step(r, 0.90);
+  col += c * u_think * exp(-sweep * 9.0) * band * 0.55;
+  for (int k = 0; k < 3; k++) {
+    float fk = float(k);
+    float ang = t * (1.2 + fk * 0.35) + fk * 2.094;
+    vec2 p = (0.80 + fk * 0.035) * vec2(cos(ang), sin(ang));
+    col += mix(c, vec3(1.0), 0.6) * u_think * smoothstep(0.03, 0.0, length(uv - p));
   }
-  bass = clamp(bass * 0.25, 0.0, 1.0);
-  mid = clamp(mid * 0.05, 0.0, 1.0);
-  hi = clamp(hi * 0.02, 0.0, 1.0);
 
-  float t = u_time * 0.35;
-  vec3 p = vec3(uv * (1.6 + 1.8 * bass), t);
-  float n = fbm(p);
-  float n2 = fbm(vec3(uv * 3.4, t * 1.3) + vec3(7.0));
-  float n3 = fbm(vec3(uv * 6.2, -t * 0.9) + vec3(13.0));
-
-  float m = 0.55 * n + 0.3 * n2 + 0.15 * n3;
-  float flow = sin(uv.y * 8.0 + u_time * (1.0 + bass * 3.0)) * 0.5 + 0.5;
-
-  vec3 deep = vec3(0.04, 0.08, 0.16);
-  vec3 teal = vec3(0.08, 0.45, 0.5);
-  vec3 violet = vec3(0.45, 0.2, 0.6);
-  vec3 cyan = vec3(0.3, 0.9, 0.95);
-
-  vec3 col = mix(deep, teal, smoothstep(0.1, 0.9, m));
-  col = mix(col, violet, mid * smoothstep(0.2, 0.8, n2));
-  col = mix(col, cyan, hi * smoothstep(0.3, 0.9, n3));
-  col += flow * vec3(0.02, 0.04, 0.06) * (0.5 + bass);
-  col *= smoothstep(1.0, 0.82, r);
-  col += vec3(0.02, 0.05, 0.08) * (0.4 + 0.6 * bass) * (1.0 - r * 0.6);
-
-  gl_FragColor = vec4(col, 1.0);
+  col += c * exp(-abs(r - 0.8) * 11.0) * 0.06 * (1.0 + e);
+  col *= smoothstep(1.02, 0.95, r);
+  col = 1.0 - exp(-col * 1.25);
+  float alpha = clamp(max(col.r, max(col.g, col.b)) * 1.1, 0.0, 1.0);
+  gl_FragColor = vec4(col, alpha);
 }
 `;
-
-// ── WebGL ───────────────────────────────────────────────────────────────────
 
 function _compile(type, src) {
   const s = _gl.createShader(type);
   _gl.shaderSource(s, src);
   _gl.compileShader(s);
   if (!_gl.getShaderParameter(s, _gl.COMPILE_STATUS)) {
-    console.error('shader error', _gl.getShaderInfoLog(s));
+    console.error('voice shader error', _gl.getShaderInfoLog(s));
     return null;
   }
   return s;
 }
 
-function _show(canvas) {
+function _initGL(canvas) {
   _canvas = canvas;
-  _gl = _canvas.getContext('webgl', { antialias: true, alpha: true });
+  _gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true });
+  if (!_gl) return false;
   const vs = _compile(_gl.VERTEX_SHADER, VERT);
   const fs = _compile(_gl.FRAGMENT_SHADER, FRAG);
-  const prog = _gl.createProgram();
-  _gl.attachShader(prog, vs);
-  _gl.attachShader(prog, fs);
-  _gl.linkProgram(prog);
-  _gl.useProgram(prog);
+  if (!vs || !fs) { _gl = null; return false; }
+  _prog = _gl.createProgram();
+  _gl.attachShader(_prog, vs);
+  _gl.attachShader(_prog, fs);
+  _gl.linkProgram(_prog);
+  _gl.useProgram(_prog);
 
   const buf = _gl.createBuffer();
   _gl.bindBuffer(_gl.ARRAY_BUFFER, buf);
   _gl.bufferData(_gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), _gl.STATIC_DRAW);
-  const loc = _gl.getAttribLocation(prog, 'a_pos');
+  const loc = _gl.getAttribLocation(_prog, 'a_pos');
   _gl.enableVertexAttribArray(loc);
   _gl.vertexAttribPointer(loc, 2, _gl.FLOAT, false, 0, 0);
 
-  _fftLoc = _gl.getUniformLocation(prog, 'u_fft');
-  _timeLoc = _gl.getUniformLocation(prog, 'u_time');
-  _resLoc = _gl.getUniformLocation(prog, 'u_res');
-  _freqData = new Uint8Array(BANDS);
-  _t0 = performance.now();
+  _tex = _gl.createTexture();
+  _gl.bindTexture(_gl.TEXTURE_2D, _tex);
+  _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_MIN_FILTER, _gl.LINEAR);
+  _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_MAG_FILTER, _gl.LINEAR);
+  _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_WRAP_S, _gl.CLAMP_TO_EDGE);
+  _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_WRAP_T, _gl.CLAMP_TO_EDGE);
+  _gl.texImage2D(_gl.TEXTURE_2D, 0, _gl.LUMINANCE, BANDS, 1, 0, _gl.LUMINANCE, _gl.UNSIGNED_BYTE, _fftBytes);
 
-  _raf = requestAnimationFrame(_loop);
+  for (const n of ['u_res', 'u_time', 'u_fft', 'u_level', 'u_out', 'u_color', 'u_think']) {
+    _u[n] = _gl.getUniformLocation(_prog, n);
+  }
+  _gl.uniform1i(_u.u_fft, 0);
+  _gl.enable(_gl.BLEND);
+  _gl.blendFunc(_gl.ONE, _gl.ONE_MINUS_SRC_ALPHA);
+  return true;
+}
+
+function _readBands(analyser, into, mix) {
+  if (!analyser) return 0;
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+  // Voice energy lives low — use the bottom ~60% of bins.
+  const usable = Math.floor(data.length * 0.6);
+  const bin = Math.max(1, Math.floor(usable / BANDS));
+  let sum = 0;
+  for (let i = 0; i < BANDS; i++) {
+    let acc = 0;
+    for (let j = 0; j < bin; j++) acc += data[i * bin + j] || 0;
+    const v = acc / bin;
+    into[i] = mix ? Math.max(into[i], v) : v;
+    sum += v;
+  }
+  return Math.min(1, (sum / BANDS) / 110);
 }
 
 function _loop() {
-  if (!_gl) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  _raf = requestAnimationFrame(_loop);
+  const now = performance.now();
+
+  // Adaptive frame rate: if the last frame took too long, drop the render
+  // scale (and thus the pixel count) until it recovers.
+  const dt = now - _lastFrameAt;
+  _lastFrameAt = now;
+  if (now - _scaleAt > 2000) {
+    if (dt > 26) _scale = Math.max(0.5, _scale - 0.1);
+    else if (dt < 14 && _scale < 1) _scale = Math.min(1, _scale + 0.05);
+    _scaleAt = now;
+  }
+
+  // Audio analysis (also drives the state when events are sparse).
+  const micLvl = _muted ? 0 : _readBands(_micAnalyser, _tmpBands, false);
+  const outLvl = _readBands(_outAnalyser, _tmpBands, true);
+  for (let i = 0; i < BANDS; i++) _fftBytes[i] = Math.round(_fftBytes[i] * 0.55 + _tmpBands[i] * 0.45);
+  _lvl += (micLvl - _lvl) * 0.25;
+  _out += (outLvl - _out) * 0.25;
+  _think += (_thinkTarget - _think) * 0.06;
+
+  if (_active && !_muted) {
+    const next = _out > 0.07 ? 'speaking' : (_lvl > 0.11 ? 'user' : 'listening');
+    if (next !== _state) _setState(next);
+  }
+
+  const target = STATE_COLORS[_state] || STATE_COLORS.idle;
+  for (let i = 0; i < 3; i++) {
+    const want = target[i] * (1 - _think * 0.6) + THINK_COLOR[i] * _think * 0.6;
+    _col[i] += (want - _col[i]) * 0.07;
+  }
+
+  // Writing CSS custom properties forces a style recalc + repaint of the whole
+  // HUD. Throttle to ~15 Hz and only when the values actually changed.
+  if (_root && now - _lastCssAt > 66) {
+    const r = Math.round(_col[0] * 255), g = Math.round(_col[1] * 255), b = Math.round(_col[2] * 255);
+    const e = Math.round(Math.max(_lvl, _out) * 20) / 20;
+    if (r !== _lastCssR || g !== _lastCssG || b !== _lastCssB || e !== _lastCssE) {
+      _lastCssR = r; _lastCssG = g; _lastCssB = b; _lastCssE = e;
+      _root.style.setProperty('--vx-energy', e.toFixed(2));
+      _root.style.setProperty('--vx-r', r);
+      _root.style.setProperty('--vx-g', g);
+      _root.style.setProperty('--vx-b', b);
+    }
+    _lastCssAt = now;
+  }
+
+  if (!_gl || !_canvas) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2) * _scale;
   const w = Math.round(_canvas.clientWidth * dpr);
   const h = Math.round(_canvas.clientHeight * dpr);
+  if (!w || !h) return;
   if (_canvas.width !== w || _canvas.height !== h) {
     _canvas.width = w; _canvas.height = h;
     _gl.viewport(0, 0, w, h);
   }
-
-  if (_analyser) {
-    const data = new Uint8Array(_analyser.frequencyBinCount);
-    _analyser.getByteFrequencyData(data);
-    const bin = Math.max(1, Math.floor(data.length / BANDS));
-    for (let i = 0; i < BANDS; i++) {
-      let acc = 0, n = 0;
-      for (let j = 0; j < bin; j++) {
-        const idx = i * bin + j;
-        if (idx < data.length) { acc += data[idx]; n++; }
-      }
-      _freqData[i] = (acc / Math.max(1, n)) / 255;
-    }
-  }
-
-  _gl.uniform2f(_resLoc, w, h);
-  _gl.uniform1f(_timeLoc, (performance.now() - _t0) / 1000);
-  _gl.uniform1fv(_fftLoc, _freqData);
+  _gl.clearColor(0, 0, 0, 0);
+  _gl.clear(_gl.COLOR_BUFFER_BIT);
+  _gl.activeTexture(_gl.TEXTURE0);
+  _gl.bindTexture(_gl.TEXTURE_2D, _tex);
+  _gl.texSubImage2D(_gl.TEXTURE_2D, 0, 0, 0, BANDS, 1, _gl.LUMINANCE, _gl.UNSIGNED_BYTE, _fftBytes);
+  _gl.uniform2f(_u.u_res, w, h);
+  _gl.uniform1f(_u.u_time, (now - _t0) / 1000);
+  _gl.uniform1f(_u.u_level, _lvl);
+  _gl.uniform1f(_u.u_out, _out);
+  _gl.uniform3f(_u.u_color, _col[0], _col[1], _col[2]);
+  _gl.uniform1f(_u.u_think, _think);
   _gl.drawArrays(_gl.TRIANGLES, 0, 3);
-
-  _raf = requestAnimationFrame(_loop);
 }
 
-function _hide() {
-  if (_raf) { cancelAnimationFrame(_raf); _raf = 0; }
-  _canvas = null; _gl = null;
+// ═══════════════════════════════════════════════════════════════════════════
+//  HUD
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ICON = {
+  close: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg>',
+  micOff: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 12.9A7 7 0 0 0 19 10"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><path d="M5 10a7 7 0 0 0 11.3 5.5"/><line x1="12" y1="19" x2="12" y2="22"/></svg>',
+  power: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>',
+  send: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  speak: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>',
+};
+
+const STAGE_META = {
+  observe:  ['Observe',  'Attention gate'],
+  compress: ['Compress', 'Memory spine'],
+  decide:   ['Decide',   'JEV decisions'],
+  forge:    ['Forge',    'Chat message'],
+};
+
+function _gauge(key, label) {
+  return `<div class="vx-gauge" data-g="${key}">
+    <svg viewBox="0 0 44 44"><circle class="vx-g-track" cx="22" cy="22" r="18" pathLength="100"/><circle class="vx-g-fill" cx="22" cy="22" r="18" pathLength="100"/></svg>
+    <span class="vx-g-val">—</span><label>${label}</label></div>`;
 }
 
-function _cleanup() {
-  if (_micStream) { _micStream.getTracks().forEach(t => t.stop()); _micStream = null; }
-  if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; }
-  if (_audioEl) { _audioEl.pause(); _audioEl.srcObject = null; _audioEl = null; }
-  _analyser = null; _pc = null; _dc = null;
+function _buildHUD() {
+  const el = document.createElement('div');
+  el.id = 'vx-root';
+  el.className = 'vx';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', 'Advanced voice mode');
+  el.dataset.state = 'idle';
+  el.innerHTML = `
+  <div class="vx-bg" aria-hidden="true"><div class="vx-grid"></div><div class="vx-aurora"></div><div class="vx-scan"></div><div class="vx-vignette"></div></div>
+  <header class="vx-top">
+    <div class="vx-brand">
+      <span class="vx-logo"><i></i></span>
+      <div><div class="vx-title">ALFRED</div><div class="vx-sub">Odysseus · Advanced Voice</div></div>
+    </div>
+    <div class="vx-badges">
+      <span class="vx-badge" data-k="live" title="Realtime voice"><i></i><span>GPT-Live</span></span>
+      <span class="vx-badge" data-k="jev" title="Decision maker"><i></i><span>JEV</span></span>
+      <span class="vx-badge" data-k="util" title="Compressor / forger model"><i></i><span>Utility</span></span>
+    </div>
+    <div class="vx-top-right">
+      <span class="vx-cost" title="API cost of this chat so far (voice + pipeline + chat)" aria-label="API cost">$0</span>
+      <span class="vx-timer" aria-label="Call duration">00:00</span>
+      <button class="vx-icon-btn" data-act="close" title="Close (Esc)" aria-label="Close voice mode">${ICON.close}</button>
+    </div>
+  </header>
+
+  <main class="vx-main">
+    <section class="vx-panel vx-left" aria-label="Live transcript and chat feed">
+      <div class="vx-pane vx-pane-voice">
+        <div class="vx-panel-h"><span>Live Transcript</span><span class="vx-live-dot"></span></div>
+        <div class="vx-transcript" id="vx-transcript">
+          <div class="vx-empty">Conversation appears here in real time.<br><kbd>Space</kbd> connect · <kbd>M</kbd> mute · <kbd>⏎</kbd> send now · <kbd>Esc</kbd> close</div>
+        </div>
+      </div>
+      <div class="vx-pane vx-pane-chat">
+        <div class="vx-panel-h"><span>Chat Feed</span><span class="vx-chat-state" data-s="idle">Idle</span></div>
+        <div class="vx-chatlog" id="vx-chatlog" aria-live="polite">
+          <div class="vx-empty">What the chat agent receives and answers appears here live.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="vx-center">
+      <div class="vx-orb-wrap">
+        <div class="vx-ring vx-r1"></div><div class="vx-ring vx-r2"></div><div class="vx-ring vx-r3"></div>
+        <div class="vx-halo"></div>
+        <canvas id="vx-canvas" aria-hidden="true"></canvas>
+        <button class="vx-orb-hit" data-act="core" aria-label="Connect or disconnect"></button>
+        <div class="vx-orb-label"><div class="vx-state">STANDBY</div><div class="vx-state-sub">Tap the core or press Space to connect</div></div>
+      </div>
+      <div class="vx-caption" id="vx-caption" aria-live="polite"></div>
+    </section>
+
+    <section class="vx-panel vx-right" aria-label="Neural pipeline">
+      <div class="vx-panel-h"><span>Neural Pipeline</span><span class="vx-engine" title="Decision engine">—</span></div>
+      <div class="vx-pipe">
+        ${STAGES.map((s, i) => `
+          <div class="vx-node" data-stage="${s}">
+            <div class="vx-node-ic"><span>${i + 1}</span></div>
+            <div class="vx-node-tx"><b>${STAGE_META[s][0]}</b><small>${STAGE_META[s][1]}</small></div>
+            <div class="vx-node-ms"></div>
+          </div>`).join('<div class="vx-link"><i></i></div>')}
+      </div>
+      <div class="vx-decision">
+        ${_gauge('send', 'Act')}${_gauge('ready', 'Ready')}${_gauge('novel', 'Novel')}
+        <div class="vx-intent">
+          <span class="vx-chip" data-intent="none">Awaiting</span>
+          <div class="vx-urgency" title="Urgency"><i></i><i></i><i></i></div>
+        </div>
+      </div>
+      <div class="vx-panel-h vx-sm"><span>Memory Strata</span><button class="vx-link-btn" data-act="reset-mem" title="Forget this voice memory">reset</button></div>
+      <div class="vx-strata" id="vx-strata"></div>
+      <div class="vx-mem-meta"><span data-m="turns">0 turns</span><span data-m="depth">depth 0</span><span data-m="comp">0 compactions</span></div>
+    </section>
+  </main>
+
+  <footer class="vx-bottom">
+    <div class="vx-queue" id="vx-queue" aria-label="Forged messages"></div>
+    <div class="vx-dock">
+      <label class="vx-toggle" title="Review forged messages before they reach the chat"><input type="checkbox" data-opt="review"><span class="vx-sw"></span>${ICON.eye}<em>Review</em></label>
+      <button class="vx-dock-btn" data-act="mute" title="Mute (M)" aria-label="Mute microphone">${ICON.mic}</button>
+      <button class="vx-dock-btn vx-primary" data-act="core" title="Connect / end (Space)" aria-label="Connect or end call">${ICON.power}</button>
+      <button class="vx-dock-btn" data-act="force" title="Forge & send now (Enter)" aria-label="Send now">${ICON.bolt}</button>
+      <label class="vx-toggle" title="Speak chat results back to you"><input type="checkbox" data-opt="speak" checked><span class="vx-sw"></span>${ICON.speak}<em>Speak results</em></label>
+    </div>
+  </footer>`;
+  return el;
 }
 
-// ── Status / transcript UI ──────────────────────────────────────────────────
-
-function _setStatus(text) {
-  const el = document.getElementById('doc-voice-status');
-  if (el) el.textContent = text;
+function _ensureCSS() {
+  if (document.getElementById('vx-css')) return;
+  const l = document.createElement('link');
+  l.id = 'vx-css';
+  l.rel = 'stylesheet';
+  l.href = '/static/css/voice-mode.css';
+  document.head.appendChild(l);
 }
 
-function _appendTranscript(speaker, text) {
-  if (!text || !text.trim()) return;
-  const el = document.getElementById('doc-voice-transcript');
-  if (el) {
-    const line = document.createElement('div');
-    line.className = 'voice-line';
-    line.innerHTML = `<b>${speaker}:</b> <span></span>`;
-    line.querySelector('span').textContent = text.trim();
-    el.appendChild(line);
-    el.scrollTop = el.scrollHeight;
-    while (el.children.length > 40) el.removeChild(el.firstChild);
+function _setState(s) {
+  _state = s;
+  if (!_root) return;
+  _root.dataset.state = s;
+  const [a, b] = STATE_LABELS[s] || STATE_LABELS.idle;
+  const st = $('.vx-state'); if (st) st.textContent = a;
+  const sub = $('.vx-state-sub'); if (sub) sub.textContent = b;
+  const mute = $('[data-act="mute"]');
+  if (mute) {
+    mute.innerHTML = _muted ? ICON.micOff : ICON.mic;
+    mute.classList.toggle('on', _muted);
+    mute.disabled = !_active;
   }
-  // Accumulate for the reasoning agent.
-  _transcriptBuffer.push({ speaker, text: text.trim() });
-  if (_transcriptBuffer.length > 60) _transcriptBuffer.splice(0, _transcriptBuffer.length - 60);
-  _scheduleReason();
+  const force = $('[data-act="force"]'); if (force) force.disabled = !_active;
+  const core = $('.vx-primary'); if (core) core.classList.toggle('live', _active || _connecting);
 }
 
-// ── Reasoning agent: decide what to send to the chat ────────────────────────
-
-function _scheduleReason() {
-  clearTimeout(_reasonDebounce);
-  _reasonDebounce = setTimeout(_maybeReason, 4000); // wait for a quiet gap
+function _setSub(text) {
+  const sub = $('.vx-state-sub');
+  if (sub) sub.textContent = text;
 }
 
-async function _maybeReason() {
-  if (_reasoning || !_transcriptBuffer.length) return;
-  _reasoning = true;
-  const lines = _transcriptBuffer
-    .map(l => (l.speaker === 'You' ? 'User' : 'Assistant') + ': ' + l.text)
-    .join('\n');
-  _transcriptBuffer = []; // process new turns next time
+function _caption(text, who) {
+  const el = $('#vx-caption');
+  if (!el) return;
+  const t = (text || '').trim();
+  el.dataset.who = who || '';
+  el.textContent = t.length > 160 ? '…' + t.slice(-160) : t;
+  el.classList.toggle('show', !!t);
+}
+
+function _fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// ── Transcript ──────────────────────────────────────────────────────────────
+
+function _newLine(who) {
+  const box = $('#vx-transcript');
+  if (!box) return null;
+  const empty = box.querySelector('.vx-empty');
+  if (empty) empty.remove();
+  const line = document.createElement('div');
+  line.className = `vx-line vx-${who}`;
+  const tag = document.createElement('div');
+  tag.className = 'vx-who';
+  tag.textContent = who === 'user' ? 'YOU' : _assistantName;
+  const ts = document.createElement('time');
+  ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  tag.appendChild(ts);
+  const body = document.createElement('div');
+  body.className = 'vx-say';
+  line.append(tag, body);
+  box.appendChild(line);
+  while (box.children.length > 120) box.removeChild(box.firstChild);
+  return line;
+}
+
+function _scrollTranscript() {
+  const box = $('#vx-transcript');
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+function _systemLine(text, kind = 'info') {
+  const box = $('#vx-transcript');
+  if (!box) return;
+  const empty = box.querySelector('.vx-empty');
+  if (empty) empty.remove();
+  const d = document.createElement('div');
+  d.className = `vx-sys vx-sys-${kind}`;
+  d.textContent = text;
+  box.appendChild(d);
+  _scrollTranscript();
+}
+
+function _join(prev, chunk) {
+  if (!prev) return chunk;
+  if (/^[\s,.!?;:)\]'’]/.test(chunk) || /[\s(\[-]$/.test(prev)) return prev + chunk;
+  return prev + chunk;
+}
+
+// Some transports stream true deltas, others resend the cumulative text so
+// far. Treat a chunk that extends what we already have as a replacement so
+// cumulative captions never duplicate.
+function _merge(prev, chunk) {
+  if (prev && chunk.length >= prev.length && chunk.startsWith(prev)) return chunk;
+  return _join(prev, chunk);
+}
+
+function _aiReplace(full) {
+  if (!full) return;
+  _transcriptSeen = true;
+  if (!_aiLine) _aiLine = _newLine('ai');
+  _aiText = full;
+  if (_aiLine) _aiLine.querySelector('.vx-say').textContent = _aiText;
+  _caption(_aiText, 'ai');
+}
+
+function _aiDelta(chunk) {
+  if (!chunk) return;
+  _transcriptSeen = true;
+  if (!_aiLine) { _aiLine = _newLine('ai'); _aiText = ''; }
+  _aiText = _merge(_aiText, chunk);
+  if (_aiLine) {
+    _aiLine.querySelector('.vx-say').textContent = _aiText;
+    _aiLine.classList.add('streaming');
+  }
+  _caption(_aiText, 'ai');
+  _scrollTranscript();
+  clearTimeout(_aiFinalizeT);
+  _aiFinalizeT = setTimeout(_aiFinalize, 2600);
+}
+
+function _aiFinalize() {
+  clearTimeout(_aiFinalizeT);
+  if (_aiLine) _aiLine.classList.remove('streaming');
+  const text = _aiText.trim();
+  if (text) _pending.push({ speaker: 'AI', text });
+  _aiLine = null; _aiText = '';
+}
+
+function _userDelta(chunk) {
+  if (!chunk) return;
+  _transcriptSeen = true;
+  if (!_userLine) { _userLine = _newLine('user'); _userText = ''; }
+  _userText = _merge(_userText, chunk);
+  if (_userLine) {
+    _userLine.querySelector('.vx-say').textContent = _userText;
+    _userLine.classList.add('streaming');
+  }
+  _caption(_userText, 'user');
+  _scrollTranscript();
+  clearTimeout(_userFinalizeT);
+  _userFinalizeT = setTimeout(() => _userFinal(null), 3000);
+}
+
+function _userFinal(full) {
+  clearTimeout(_userFinalizeT);
+  if (full) _transcriptSeen = true;
+  const text = ((full != null ? full : _userText) || '').trim();
+  if (!text) { _userLine = null; _userText = ''; return; }
+  if (!_userLine) _userLine = _newLine('user');
+  if (_userLine) {
+    _userLine.querySelector('.vx-say').textContent = text;
+    _userLine.classList.remove('streaming');
+  }
+  _caption(text, 'user');
+  _scrollTranscript();
+  _pending.push({ speaker: 'You', text });
+  _userLine = null; _userText = '';
+  _schedulePipeline(1100);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PIPELINE (SSE)
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _settleTimer = 0;
+function _schedulePipeline(delay = 1100, force = false) {
+  clearTimeout(_pipeTimer);
+  clearTimeout(_settleTimer);        // new speech supersedes a pending settle
+  _pipeTimer = setTimeout(() => _runPipeline(force), delay);
+}
+
+function _resetStages() {
+  if (!_root) return;
+  _root.querySelectorAll('.vx-node').forEach(n => {
+    n.dataset.status = '';
+    n.querySelector('.vx-node-ms').textContent = '';
+  });
+  _root.querySelectorAll('.vx-link').forEach(l => l.classList.remove('flow'));
+}
+
+function _stage(stage, status, ev) {
+  const node = $(`.vx-node[data-stage="${stage}"]`);
+  if (!node) return;
+  node.dataset.status = status;
+  const ms = node.querySelector('.vx-node-ms');
+  if (status === 'running') ms.textContent = '···';
+  else if (ev && typeof ev.ms === 'number') ms.textContent = ev.ms < 1000 ? `${ev.ms}ms` : `${(ev.ms / 1000).toFixed(1)}s`;
+  else ms.textContent = '';
+  if (stage === 'observe' && ev && typeof ev.score === 'number') {
+    node.querySelector('small').textContent = `Attention ${Math.round(ev.score * 100)}%`;
+  }
+  if (stage === 'compress' && ev && status === 'done') {
+    node.querySelector('small').textContent = `${ev.depth || 0} layers · ${ev.live || 0} raw`;
+  }
+  if (stage === 'decide' && ev && ev.engine) {
+    node.querySelector('small').textContent = ev.engine === 'jev' ? 'JEV decisions' : 'LLM fallback';
+  }
+  const idx = STAGES.indexOf(stage);
+  const links = _root.querySelectorAll('.vx-link');
+  if (status === 'done' && links[idx]) links[idx].classList.add('flow');
+}
+
+function _setGauge(key, v) {
+  const g = $(`.vx-gauge[data-g="${key}"]`);
+  if (!g) return;
+  const pct = Math.max(0, Math.min(1, Number(v) || 0));
+  g.querySelector('.vx-g-fill').style.strokeDasharray = `${(pct * 100).toFixed(1)} 100`;
+  g.querySelector('.vx-g-val').textContent = `${Math.round(pct * 100)}`;
+  g.dataset.level = pct >= 0.66 ? 'hi' : pct >= 0.4 ? 'mid' : 'lo';
+}
+
+function _renderDecision(d) {
+  _setGauge('send', d.should_send);
+  _setGauge('ready', d.ready);
+  _setGauge('novel', 1 - (Number(d.already_sent) || 0));
+  const chip = $('.vx-chip');
+  if (chip) {
+    const intent = d.intent || 'none';
+    chip.dataset.intent = intent;
+    const conf = typeof d.intent_confidence === 'number' ? ` · ${Math.round(d.intent_confidence * 100)}%` : '';
+    chip.textContent = (INTENT_LABELS[intent] || intent) + conf;
+  }
+  const urg = $('.vx-urgency');
+  if (urg) {
+    let u = d.urgency;
+    if (typeof u === 'string') u = ['Whenever', 'Soon', 'Right now'].indexOf(u);
+    u = Math.max(0, Math.min(2, Number(u) || 0));
+    urg.dataset.u = String(u);
+  }
+  const dec = $('.vx-decision');
+  if (dec) {
+    dec.classList.toggle('go', !!d.send);
+    dec.classList.remove('pulse'); void dec.offsetWidth; dec.classList.add('pulse');
+  }
+}
+
+function _renderMemory(m) {
+  if (!m || !_root) return;
+  const strata = $('#vx-strata');
+  if (strata) {
+    strata.innerHTML = '';
+    const layers = (m.layers || []).slice();
+    layers.forEach((l, i) => {
+      const row = document.createElement('div');
+      row.className = 'vx-stratum' + (i === 0 ? ' top' : '');
+      row.style.setProperty('--fill', Math.min(1, l.count / Math.max(1, m.merge_size)).toFixed(2));
+      const lv = document.createElement('b'); lv.textContent = `L${l.level}`;
+      const bar = document.createElement('div'); bar.className = 'vx-st-bar'; bar.appendChild(document.createElement('i'));
+      const pv = document.createElement('span'); pv.className = 'vx-st-pv';
+      pv.textContent = (l.preview || '').replace(/^[-*•\s]+/, '').replace(/\s+/g, ' ');
+      const ct = document.createElement('em'); ct.textContent = `${l.count}/${m.merge_size}`;
+      row.title = l.preview || '';
+      row.append(lv, bar, pv, ct);
+      strata.appendChild(row);
+    });
+    const raw = document.createElement('div');
+    raw.className = 'vx-stratum raw' + (m.compressing ? ' busy' : '');
+    raw.style.setProperty('--fill', Math.min(1, m.live_turns / Math.max(1, m.batch_size)).toFixed(2));
+    const lv = document.createElement('b'); lv.textContent = 'RAW';
+    const bar = document.createElement('div'); bar.className = 'vx-st-bar'; bar.appendChild(document.createElement('i'));
+    const pv = document.createElement('span'); pv.className = 'vx-st-pv';
+    pv.textContent = m.compressing ? 'Compressing batch…' : 'Current batch — uncompressed';
+    const ct = document.createElement('em'); ct.textContent = `${m.live_turns}/${m.batch_size}`;
+    raw.append(lv, bar, pv, ct);
+    strata.appendChild(raw);
+  }
+  const set = (k, v) => { const e = $(`[data-m="${k}"]`); if (e) e.textContent = v; };
+  set('turns', `${m.turns_total || 0} turns`);
+  set('depth', `depth ${m.depth || 0}`);
+  set('comp', `${m.compactions || 0} compactions`);
+}
+
+async function _runPipeline(force = false, settle = false) {
+  if (_pipeBusy) { _pipeRerun = true; return; }
+  const turns = _pending.splice(0, _pending.length);
+  if (!turns.length && !force && !settle) return;
+  _pipeBusy = true;
+  _thinkTarget = 1;
+  _resetStages();
+  const ctrl = new AbortController();
+  _pipeAbort = ctrl;
+  const sid = window.sessionModule?.getCurrentSessionId?.() || null;
   try {
-    const r = await fetch(`${_apiBase()}/api/realtime/reason`, {
+    const resp = await fetch(_api('/api/realtime/pipeline'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: lines }),
       credentials: 'same-origin',
+      signal: ctrl.signal,
+      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle }),
     });
-    const data = await r.json().catch(() => ({}));
-    if (data && data.send && data.message) {
-      _queue.push(data.message);
-      _setStatus(`${_queue.length} message(s) queued for the chat`);
-      _dispatch();
+    if (!resp.ok || !resp.body) throw new Error(`pipeline HTTP ${resp.status}`);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          try { _onPipeEvent(JSON.parse(line.slice(5).trim())); } catch (e) { /* partial */ }
+        }
+      }
     }
   } catch (e) {
-    console.error('reason-to-chat failed', e);
+    if (e.name !== 'AbortError') {
+      console.warn('voice pipeline failed', e);
+      _systemLine('Pipeline unavailable — ' + (e.message || e), 'warn');
+      _pending.unshift(...turns); // don't lose context
+    }
   } finally {
-    _reasoning = false;
-    _lastReasonAt = Date.now();
+    _pipeBusy = false;
+    _pipeAbort = null;
+    _thinkTarget = 0;
+    if (_pipeRerun) { _pipeRerun = false; _schedulePipeline(400); }
   }
 }
 
-// ── Dispatcher: send queued messages one-at-a-time when the chat is idle ────
-
-function _dispatch() {
-  if (_dispatcherTimer) return;
-  _dispatcherTimer = setInterval(() => {
-    if (!_queue.length) { clearInterval(_dispatcherTimer); _dispatcherTimer = null; return; }
-    const sid = window.sessionModule && window.sessionModule.getCurrentSessionId && window.sessionModule.getCurrentSessionId();
-    const busy = window.chatModule && window.chatModule.hasActiveStream && window.chatModule.hasActiveStream(sid);
-    if (busy) return;
-    const msg = _queue.shift();
-    _sendToChat(msg);
-    _setStatus(_queue.length ? `${_queue.length} message(s) still queued` : 'Sent to chat');
-  }, 1200);
+function _onPipeEvent(ev) {
+  switch (ev.type) {
+    case 'hello': {
+      const eng = $('.vx-engine');
+      if (eng) { eng.textContent = ev.engine === 'jev' ? 'JEV' : 'LLM'; eng.dataset.engine = ev.engine; }
+      _renderMemory(ev.memory);
+      break;
+    }
+    case 'stage': _stage(ev.stage, ev.status, ev); break;
+    case 'decision': _renderDecision(ev.decision || {}); break;
+    case 'memory': _renderMemory(ev.memory); break;
+    case 'forged': _enqueue(ev); break;
+    case 'done':
+      // Speech judged "still forming": once the user has been quiet for a
+      // moment, decide again treating it as finished (rambling ≠ incomplete).
+      if (ev.reason === 'not-ready') {
+        clearTimeout(_settleTimer);
+        _settleTimer = setTimeout(() => _runPipeline(false, true), 2500);
+      }
+      if (ev.reason === 'error' && ev.error) _systemLine('Pipeline error — ' + ev.error, 'warn');
+      else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
+      else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn');
+      break;
+  }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  QUEUE → CHAT
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _STOP = new Set(['the', 'a', 'an', 'to', 'of', 'and', 'or', 'please', 'me', 'my', 'i', 'for',
+  'in', 'on', 'it', 'that', 'this', 'is', 'be', 'can', 'you', 'with', 'at']);
+function _tokens(t) {
+  return new Set((String(t || '').toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length > 1 && !_STOP.has(w)));
+}
+function _similar(a, b) {
+  const x = _tokens(a), y = _tokens(b);
+  if (!x.size || !y.size) return 0;
+  let inter = 0;
+  for (const w of x) if (y.has(w)) inter++;
+  return inter / (x.size + y.size - inter);
+}
+
+function _enqueue(ev) {
+  // Never queue the same instruction twice (live items or anything sent in the last 30 min).
+  const now = Date.now();
+  const LIVE = ['review', 'queued', 'sending', 'sent', 'running', 'background'];
+  const dup = _queue.find(q => LIVE.includes(q.status) && _similar(q.message, ev.message) >= 0.6);
+  if (dup) {
+    _systemLine(`Already queued — “${dup.title}”`, 'info');
+    return;
+  }
+  const item = {
+    created: now,
+    id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    title: ev.title || 'Request',
+    message: ev.message,
+    intent: ev.intent || 'task',
+    urgency: ev.urgency,
+    status: _opts.review ? 'review' : 'queued',
+  };
+  _queue.push(item);
+  _renderQueue();
+  _systemLine(`Forged → “${item.title}”`, 'forge');
+  _ensureDispatcher();
+}
+
+function _statusLabel(s) {
+  return { review: 'Review', queued: 'Queued', waiting: 'Waiting for chat', sending: 'Sending',
+           running: 'Executing', background: 'Running in bg', answered: 'Done', sent: 'Sent',
+           interrupted: 'Interrupted', failed: 'Not sent' }[s] || s;
+}
+
+function _renderQueue() {
+  const box = $('#vx-queue');
+  if (!box) return;
+  const visible = _queue.slice(-6);
+  box.classList.toggle('has', visible.length > 0);
+  box.innerHTML = '';
+  visible.forEach(item => {
+    const card = document.createElement('article');
+    card.className = 'vx-card';
+    card.dataset.status = item.status;
+    card.dataset.id = item.id;
+    const head = document.createElement('header');
+    const chip = document.createElement('span');
+    chip.className = 'vx-chip'; chip.dataset.intent = item.intent;
+    chip.textContent = INTENT_LABELS[item.intent] || item.intent;
+    const title = document.createElement('b'); title.textContent = item.title;
+    const st = document.createElement('span'); st.className = 'vx-pill'; st.textContent = _statusLabel(item.status);
+    head.append(chip, title, st);
+    const body = document.createElement('p');
+    body.className = 'vx-card-msg';
+    body.textContent = item.message;
+    const acts = document.createElement('div');
+    acts.className = 'vx-card-acts';
+    if (['review', 'queued', 'failed'].includes(item.status)) {
+      const label = item.status === 'failed' ? 'Retry' : (item.status === 'queued' ? 'Send next' : 'Send');
+      acts.innerHTML = `
+        <button data-q="send" title="Send to chat">${ICON.send}<span>${label}</span></button>
+        <button data-q="edit" title="Edit">${ICON.edit}</button>
+        <button data-q="drop" title="Discard">${ICON.trash}</button>`;
+    } else if (['sent', 'running', 'background', 'sending'].includes(item.status)) {
+      acts.innerHTML = `<button data-q="release" title="Stop tracking this item (the chat keeps running)">${ICON.close}<span>Release</span></button>`;
+    }
+    if (item.note) {
+      const note = document.createElement('div');
+      note.className = 'vx-card-note';
+      note.textContent = item.note;
+      card.append(head, body, note, acts);
+      box.appendChild(card);
+      return;
+    }
+    card.append(head, body, acts);
+    box.appendChild(card);
+  });
+  box.scrollLeft = box.scrollWidth;
+}
+
+function _onQueueClick(e) {
+  const btn = e.target.closest('[data-q]');
+  if (!btn) return;
+  const card = btn.closest('.vx-card');
+  const item = _queue.find(q => q.id === card?.dataset.id);
+  if (!item) return;
+  const act = btn.dataset.q;
+  if (act === 'send') {
+    // Manual send jumps the line and is attempted right away.
+    item.status = 'queued';
+    item.note = '';
+    _queue = [item, ..._queue.filter(q => q !== item)];
+    _renderQueue();
+    _ensureDispatcher();
+    _dispatchTick(true);
+  }
+  else if (act === 'release') {
+    if (_awaiting && (_awaiting.ids || [_awaiting.id]).includes(item.id)) {
+      _queue.filter(q => _awaiting.ids?.includes(q.id) && q !== item).forEach(q => _setItem(q, 'answered'));
+      _awaiting = null;
+    }
+    _setItem(item, 'answered');
+    _dispatchTick(true);
+  }
+  else if (act === 'drop') { _queue = _queue.filter(q => q !== item); _renderQueue(); }
+  else if (act === 'edit') {
+    const p = card.querySelector('.vx-card-msg');
+    const ta = document.createElement('textarea');
+    ta.className = 'vx-card-edit';
+    ta.value = item.message;
+    p.replaceWith(ta);
+    ta.focus();
+    item.status = 'review';
+    const commit = () => { item.message = ta.value.trim() || item.message; _renderQueue(); };
+    ta.addEventListener('blur', commit, { once: true });
+    ta.addEventListener('keydown', (ke) => {
+      if (ke.key === 'Enter' && (ke.metaKey || ke.ctrlKey)) { ke.preventDefault(); item.message = ta.value.trim() || item.message; item.status = 'queued'; ta.blur(); _ensureDispatcher(); }
+      ke.stopPropagation();
+    });
+  }
+}
+
+function _currentSid() { return window.sessionModule?.getCurrentSessionId?.() || null; }
+
+function _streamActive(sid) {
+  return !!(sid && window.chatModule?.hasActiveStream?.(sid));
+}
+
+// Busy = something is streaming in the visible chat. Submitting while a stream
+// runs would hit handleChatSubmit's "stop streaming" branch and CANCEL it, so
+// this guard is strict.
+function _chatBusy() { return _streamActive(_currentSid()); }
+
+// The chat watcher's 700ms tick drives dispatch too (one loop, ordered).
+function _ensureDispatcher() { _startChatWatch(); }
+
+const _LINGER = { answered: 3500, interrupted: 9000 };
+function _setItem(item, status, note) {
+  if (!item) return;
+  if (note !== undefined) item.note = note;
+  if (item.status === status && note === undefined) return;
+  item.status = status;
+  _renderQueue();
+  if (_LINGER[status]) {
+    setTimeout(() => {
+      if (item.status !== status) return;
+      const card = $(`.vx-card[data-id="${item.id}"]`);
+      if (card) card.classList.add('leaving');
+      setTimeout(() => { _queue = _queue.filter(q => q !== item); _renderQueue(); }, 380);
+    }, _LINGER[status]);
+  }
+}
+
+let _busyNoteShown = 0;
+
+function _dispatchTick(manual = false) {
+  // ① Track the in-flight chat turn (one at a time).
+  if (_awaiting) {
+    const item = _queue.find(q => q.id === _awaiting.id);
+    if (!item) { _awaiting = null; }
+    else {
+      if (!_awaiting.sid) _awaiting.sid = _currentSid();
+      const busy = _streamActive(_awaiting.sid);
+      const elapsed = Date.now() - _awaiting.since;
+      const group = _queue.filter(q => (_awaiting.ids || [_awaiting.id]).includes(q.id));
+      if (busy) {
+        _awaiting.sawBusy = true;
+        group.forEach(q => _setItem(q, _awaiting.sid === _currentSid() ? 'running' : 'background'));
+      } else if (!_awaiting.sawBusy) {
+        // Did the chat actually accept it? If our text is still sitting in
+        // the composer, the submit was swallowed — say so instead of hanging.
+        if (_chatShowsUserMsg(_awaiting.text)) _awaiting.accepted = true;
+        if (!_awaiting.accepted) {
+          const input = document.getElementById('message');
+          const stuck = input && input.value.trim() === _awaiting.text.trim();
+          if (stuck && elapsed > 10000) {
+            group.forEach(q => _setItem(q, 'failed', 'The chat did not accept the message — check the chat for a prompt, then Retry.'));
+            _awaiting = null;
+            return;
+          }
+        }
+        if (elapsed < 8000) return;          // give the stream time to start (agent runs warm up)
+      }
+      const finished = (_awaiting.sawBusy && !busy) || (!_awaiting.sawBusy && elapsed >= 8000) || elapsed > 600000;
+      if (!finished) return;
+      const visible = _awaiting.sid === _currentSid();
+      const lastAi = visible ? _lastAIEl() : null;
+      if (lastAi && lastAi.querySelector('.stopped-indicator')) {
+        group.forEach(q => _setItem(q, 'interrupted'));
+        _systemLine(`Chat run “${item.title}” was interrupted.`, 'warn');
+        _setChatState('interrupted', 'Interrupted');
+      } else if (!visible) {
+        group.forEach(q => _setItem(q, 'answered'));
+        _systemLine(`“${item.title}” finished in another chat.`, 'info');
+      } else {
+        group.forEach(q => _setItem(q, 'answered'));
+        if (_awaiting.sawBusy) _speakResult(group.length > 1 ? { title: group.map(q => q.title).join(' + ') } : item, lastAi);
+      }
+      _awaiting = null;
+    }
+  }
+  // ② Dispatch the next queued message only when the chat is idle.
+  const next = _queue.find(q => q.status === 'queued');
+  if (!next) return;
+  if (_chatBusy()) {
+    const ahead = '';
+    if (next.note !== 'Waiting — the chat is still answering. Sends as soon as it finishes.') {
+      _setItem(next, 'queued', 'Waiting — the chat is still answering. Sends as soon as it finishes.');
+    }
+    if (manual && Date.now() - _busyNoteShown > 4000) {
+      _busyNoteShown = Date.now();
+      _systemLine('Chat is busy — your message goes next.', 'info');
+    }
+    return;
+  }
+  // Batch: everything waiting goes out together, so a long chat run never
+  // leaves a pile of cards behind it.
+  const batch = _queue.filter(q => q.status === 'queued');
+  const text = batch.length === 1 ? batch[0].message
+    : 'Please handle all of these:\n' + batch.map((q, i) => `${i + 1}. ${q.message}`).join('\n');
+  batch.forEach(q => { q.note = ''; _setItem(q, 'sending'); });
+  if (_sendToChat(text)) {
+    batch.forEach(q => _setItem(q, 'sent'));
+    _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
+    _systemLine(batch.length === 1 ? `Sent to chat → “${batch[0].title}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
+  } else {
+    batch.forEach(q => _setItem(q, 'failed', 'The chat composer was not available — Retry when the chat is ready.'));
+  }
+}
+
+// The composer's real submit path is chatModule.handleChatSubmit. #chat-form is
+// an empty placeholder whose submit listener is disabled (app.js), so the old
+// requestSubmit() on it reported success while sending nothing.
 function _sendToChat(text) {
-  const input = document.querySelector('#message, textarea#message');
-  if (input) {
-    input.value = text;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+  const input = document.getElementById('message');
+  const submit = window.chatModule?.handleChatSubmit;
+  if (!input || typeof submit !== 'function') return false;
+  if (_chatBusy()) return false;
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  try {
+    const p = submit({ preventDefault() {}, stopPropagation() {}, target: input });
+    if (p && typeof p.catch === 'function') {
+      p.catch((e) => {
+        console.warn('voice→chat submit failed', e);
+        _systemLine('Chat rejected the message — ' + (e?.message || e), 'warn');
+      });
+    }
+    return true;
+  } catch (e) {
+    console.warn('voice→chat submit failed', e);
+    return false;
   }
-  const sendBtn = document.querySelector('.send-btn, #send-btn');
-  if (sendBtn) sendBtn.click();
-  else if (window.chatModule && window.chatModule.handleChatSubmit) window.chatModule.handleChatSubmit();
 }
 
-// ── Realtime event handling ─────────────────────────────────────────────────
+// ── Chat DOM helpers ────────────────────────────────────────────────────────
 
+function _chatMsgs() {
+  return Array.from(document.querySelectorAll('#chat-history .msg-user, #chat-history .msg-ai'));
+}
+
+function _chatShowsUserMsg(text) {
+  const head = String(text || '').trim().slice(0, 40);
+  if (!head) return false;
+  const users = document.querySelectorAll('#chat-history .msg-user');
+  for (let i = users.length - 1; i >= Math.max(0, users.length - 3); i--) {
+    if ((users[i].textContent || '').includes(head)) return true;
+  }
+  return false;
+}
+
+function _lastAIEl() {
+  const a = document.querySelectorAll('#chat-history .msg-ai');
+  return a[a.length - 1] || null;
+}
+
+function _msgText(el, max = 4000) {
+  if (!el) return '';
+  const body = el.querySelector('.body') || el;
+  const clone = body.cloneNode(true);
+  clone.querySelectorAll('details, .think, .thinking, .sources-box, .msg-actions, .msg-metrics, button, svg, style, script')
+    .forEach(n => n.remove());
+  // Detached nodes have no layout, so add breaks after blocks by hand.
+  clone.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, pre, tr, br, blockquote').forEach(n => n.append('\n'));
+  return (clone.textContent || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, max);
+}
+
+// ── API cost: GPT-Live usage → sidecar ledger; live readout in the HUD ─────
+function _fmtUsd(v) {
+  if (!(v > 0)) return '$0';
+  if (v < 0.01) return '$' + v.toFixed(4);
+  if (v < 1) return '$' + v.toFixed(3);
+  return '$' + v.toFixed(2);
+}
+
+async function _reportRealtimeUsage(usage) {
+  try {
+    const r = await fetch(_api('/api/costs/realtime'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usage, chat_session_id: _currentSid() }),
+    });
+    if (r.ok) {
+      const d = await r.json();
+      if (typeof d.chat_total_usd === 'number') _paintHudCost(d.chat_total_usd);
+    }
+  } catch (e) { /* cost tracking is best-effort */ }
+  window.refreshSessionCosts?.();
+}
+
+function _paintHudCost(usd) {
+  const el = $('.vx-cost');
+  if (el) el.textContent = _fmtUsd(usd);
+}
+
+async function _refreshHudCost() {
+  const sid = _currentSid();
+  if (!sid) { _paintHudCost(0); return; }
+  try {
+    const r = await fetch(_api(`/api/costs/${encodeURIComponent(sid)}?limit=1`), { credentials: 'same-origin' });
+    if (r.ok) _paintHudCost((await r.json()).total_usd || 0);
+  } catch (e) { /* best-effort */ }
+}
+
+function _lastAIMessage() { return _msgText(_lastAIEl(), 1800); }
+
+function _dcSend(obj) {
+  if (!_dc || _dc.readyState !== 'open') return false;
+  try { _dc.send(JSON.stringify(obj)); return true; } catch (e) { return false; }
+}
+
+// ── Chat mirror: live feed, interruption/switch detection, chat → memory ────
+
+const _seenKeys = new Set();     // role|text already folded into voice memory
+const _spokenKeys = new Set();   // chat answers already briefed aloud
+
+function _key(role, text) { return role + '|' + text; }
+function _remember(set, k) {
+  set.add(k);
+  if (set.size > 400) set.delete(set.values().next().value);
+}
+
+function _setChatState(s, label) {
+  const e = $('.vx-chat-state');
+  if (e) { e.dataset.s = s; e.textContent = label; }
+}
+
+function _markAllSeen() {
+  for (const el of _chatMsgs().slice(-30)) {
+    _ingestState.set(el, { text: '', stable: 0, done: true });
+  }
+}
+
+function _startChatWatch() {
+  if (_chatTickInt) return;
+  _chatSid = _currentSid();
+  _chatWasBusy = _chatBusy();
+  _markAllSeen();  // existing history is already in the chat's own summary spine
+  const hist = document.getElementById('chat-history');
+  if (hist && !_chatObs) {
+    _chatObs = new MutationObserver(() => {
+      clearTimeout(_chatRenderT);
+      _chatRenderT = setTimeout(_renderChatFeed, 120);
+    });
+    _chatObs.observe(hist, { childList: true, subtree: true, characterData: true });
+  }
+  _chatTickInt = setInterval(_chatTick, 700);
+  _setChatState(_chatWasBusy ? 'streaming' : 'idle', _chatWasBusy ? 'Responding' : 'Idle');
+  _renderChatFeed();
+}
+
+function _stopChatWatch() {
+  clearInterval(_chatTickInt); _chatTickInt = 0;
+  clearTimeout(_chatRenderT);
+  _chatObs?.disconnect(); _chatObs = null;
+}
+
+function _chatTick() {
+  // Session switch: the stream (if any) keeps running in the background.
+  const sid = _currentSid();
+  if (sid !== _chatSid) {
+    const prev = _chatSid;
+    _chatSid = sid;
+    _markAllSeen();
+    _chatWasBusy = _chatBusy();
+    if (prev) {
+      const running = !!(_awaiting && _awaiting.sid === prev && _streamActive(prev));
+      _systemLine(running
+        ? 'Chat switched — the voice request keeps running in the background.'
+        : 'Chat switched — now mirroring the new thread.', running ? 'warn' : 'info');
+      _setChatState('switched', running ? 'Switched · running in bg' : 'Switched');
+    }
+  }
+
+  _dispatchTick();
+
+  const busy = _chatBusy();
+  if (busy && !_chatWasBusy) _setChatState('streaming', 'Responding');
+  if (!busy && _chatWasBusy) {
+    const last = _lastAIEl();
+    if (last && last.querySelector('.stopped-indicator')) {
+      _setChatState('interrupted', 'Interrupted');
+      if (!_awaiting) _systemLine('The chat response was interrupted.', 'warn');
+    } else {
+      _setChatState('done', 'Answered');
+    }
+  }
+  _chatWasBusy = busy;
+  _costTick = (_costTick + 1) % 10;
+  if (_costTick === 0 || sid !== _costSid) { _costSid = sid; _refreshHudCost(); }
+  _ingestChat(busy);
+  _renderChatFeed();          // no-op unless something changed (signature check)
+}
+
+const _ingestState = new WeakMap();   // chat element → {text, stable, done}
+async function _ingestChat(busy) {
+  // Never snapshot a message that is still growing: an agent run streams one
+  // answer across many tool rounds, and partial snapshots polluted memory and
+  // re-briefed the voice model each time. Wait for the chat to be idle and the
+  // text to be unchanged for ~2s, then fold each message in exactly once.
+  if (busy) return;
+  const msgs = _chatMsgs().slice(-12);
+  const turns = [];
+  for (const el of msgs) {
+    let st = _ingestState.get(el);
+    if (!st) { st = { text: '', stable: 0, done: false }; _ingestState.set(el, st); }
+    if (st.done) continue;
+    if (el.querySelector('.stopped-indicator')) { st.done = true; continue; }   // cancelled turn
+    const isAi = el.classList.contains('msg-ai');
+    const text = _msgText(el);
+    if (!text) continue;
+    if (text !== st.text) { st.text = text; st.stable = 0; continue; }
+    if (++st.stable < 3) continue;          // 3 × 700ms unchanged
+    st.done = true;
+    const role = isAi ? 'chat_ai' : 'chat_user';
+    const k = _key(role, text);
+    if (_seenKeys.has(k)) continue;
+    _remember(_seenKeys, k);
+    turns.push({ speaker: role, text });
+  }
+  if (!turns.length) return;
+  // Keep the voice model aware of what the chat answered (unless already briefed).
+  for (const t of turns) {
+    if (t.speaker === 'chat_ai' && !_spokenKeys.has(_key('chat_ai', t.text))) _injectContext(t.text);
+  }
+  try {
+    const r = await fetch(_api('/api/realtime/memory/ingest'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: _currentSid() }),
+    });
+    if (r.ok) _renderMemory((await r.json()).stats);
+  } catch (e) { /* memory ingest is best-effort */ }
+}
+
+function _injectContext(text) {
+  _brief('[Chat thread update — context only, not said aloud by the user; do not reply to it] ' +
+         'The chat agent answered:\n' + text.slice(0, 1500), false);
+}
+
+let _chatFeedSig = '';
+function _renderChatFeed() {
+  const box = $('#vx-chatlog');
+  if (!box) return;
+  const msgs = _chatMsgs().slice(-8);
+  if (!msgs.length) {
+    if (_chatFeedSig !== '') { _chatFeedSig = ''; box.innerHTML = '<div class="vx-empty">What the chat agent receives and answers appears here live.</div>'; }
+    return;
+  }
+  const busy = _chatBusy();
+  // Cheap signature: role, stopped flag, text length (grows while streaming)
+  // and the chat's busy state (clears the "live" tag). Only rebuild the DOM
+  // when it changes — avoids cloning every message every tick.
+  let sig = busy ? 'B' : 'I';
+  for (const el of msgs) {
+    const isAi = el.classList.contains('msg-ai');
+    const stopped = !!el.querySelector('.stopped-indicator');
+    sig += '|' + (isAi ? 'A' : 'U') + (stopped ? '!' : '') + (el.textContent || '').length;
+  }
+  if (sig === _chatFeedSig) return;
+  _chatFeedSig = sig;
+  const frag = document.createDocumentFragment();
+  msgs.forEach((el, i) => {
+    const isAi = el.classList.contains('msg-ai');
+    const streaming = isAi && busy && i === msgs.length - 1;
+    const stopped = !!el.querySelector('.stopped-indicator');
+    const row = document.createElement('div');
+    row.className = 'vx-cmsg ' + (isAi ? 'vx-cmsg-ai' : 'vx-cmsg-user');
+    if (streaming) row.classList.add('streaming');
+    if (stopped) row.classList.add('interrupted');
+    const who = document.createElement('div');
+    who.className = 'vx-who';
+    who.textContent = isAi ? 'CHAT AGENT' : 'SENT TO CHAT';
+    if (stopped) { const tag = document.createElement('em'); tag.textContent = 'interrupted'; who.appendChild(tag); }
+    else if (streaming) { const tag = document.createElement('em'); tag.textContent = 'live'; who.appendChild(tag); }
+    const say = document.createElement('div');
+    say.className = 'vx-say';
+    let txt = stopped ? 'Cancelled.' : _msgText(el, 4000);
+    if (!txt && streaming) txt = 'Thinking…';
+    say.textContent = txt.length > 420 ? (streaming ? '…' + txt.slice(-420) : txt.slice(0, 420) + '…') : txt;
+    row.append(who, say);
+    frag.appendChild(row);
+  });
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+  box.replaceChildren(frag);
+  if (atBottom || busy) box.scrollTop = box.scrollHeight;
+}
+
+function _speakResult(item, el) {
+  if (!_opts.speak || !_active || !_injectOK) return;
+  el = el || _lastAIEl();
+  const result = _msgText(el, 1800);
+  if (!result) return;
+  _remember(_spokenKeys, _key('chat_ai', _msgText(el)));
+  _systemLine(`Chat finished “${item?.title || 'request'}” — briefing you.`, 'done');
+  const note = `[Background update — not said by the user] The chat agent finished the request "${item?.title || ''}". ` +
+    `Its result:\n${result}\n\nBriefly and naturally tell the user the outcome in one or two sentences. Do not read lists verbatim.`;
+  _brief(note, true);
+}
+
+function _nowNote() {
+  const d = new Date();
+  return `Current local time: ${d.toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`;
+}
+
+// Send context to GPT-Live over the data channel. When `speak`, ask it to
+// respond — but only once it isn't already talking (a response.create during
+// an active response is rejected), so briefings queue until response.done.
+function _brief(text, speak) {
+  if (!_active || !_injectOK) return;
+  if (speak && _respActive) { _pendingBriefs.push(text); return; }
+  _lastInjectAt = Date.now();
+  const ok = _dcSend({ type: 'conversation.item.create',
+    item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: text + '\n' + _nowNote() }] } });
+  if (ok && speak) { _respActive = true; _dcSend({ type: 'response.create' }); }
+}
+
+function _flushBriefs() {
+  if (!_pendingBriefs.length || _respActive) return;
+  const all = _pendingBriefs.splice(0, _pendingBriefs.length);
+  _brief(all.join('\n\n'), true);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  REALTIME (WebRTC)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Pull transcript text out of whatever shape the event uses.
+function _evText(evt) {
+  for (const k of ['delta', 'text', 'transcript']) {
+    if (typeof evt[k] === 'string' && evt[k]) return evt[k];
+  }
+  const parts = evt.item?.content || evt.content;
+  if (Array.isArray(parts)) {
+    for (const p of parts) {
+      if (typeof p?.transcript === 'string' && p.transcript) return p.transcript;
+      if (typeof p?.text === 'string' && p.text) return p.text;
+    }
+  }
+  if (typeof evt.part?.transcript === 'string') return evt.part.transcript;
+  if (typeof evt.transcript?.text === 'string') return evt.transcript.text;
+  return '';
+}
+
+// GPT-Live's exact transcript event names aren't pinned down in our docs, so
+// classify by pattern instead of a fixed list: direction (user vs. assistant)
+// from the type/role, delta vs. final from the suffix. Every new type is
+// logged once to the console (window.__odyVoiceEvents) for diagnosis.
 function _handleEvent(evt) {
-  switch (evt.type) {
-    case 'session.started':
-      _setStatus('Connected — listening… (talk to interrupt)');
-      break;
-    case 'session.closed':
-      _setStatus('Conversation ended — click the mic to restart');
-      break;
-    case 'user_transcription_text':
-      _appendTranscript('You', evt.text || evt.transcript || '');
-      break;
-    case 'live_captioning_text':
-      _appendTranscript('AI', evt.text || evt.delta || '');
-      break;
-    case 'conversation.item.input_audio_transcription.completed':
-      _appendTranscript('You', evt.transcript || (evt.item && evt.item.content && evt.item.content[0] && evt.item.content[0].transcript) || '');
-      break;
-    case 'response.output_audio_transcript.delta':
-    case 'response.audio_transcript.delta':
-      _appendTranscript('AI', evt.delta || '');
-      break;
-    case 'response.output_text.delta':
-    case 'response.text.delta':
-      _appendTranscript('AI', evt.delta || '');
-      break;
-    case 'response.done':
-      _setStatus('Listening… (talk to interrupt)');
-      break;
-    case 'error':
-      console.error('realtime error', evt);
-      if (window.uiModule) window.uiModule.showError('Voice error: ' + (evt.error && evt.error.message || 'unknown'));
-      break;
+  const t = String(evt?.type || '');
+  const n = (_eventTypes.get(t) || 0) + 1;
+  _eventTypes.set(t, n);
+  if (n === 1) console.info('[voice] GPT-Live event:', t, evt);
+  window.__odyVoiceEvents = _eventTypes;
+  // GPT-Live bills per response; its usage block arrives on response.done.
+  if (t === 'response.done' && evt.response && evt.response.usage) _reportRealtimeUsage(evt.response.usage);
+  if (t === 'response.created') _respActive = true;
+  if (t === 'response.done' || t === 'response.cancelled') { _respActive = false; setTimeout(_flushBriefs, 300); }
+
+  if (t === 'session.started' || t === 'session.created') {
+    _setSub('Linked — speak naturally');
+    _injectOK = true; _respActive = false; _pendingBriefs = [];
+    _brief('[Context — not said by the user; do not reply to it] Use this when asked the time or date; time passes after it.', false);
+    return;
+  }
+  if (t === 'session.closed') {
+    if (_active) { _systemLine('Session closed by the server.', 'warn'); stopVoice(); }
+    return;
+  }
+  if (t === 'error' || t.endsWith('.error') || t.endsWith('.failed')) {
+    console.warn('realtime error', evt);
+    // An error right after we injected chat context means GPT-Live doesn't
+    // accept that command — stop injecting instead of spamming the HUD.
+    const emsg = String(evt.error?.message || evt.message || evt.error?.code || '');
+    // "Already has an active response" → just retry the briefing once it's done.
+    if (/active[_ ]response|already.*response|in progress/i.test(emsg)) { _respActive = true; return; }
+    // Only a genuine "this command isn't supported" disables briefings.
+    if (_injectOK && Date.now() - _lastInjectAt < 4000 &&
+        /conversation\.item|unknown.*(event|type)|invalid.*(event|type)|not supported|unsupported/i.test(emsg)) {
+      _injectOK = false;
+      _systemLine('GPT-Live rejected injected chat context — chat answers stay in the HUD and memory.', 'info');
+      return;
+    }
+    _systemLine('Voice: ' + (evt.error?.message || evt.message || 'unknown error'), 'warn');
+    return;
+  }
+  // Barge-in: lock in what the assistant said so far.
+  if (/speech_started|speech\.started|input[^.]*\.started|user[^.]*\.(started|speaking)/.test(t)) {
+    if (_aiLine) _aiFinalize();
+    return;
+  }
+  // Delegated backend work (Responses events nested in the session).
+  if (t.startsWith('response.event') || t.includes('delegat')) return;
+
+  const isFinal = /[._](done|completed|final|finished|end)$/.test(t) || evt.is_final === true || evt.final === true;
+  if (!/transcri|caption|text|speech/.test(t)) {
+    if (/^response\.(done|completed)$/.test(t)) _aiFinalize();
+    return;
+  }
+  const text = _evText(evt);
+  const role = evt.role || evt.item?.role || evt.speaker;
+  const isUser = role === 'assistant' ? false : (
+    role === 'user' ||
+    /input|user|caller|human/.test(t) ||
+    (/transcription/.test(t) && !/output|assistant|response|caption|agent/.test(t))
+  );
+  const isDelta = /delta/.test(t);
+  if (isUser) {
+    if (isFinal) _userFinal(text || null);
+    else if (text) _userDelta(text);
+  } else if (isFinal) {
+    if (text && !isDelta) _aiReplace(text);
+    _aiFinalize();
+  } else if (text) {
+    _aiDelta(text);
   }
 }
 
-// ── Start / stop ────────────────────────────────────────────────────────────
-
-async function startVoice(canvas) {
-  if (_active) return;
+async function startVoice() {
+  if (_active || _connecting) return;
+  _connecting = true;
+  _setState('connecting');
+  const sid = window.sessionModule?.getCurrentSessionId?.();
+  _voiceId = sid ? `chat-${sid}` : 'global';
 
   try {
-    _micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
   } catch (e) {
-    console.error('mic denied', e);
-    if (window.uiModule) window.uiModule.showError('Microphone access denied');
+    _connecting = false;
+    _setState('error');
+    _setSub('Microphone access denied');
     return;
   }
 
   _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const src = _audioCtx.createMediaStreamSource(_micStream);
-  _analyser = _audioCtx.createAnalyser();
-  _analyser.fftSize = 512;
-  src.connect(_analyser);
+  try { await _audioCtx.resume(); } catch (e) { /* ignore */ }
+  _micAnalyser = _audioCtx.createAnalyser();
+  _micAnalyser.fftSize = 1024;
+  _micAnalyser.smoothingTimeConstant = 0.72;
+  _audioCtx.createMediaStreamSource(_micStream).connect(_micAnalyser);
 
   try {
     _pc = new RTCPeerConnection();
     _pc.addTrack(_micStream.getAudioTracks()[0], _micStream);
-
     _pc.ontrack = (e) => {
+      const stream = e.streams[0] || new MediaStream([e.track]);
       _audioEl = new Audio();
       _audioEl.autoplay = true;
-      _audioEl.srcObject = e.streams[0];
-      _audioEl.play().catch(() => {});
+      _audioEl.srcObject = stream;
+      _audioEl.play().catch(() => _setSub('Click anywhere to enable audio'));
+      try {
+        _outAnalyser = _audioCtx.createAnalyser();
+        _outAnalyser.fftSize = 1024;
+        _outAnalyser.smoothingTimeConstant = 0.7;
+        _audioCtx.createMediaStreamSource(stream).connect(_outAnalyser);
+      } catch (err) { _outAnalyser = null; }
+    };
+    _pc.onconnectionstatechange = () => {
+      if (['failed', 'disconnected'].includes(_pc?.connectionState) && _active) {
+        _systemLine('Connection lost.', 'warn');
+        stopVoice(true);
+      }
     };
 
     _dc = _pc.createDataChannel('oai-events');
-    _dc.onopen = () => {
-      _setStatus('Connected — listening… (talk to interrupt)');
-    };
-    _dc.onmessage = (e) => { try { _handleEvent(JSON.parse(e.data)); } catch (err) {} };
+    _dc.onmessage = (e) => { try { _handleEvent(JSON.parse(e.data)); } catch (err) { /* ignore */ } };
 
     const offer = await _pc.createOffer();
     await _pc.setLocalDescription(offer);
-
-    // Wait for ICE candidate gathering so the SDP offer is complete.
     if (_pc.iceGatheringState !== 'complete') {
       await new Promise((resolve) => {
         const timeout = setTimeout(resolve, 3000);
-        const onState = () => {
-          if (_pc.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); }
-        };
+        const onState = () => { if (_pc.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); } };
         _pc.addEventListener('icegatheringstatechange', onState);
         onState();
       });
     }
-    const sdp = (_pc.localDescription && _pc.localDescription.sdp) || offer.sdp;
-
-    // Proxy the SDP offer through our backend (CSP-friendly; key stays server-side).
-    const resp = await fetch(
-      `${_apiBase()}/api/realtime/session`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ sdp }),
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-      }
-    );
+    const sdp = _pc.localDescription?.sdp || offer.sdp;
+    const resp = await fetch(_api('/api/realtime/session'), {
+      method: 'POST',
+      body: JSON.stringify({ sdp }),
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+    });
     if (!resp.ok) {
-      const txt = await resp.text().catch(() => '');
-      throw new Error('GPT-Live SDP: HTTP ' + resp.status + ' ' + txt.slice(0, 200));
+      let txt = await resp.text().catch(() => '');
+      try { txt = JSON.parse(txt).detail || txt; } catch (e) { /* raw */ }
+      throw new Error(`HTTP ${resp.status} ${String(txt).slice(0, 160)}`);
     }
     const result = await resp.json();
-    const answerSdp = result && result.transport && result.transport.sdp;
+    const answerSdp = result?.transport?.sdp;
     if (!answerSdp) throw new Error('No SDP answer from GPT-Live');
     await _pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
   } catch (e) {
     console.error('realtime connect failed', e);
-    _cleanup();
-    if (window.uiModule) window.uiModule.showError('Voice connect failed: ' + e.message);
+    _teardown();
+    _connecting = false;
+    _setState('error');
+    _setSub(e.message || 'Connection failed');
+    _systemLine('Link failed — ' + (e.message || e), 'warn');
     return;
   }
 
+  _connecting = false;
   _active = true;
-  _show(canvas);
-  _setStatus('Listening… (talk over it to interrupt)');
+  _muted = false;
+  _callStart = Date.now();
+  clearInterval(_timerInt);
+  _timerInt = setInterval(() => {
+    const t = $('.vx-timer'); if (t) t.textContent = _fmtTime(Date.now() - _callStart);
+  }, 500);
+  _root?.classList.add('connected');
+  _setState('listening');
+  _systemLine('Neural link established.', 'done');
+  _refreshMemory();
+  // If nothing we recognise as a transcript arrives, say so in the HUD and
+  // list the event types GPT-Live did send.
+  _transcriptSeen = false;
+  clearTimeout(_diagT);
+  _diagT = setTimeout(() => {
+    if (!_active || _transcriptSeen) return;
+    const types = [..._eventTypes.keys()].filter(Boolean);
+    console.info('[voice] event types seen so far', Object.fromEntries(_eventTypes));
+    _systemLine(types.length
+      ? 'No transcript events recognised yet. GPT-Live sent: ' + types.slice(0, 14).join(', ')
+      : 'GPT-Live has not sent any data-channel events yet.', 'warn');
+  }, 20000);
 }
 
-async function stopVoice() {
-  if (!_active) return;
+function _teardown() {
+  try { _dc?.close(); } catch (e) { /* ignore */ }
+  try { _pc?.close(); } catch (e) { /* ignore */ }
+  _micStream?.getTracks().forEach(t => t.stop());
+  if (_audioEl) { _audioEl.pause(); _audioEl.srcObject = null; }
+  _audioCtx?.close().catch(() => {});
+  _micStream = _audioCtx = _micAnalyser = _outAnalyser = _audioEl = _pc = _dc = null;
+}
+
+async function stopVoice(keepError = false) {
+  if (!_active && !_connecting) return;
+  if (_aiLine) _aiFinalize();
+  if (_userText) _userFinal(null);
+  _dcSend({ type: 'session.close' });
+  clearTimeout(_diagT);
   _active = false;
-  try { if (_dc) _dc.close(); } catch (e) {}
-  try { if (_pc) _pc.close(); } catch (e) {}
-  _hide();
-  _cleanup();
-  _setStatus('Click the mic to talk');
+  _connecting = false;
+  _teardown();
+  clearInterval(_timerInt);
+  _root?.classList.remove('connected');
+  _setState(keepError ? 'error' : 'idle');
+  _caption('', '');
+  // Flush whatever was said last through the pipeline.
+  if (_pending.some(t => t.speaker === 'You')) _schedulePipeline(50);
+}
+
+function _toggleMute() {
+  if (!_active || !_micStream) return;
+  _muted = !_muted;
+  _micStream.getAudioTracks().forEach(t => { t.enabled = !_muted; });
+  _setState(_muted ? 'muted' : 'listening');
+}
+
+function _forceSend() {
+  if (_userText) _userFinal(null);
+  if (_aiLine) _aiFinalize();
+  clearTimeout(_pipeTimer);
+  _runPipeline(true);
+}
+
+async function _refreshMemory() {
+  try {
+    const r = await fetch(_api(`/api/realtime/memory?voice_id=${encodeURIComponent(_voiceId)}`), { credentials: 'same-origin' });
+    if (r.ok) _renderMemory((await r.json()).stats);
+  } catch (e) { /* ignore */ }
+}
+
+async function _refreshStatus() {
+  try {
+    const r = await fetch(_api('/api/realtime/status'), { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s.assistant_name) {
+      _assistantName = String(s.assistant_name).toUpperCase();
+      const t = $('.vx-title'); if (t) t.textContent = _assistantName;
+    }
+    const set = (k, ok, title) => {
+      const b = $(`.vx-badge[data-k="${k}"]`);
+      if (!b) return;
+      b.dataset.ok = ok ? '1' : '0';
+      if (title) b.title = title;
+    };
+    set('live', s.realtime, s.realtime ? `Realtime: ${s.realtime_model}` : 'OpenAI API key not configured');
+    set('jev', s.jev, s.jev ? `Decider: ${s.jev_model}` : 'No OpenRouter key — falling back to the utility LLM');
+    set('util', s.utility, s.utility ? `Compressor/forger: ${s.utility_model}` : 'No utility/default model configured');
+    const u = $('.vx-badge[data-k="util"] span');
+    if (u && s.utility_model) u.textContent = s.utility_model.split('/').pop().slice(0, 22);
+    if (!s.realtime && _state === 'idle') _setSub('Add an OpenAI API key in settings to enable GPT-Live');
+  } catch (e) { /* ignore */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OPEN / CLOSE
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _bind() {
+  _root.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') closeVoiceMode();
+    else if (act === 'core') toggleVoice();
+    else if (act === 'mute') _toggleMute();
+    else if (act === 'force') _forceSend();
+    else if (act === 'reset-mem') _resetMemory();
+    if (_audioEl && _audioEl.paused) _audioEl.play().catch(() => {});
+  });
+  $('#vx-queue').addEventListener('click', _onQueueClick);
+  _root.querySelectorAll('[data-opt]').forEach(inp => {
+    inp.checked = !!_opts[inp.dataset.opt];
+    inp.addEventListener('change', () => {
+      _opts[inp.dataset.opt] = inp.checked;
+      try { localStorage.setItem('odysseus-voice-opts', JSON.stringify(_opts)); } catch (e) { /* ignore */ }
+      if (inp.dataset.opt === 'review' && !inp.checked) {
+        _queue.forEach(q => { if (q.status === 'review') q.status = 'queued'; });
+        _renderQueue(); _ensureDispatcher();
+      }
+    });
+  });
+  _keyHandler = (e) => {
+    if (!_root || _root.hidden) return;
+    const typing = e.target.closest?.('textarea, input[type="text"], [contenteditable="true"]');
+    if (e.key === 'Escape') { e.preventDefault(); closeVoiceMode(); return; }
+    if (typing) return;
+    if (e.code === 'Space') { e.preventDefault(); toggleVoice(); }
+    else if (e.key === 'm' || e.key === 'M') { e.preventDefault(); _toggleMute(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (_active) _forceSend(); }
+  };
+  document.addEventListener('keydown', _keyHandler, true);
+}
+
+async function _resetMemory() {
+  const ok = window.uiModule?.styledConfirm
+    ? await window.uiModule.styledConfirm('Forget this voice memory? The chat itself is not affected.', { confirmText: 'Forget', danger: true })
+    : window.confirm('Forget this voice memory?');
+  if (!ok) return;
+  try {
+    const r = await fetch(_api('/api/realtime/memory/reset'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_id: _voiceId }),
+    });
+    if (r.ok) { _renderMemory((await r.json()).stats); _systemLine('Voice memory cleared.', 'info'); }
+  } catch (e) { /* ignore */ }
+}
+
+export function openVoiceMode({ autostart = true } = {}) {
+  _ensureCSS();
+  try { Object.assign(_opts, JSON.parse(localStorage.getItem('odysseus-voice-opts') || '{}')); } catch (e) { /* ignore */ }
+  if (!_root) {
+    _root = _buildHUD();
+    document.body.appendChild(_root);
+    _bind();
+    _initGL($('#vx-canvas'));
+  }
+  _root.hidden = false;
+  document.documentElement.classList.add('vx-open');
+  requestAnimationFrame(() => _root.classList.add('open'));
+  if (!_raf) { _t0 = performance.now(); _raf = requestAnimationFrame(_loop); }
+  else { _lastFrameAt = performance.now(); }
+  const sid = window.sessionModule?.getCurrentSessionId?.();
+  if (!_active) _voiceId = sid ? `chat-${sid}` : 'global';
+  _setState(_active ? 'listening' : 'idle');
+  _refreshStatus();
+  _refreshMemory();
+  _renderQueue();
+  _startChatWatch();
+  if (autostart && !_active) startVoice();
+}
+
+export async function closeVoiceMode() {
+  await stopVoice();
+  if (!_root) return;
+  _root.classList.remove('open');
+  document.documentElement.classList.remove('vx-open');
+  setTimeout(() => {
+    if (_root && !_root.classList.contains('open')) {
+      _root.hidden = true;
+      if (_raf) { cancelAnimationFrame(_raf); _raf = 0; }
+      _stopChatWatch();
+    }
+  }, 420);
 }
 
 // ── TTS (browser, male British) — retained for plain read-aloud ────────────
@@ -435,9 +1745,10 @@ export function speak(text, opts = {}) {
 
 export function isRecording() { return _active; }
 
-export async function toggleVoice(canvas) {
-  if (_active) { await stopVoice(); return; }
-  await startVoice(canvas);
+export async function toggleVoice() {
+  if (_active || _connecting) { await stopVoice(); return; }
+  if (!_root || _root.hidden) { openVoiceMode({ autostart: true }); return; }
+  await startVoice();
 }
 
 export function initVoice() {
@@ -446,17 +1757,12 @@ export function initVoice() {
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }
   document.body.addEventListener('click', (e) => {
+    // Composer mic → full-screen voice mode.
     if (e.target.closest('#voice-btn')) {
-      import('./document.js').then(m => {
-        if (m.openPanel) m.openPanel();
-        if (m.switchToDoc) m.switchToDoc('__voice__');
-      }).catch(() => {});
-      return;
-    }
-    if (e.target.closest('#doc-voice-mic-btn')) {
-      toggleVoice(document.getElementById('voice-canvas'));
+      e.preventDefault();
+      openVoiceMode({ autostart: true });
     }
   });
 }
 
-export default { speak, isRecording, toggleVoice, initVoice };
+export default { speak, isRecording, toggleVoice, initVoice, openVoiceMode, closeVoiceMode };

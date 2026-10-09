@@ -730,6 +730,16 @@ function createSessionItem(s) {
 
   div.appendChild(span);
 
+  // API cost badge — from the sidecar cost ledger (never part of chat context).
+  if (!isOpenClaw) {
+    const cost = document.createElement('span');
+    cost.className = 'session-cost';
+    cost.dataset.costSid = s.id;
+    _paintCost(cost, _costCache.get(s.id));
+    div.appendChild(cost);
+    _scheduleCostRefresh();
+  }
+
   // Apply processing/completed state to the star dot
   var _isProcessing = _researchingSessions.has(s.id) || _streamingSessions.has(s.id);
   var _isDone = _completedSessions.has(s.id) && !_isProcessing;
@@ -755,6 +765,48 @@ function createSessionItem(s) {
 
   return div;
 }
+
+// ── Per-chat API cost badges ───────────────────────────────────────────────
+const _costCache = new Map();   // session id → {usd, calls, unpriced}
+let _costFetchT = 0, _costInterval = 0;
+
+function _fmtUsd(v) {
+  if (!(v > 0)) return '$0';
+  if (v < 0.01) return '$' + v.toFixed(4);
+  if (v < 1) return '$' + v.toFixed(3);
+  return '$' + v.toFixed(2);
+}
+
+function _paintCost(el, c) {
+  if (!el) return;
+  if (!c || !(c.usd > 0 || c.calls > 0)) { el.textContent = ''; el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = _fmtUsd(c.usd);
+  el.title = `API cost so far: ${_fmtUsd(c.usd)} across ${c.calls} call${c.calls === 1 ? '' : 's'}` +
+    (c.unpriced ? ` (${c.unpriced} unpriced)` : '') + ' · includes OpenRouter top-up fee';
+}
+
+async function refreshSessionCosts() {
+  const els = Array.from(document.querySelectorAll('.session-cost[data-cost-sid]'));
+  const ids = [...new Set(els.map(e => e.dataset.costSid))].filter(Boolean);
+  if (!ids.length) return;
+  try {
+    const r = await fetch(`${API_BASE}/api/costs?ids=${encodeURIComponent(ids.join(','))}`, { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const { totals } = await r.json();
+    for (const id of ids) _costCache.set(id, (totals || {})[id] || null);
+    for (const el of els) _paintCost(el, _costCache.get(el.dataset.costSid));
+  } catch (e) { /* cost badges are best-effort */ }
+}
+
+function _scheduleCostRefresh() {
+  clearTimeout(_costFetchT);
+  _costFetchT = setTimeout(refreshSessionCosts, 400);
+  if (!_costInterval) {
+    _costInterval = setInterval(() => { if (!document.hidden) refreshSessionCosts(); }, 20000);
+  }
+}
+window.refreshSessionCosts = refreshSessionCosts;
 
 let _renderRAF = null;
 export function renderSessionList() {
