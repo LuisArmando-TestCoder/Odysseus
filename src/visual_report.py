@@ -1440,7 +1440,7 @@ body.category-product .content h3 {
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
   background: var(--bg-surface);
-  border-radius: 10px;
+  border-radius: 50%;
   display: flex; align-items: baseline; gap: 10px;
   font-family: var(--font-display);
   letter-spacing: -0.01em;
