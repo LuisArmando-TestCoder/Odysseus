@@ -18,7 +18,7 @@ import chatRenderer from './js/chatRenderer.js';
 import sessionModule from './js/sessions.js';
 import memoryModule from './js/memory.js';
 import voiceRecorderModule from './js/voiceRecorder.js';
-import voiceModule from './js/voice.js';
+import * as voiceModule from './js/voice.js';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';
