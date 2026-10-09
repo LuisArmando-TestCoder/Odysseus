@@ -2707,6 +2707,11 @@ import createResearchSynapse from './researchSynapse.js';
       }
     } finally {
       clearProcessingProbe();
+      // The read loop for this turn has ended (foreground or background).
+      // Clear the active-stream marker so consumers (voice mode dispatch,
+      // session switch guards) stop treating this session as busy. Guarded so
+      // a newer stream that started in the meantime keeps its own marker.
+      if (_streamSessionId === streamSessionId) _streamSessionId = null;
       // Streaming done — let screen readers announce the settled response.
       const _chatLogDone = document.getElementById('chat-history');
       if (_chatLogDone) _chatLogDone.setAttribute('aria-busy', 'false');
@@ -3011,6 +3016,9 @@ import createResearchSynapse from './researchSynapse.js';
     isStreaming = false;
     currentHolder = null;
     currentAccumulated = '';
+    // Hand the active-stream tracking over to the background map so the
+    // foreground marker no longer claims this session is streaming.
+    if (_streamSessionId === sessionId) _streamSessionId = null;
     // Reset submit button so the new chat is ready to send
     const submitBtn = document.querySelector('.send-btn');
     if (submitBtn) updateSubmitButton('idle', submitBtn);
