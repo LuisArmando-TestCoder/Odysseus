@@ -11,6 +11,14 @@ let _dc = null;
 let _audioEl = null;
 let _active = false;
 
+// ── Reasoning → chat queue ──────────────────────────────────────────────────
+let _transcriptBuffer = [];   // {speaker, text} not yet sent to the reasoner
+let _reasonDebounce = null;
+let _reasoning = false;
+let _queue = [];              // chat messages awaiting dispatch
+let _dispatcherTimer = null;
+let _lastReasonAt = 0;
+
 let _canvas = null;
 let _gl = null;
 let _raf = 0;
@@ -198,15 +206,80 @@ function _setStatus(text) {
 function _appendTranscript(speaker, text) {
   if (!text || !text.trim()) return;
   const el = document.getElementById('doc-voice-transcript');
-  if (!el) return;
-  const line = document.createElement('div');
-  line.className = 'voice-line';
-  line.innerHTML = `<b>${speaker}:</b> <span></span>`;
-  line.querySelector('span').textContent = text.trim();
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
-  // keep the last ~40 lines
-  while (el.children.length > 40) el.removeChild(el.firstChild);
+  if (el) {
+    const line = document.createElement('div');
+    line.className = 'voice-line';
+    line.innerHTML = `<b>${speaker}:</b> <span></span>`;
+    line.querySelector('span').textContent = text.trim();
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+    while (el.children.length > 40) el.removeChild(el.firstChild);
+  }
+  // Accumulate for the reasoning agent.
+  _transcriptBuffer.push({ speaker, text: text.trim() });
+  if (_transcriptBuffer.length > 60) _transcriptBuffer.splice(0, _transcriptBuffer.length - 60);
+  _scheduleReason();
+}
+
+// ── Reasoning agent: decide what to send to the chat ────────────────────────
+
+function _scheduleReason() {
+  clearTimeout(_reasonDebounce);
+  _reasonDebounce = setTimeout(_maybeReason, 4000); // wait for a quiet gap
+}
+
+async function _maybeReason() {
+  if (_reasoning || !_transcriptBuffer.length) return;
+  _reasoning = true;
+  const lines = _transcriptBuffer
+    .map(l => (l.speaker === 'You' ? 'User' : 'Assistant') + ': ' + l.text)
+    .join('\n');
+  _transcriptBuffer = []; // process new turns next time
+  try {
+    const r = await fetch(`${_apiBase()}/api/realtime/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: lines }),
+      credentials: 'same-origin',
+    });
+    const data = await r.json().catch(() => ({}));
+    if (data && data.send && data.message) {
+      _queue.push(data.message);
+      _setStatus(`${_queue.length} message(s) queued for the chat`);
+      _dispatch();
+    }
+  } catch (e) {
+    console.error('reason-to-chat failed', e);
+  } finally {
+    _reasoning = false;
+    _lastReasonAt = Date.now();
+  }
+}
+
+// ── Dispatcher: send queued messages one-at-a-time when the chat is idle ────
+
+function _dispatch() {
+  if (_dispatcherTimer) return;
+  _dispatcherTimer = setInterval(() => {
+    if (!_queue.length) { clearInterval(_dispatcherTimer); _dispatcherTimer = null; return; }
+    const sid = window.sessionModule && window.sessionModule.getCurrentSessionId && window.sessionModule.getCurrentSessionId();
+    const busy = window.chatModule && window.chatModule.hasActiveStream && window.chatModule.hasActiveStream(sid);
+    if (busy) return;
+    const msg = _queue.shift();
+    _sendToChat(msg);
+    _setStatus(_queue.length ? `${_queue.length} message(s) still queued` : 'Sent to chat');
+  }, 1200);
+}
+
+function _sendToChat(text) {
+  const input = document.querySelector('#message, textarea#message');
+  if (input) {
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const sendBtn = document.querySelector('.send-btn, #send-btn');
+  if (sendBtn) sendBtn.click();
+  else if (window.chatModule && window.chatModule.handleChatSubmit) window.chatModule.handleChatSubmit();
 }
 
 // ── Realtime event handling ─────────────────────────────────────────────────
