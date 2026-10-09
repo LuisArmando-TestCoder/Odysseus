@@ -274,12 +274,25 @@ async function startVoice(canvas) {
     const offer = await _pc.createOffer();
     await _pc.setLocalDescription(offer);
 
+    // Wait for ICE candidate gathering so the SDP offer is complete.
+    if (_pc.iceGatheringState !== 'complete') {
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 3000);
+        const onState = () => {
+          if (_pc.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); }
+        };
+        _pc.addEventListener('icegatheringstatechange', onState);
+        onState();
+      });
+    }
+    const sdp = (_pc.localDescription && _pc.localDescription.sdp) || offer.sdp;
+
     // Proxy the SDP offer through our backend (CSP-friendly; key stays server-side).
     const resp = await fetch(
       `${_apiBase()}/api/realtime/session`,
       {
         method: 'POST',
-        body: offer.sdp,
+        body: sdp,
         headers: { 'Content-Type': 'application/sdp' },
         credentials: 'same-origin',
       }

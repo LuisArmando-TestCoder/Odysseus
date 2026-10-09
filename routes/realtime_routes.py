@@ -36,6 +36,7 @@ def setup_realtime_routes() -> APIRouter:
         sdp = (await request.body()).decode("utf-8", "replace").strip()
         if not sdp:
             raise HTTPException(400, "An SDP offer is required")
+        logger.info(f"Realtime SDP offer received: {len(sdp)} bytes | head={sdp[:80]!r}")
 
         model = settings.get("realtime_model", "gpt-realtime-2.1")
         voice = settings.get("realtime_voice", "alloy")
