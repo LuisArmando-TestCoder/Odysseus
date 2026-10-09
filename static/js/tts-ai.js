@@ -162,13 +162,22 @@ class AITTSManager {
     }
 
     _findBrowserVoice() {
-        if (!this.browserVoice) return null;
         const voices = window.speechSynthesis.getVoices();
-        const target = this.browserVoice.toLowerCase();
-        // Try exact match first, then partial
-        return voices.find(v => v.name.toLowerCase() === target) ||
-               voices.find(v => v.name.toLowerCase().includes(target)) ||
-               null;
+        if (!voices || !voices.length) return null;
+        if (this.browserVoice) {
+            const target = this.browserVoice.toLowerCase();
+            const exact = voices.find(v => v.name.toLowerCase() === target);
+            if (exact) return exact;
+            const partial = voices.find(v => v.name.toLowerCase().includes(target));
+            if (partial) return partial;
+        }
+        // Smart fallback: prefer a male British/English voice.
+        const male = /male|daniel|george|arthur|oliver|ryan|james/i;
+        const gb = voices.filter(v => /^en[-_]GB/i.test(v.lang));
+        const en = voices.filter(v => /^en/i.test(v.lang));
+        return (gb.find(v => male.test(v.name))) ||
+               (en.find(v => male.test(v.name))) ||
+               gb[0] || en[0] || null;
     }
 
     async play(text) {
