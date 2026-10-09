@@ -1033,6 +1033,10 @@ function _dispatchTick(manual = false) {
     batch.forEach(q => _setItem(q, 'sent'));
     _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
     _systemLine(batch.length === 1 ? `Sent to chat → “${batch[0].title}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
+    // Tell GPT-Live (quietly) that real work just started, so it can reassure
+    // the user with accurate status instead of guessing while the chat runs.
+    _brief('The chat agent just received a request to work on: ' + text.slice(0, 260) +
+      '. It is running now; its result will follow shortly. You may tell the user that the work is underway.', false);
   } else {
     batch.forEach(q => _setItem(q, 'failed', 'The chat composer was not available — Retry when the chat is ready.'));
   }
@@ -1264,8 +1268,7 @@ async function _ingestChat(busy) {
 }
 
 function _injectContext(text) {
-  _brief('[Chat thread update — context only, not said aloud by the user; do not reply to it] ' +
-         'The chat agent answered:\n' + text.slice(0, 1500), false);
+  _brief('Chat agent answer (context for you; do not speak it now):\n' + text.slice(0, 1500), false);
 }
 
 let _chatFeedSig = '';
@@ -1323,8 +1326,8 @@ function _speakResult(item, el) {
   if (!result) return;
   _remember(_spokenKeys, _key('chat_ai', _msgText(el)));
   _systemLine(`Chat finished “${item?.title || 'request'}” — briefing you.`, 'done');
-  const note = `[Background update — not said by the user] The chat agent finished the request "${item?.title || ''}". ` +
-    `Its result:\n${result}\n\nBriefly and naturally tell the user the outcome in one or two sentences. Do not read lists verbatim.`;
+  const note = `The chat agent just finished the request "${item?.title || ''}". Its result:\n` +
+    `${result}\n\nBriefly tell the user the outcome in one or two sentences, in your own words. Do not read lists verbatim.`;
   _brief(note, true);
 }
 
@@ -1333,16 +1336,20 @@ function _nowNote() {
   return `Current local time: ${d.toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`;
 }
 
-// Send context to GPT-Live over the data channel. When `speak`, ask it to
-// respond — but only once it isn't already talking (a response.create during
-// an active response is rejected), so briefings queue until response.done.
+// GPT-Live injects context over the data channel with session.*.append events —
+// NOT the Realtime API's conversation.item.create (which GPT-Live rejects).
+//   - session.thinking.append  → quiet factual context the model can use later
+//   - session.commentary.append → results GPT-Live should paraphrase and say aloud
+// Both take a plain-string `content` (≤500 tokens), a unique `event_id`, and a
+// `delegation_id` (null for session-wide context). A commentary append makes the
+// model speak on its own, so there is no response.create to synchronise.
+let _briefSeq = 0;
 function _brief(text, speak) {
-  if (!_active || !_injectOK) return;
-  if (speak && _respActive) { _pendingBriefs.push(text); return; }
+  if (!_active || !_injectOK || !text) return;
   _lastInjectAt = Date.now();
-  const ok = _dcSend({ type: 'conversation.item.create',
-    item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: text + '\n' + _nowNote() }] } });
-  if (ok && speak) { _respActive = true; _dcSend({ type: 'response.create' }); }
+  const eventId = 'ody_' + (++_briefSeq) + '_' + Date.now().toString(36);
+  const type = speak ? 'session.commentary.append' : 'session.thinking.append';
+  _dcSend({ type, event_id: eventId, delegation_id: null, content: text });
 }
 
 function _flushBriefs() {
