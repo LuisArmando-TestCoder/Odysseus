@@ -1479,9 +1479,15 @@ async function startVoice() {
   _audioCtx.createMediaStreamSource(_micStream).connect(_micAnalyser);
 
   try {
-    _pc = new RTCPeerConnection();
-    _pc.addTrack(_micStream.getAudioTracks()[0], _micStream);
-    _pc.ontrack = (e) => {
+    // Use a LOCAL pc for the whole handshake. `_pc` is a module global that
+    // _teardown() nulls out (and a quick disconnect/reconnect can replace)
+    // while this async handshake awaits getUserMedia/fetch. Referencing the
+    // global after an await could then touch a different/closed pc, which is
+    // what makes setRemoteDescription throw "Called in wrong state: stable".
+    const pc = new RTCPeerConnection();
+    _pc = pc;   // registered for teardown, but handshake below uses the local ref
+    pc.addTrack(_micStream.getAudioTracks()[0], _micStream);
+    pc.ontrack = (e) => {
       const stream = e.streams[0] || new MediaStream([e.track]);
       _audioEl = new Audio();
       _audioEl.autoplay = true;
@@ -1494,27 +1500,27 @@ async function startVoice() {
         _audioCtx.createMediaStreamSource(stream).connect(_outAnalyser);
       } catch (err) { _outAnalyser = null; }
     };
-    _pc.onconnectionstatechange = () => {
-      if (['failed', 'disconnected'].includes(_pc?.connectionState) && _active) {
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'disconnected'].includes(pc?.connectionState) && _active) {
         _systemLine('Connection lost.', 'warn');
         stopVoice(true);
       }
     };
 
-    _dc = _pc.createDataChannel('oai-events');
+    _dc = pc.createDataChannel('oai-events');
     _dc.onmessage = (e) => { try { _handleEvent(JSON.parse(e.data)); } catch (err) { /* ignore */ } };
 
-    const offer = await _pc.createOffer();
-    await _pc.setLocalDescription(offer);
-    if (_pc.iceGatheringState !== 'complete') {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    if (pc.iceGatheringState !== 'complete') {
       await new Promise((resolve) => {
         const timeout = setTimeout(resolve, 3000);
-        const onState = () => { if (_pc.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); } };
-        _pc.addEventListener('icegatheringstatechange', onState);
+        const onState = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); } };
+        pc.addEventListener('icegatheringstatechange', onState);
         onState();
       });
     }
-    const sdp = _pc.localDescription?.sdp || offer.sdp;
+    const sdp = pc.localDescription?.sdp || offer.sdp;
     const resp = await fetch(_api('/api/realtime/session'), {
       method: 'POST',
       body: JSON.stringify({ sdp }),
@@ -1529,7 +1535,13 @@ async function startVoice() {
     const result = await resp.json();
     const answerSdp = result?.transport?.sdp;
     if (!answerSdp) throw new Error('No SDP answer from GPT-Live');
-    await _pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    // If the connection was reset/reconnected while we awaited the SDP answer,
+    // the pending offer is gone and applying an answer would throw
+    // "Called in wrong state". Fail with a clean, retryable message instead.
+    if (pc.signalingState !== 'have-local-offer') {
+      throw new Error('Connection was reset before the voice answer arrived — please reconnect.');
+    }
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
   } catch (e) {
     console.error('realtime connect failed', e);
     _teardown();

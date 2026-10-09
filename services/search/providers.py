@@ -17,6 +17,15 @@ logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 20
 
+# DuckDuckGo (and several SearXNG instances) return an anti-bot "202 anomaly"
+# page when the request uses the bare "Mozilla/5.0" UA string that httpx
+# otherwise defaults to if we pass a terse one. A full desktop-Chrome UA makes
+# html.duckduckgo.com/html/ return real results instead of an empty 202 page.
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+
 # Provider registry — maps setting value to (label, needs_key, needs_url)
 PROVIDER_INFO = {
     "searxng":  ("SearXNG",           False, True),
@@ -251,7 +260,7 @@ def searxng_search(query, max_results=10):
     """Search using SearXNG instance - parsing HTML."""
     instance = _get_search_instance()
     api_key = ""
-    req_headers = {"User-Agent": "Mozilla/5.0"}
+    req_headers = {"User-Agent": _BROWSER_UA}
     if api_key:
         req_headers["Authorization"] = f"Bearer {api_key}"
     try:
@@ -389,9 +398,14 @@ def duckduckgo_search(query: str, count: int = 10, time_filter: Optional[str] = 
             response = httpx.get(
                 "https://html.duckduckgo.com/html/",
                 params={"q": query, "kp": _safesearch_for("duckduckgo_html")},
-                headers={"User-Agent": "Mozilla/5.0"},
+                headers={"User-Agent": _BROWSER_UA},
                 timeout=REQUEST_TIMEOUT,
             )
+            # html.duckduckgo.com returns 202 with an empty "anomaly" page for
+            # bot-looking requests; treat that as "no results, not an error".
+            if response.status_code == 202:
+                logger.warning("DuckDuckGo HTML returned 202 (bot check); treating as empty")
+                return []
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
             parsed = []
