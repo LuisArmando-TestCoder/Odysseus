@@ -170,7 +170,6 @@ class ChatProcessor:
         agent_mode: bool = False,
         incognito: bool = False,
         use_skills: bool = True,
-        memory_scope: str = "global",
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]], List[Dict[str, str]]]:
         """Build the context preface for LLM calls.
 
@@ -216,7 +215,6 @@ class ChatProcessor:
             mem_entries = self.memory_manager.load(
                 owner=owner,
                 session_id=_sid,
-                scope=memory_scope,
             )
 
             pinned = [m for m in mem_entries if m.get("pinned")]

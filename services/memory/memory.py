@@ -120,29 +120,20 @@ class MemoryManager:
 
         return []
 
-    def load(self, owner: str = None, session_id: str = None, scope: str = None) -> List[Dict]:
-        """Load memory entries, filtered by owner and optionally by scope.
+    def load(self, owner: str = None, session_id: str = None) -> List[Dict]:
+        """Load memory entries, filtered by owner and session.
 
-        Scope semantics:
-        - scope == "session": return only entries tied to `session_id` plus
-          entries explicitly marked "global". This gives per-chat isolation
-          while still surfacing facts the user opted to share everywhere.
-        - scope == "global" (or None): return all entries for the owner
-          (the historical behavior).
+        Strict per-chat isolation: when `session_id` is provided, only entries
+        tied to that session are returned — there is no cross-chat sharing.
+        When `session_id` is omitted, all entries for the owner are returned
+        (management/backup view, not chat injection).
         """
         entries = self.load_all()
         if owner is not None:
             entries = [e for e in entries if e.get("owner") == owner]
 
-        if scope == "session":
-            if session_id:
-                entries = [
-                    e for e in entries
-                    if e.get("scope") == "global" or e.get("session_id") == session_id
-                ]
-            else:
-                # No session context — only global entries are safe to surface.
-                entries = [e for e in entries if e.get("scope") == "global"]
+        if session_id:
+            entries = [e for e in entries if e.get("session_id") == session_id]
 
         return entries
 
@@ -170,11 +161,6 @@ class MemoryManager:
                 entry["source"] = "unknown"
             if "category" not in entry:
                 entry["category"] = "fact"
-            # Default scope: pre-existing entries are global (shared across
-            # chats) so the historical behavior is preserved until a user
-            # opts into per-chat isolation.
-            if "scope" not in entry:
-                entry["scope"] = "global"
             validated.append(entry)
         return validated
     
@@ -225,12 +211,11 @@ class MemoryManager:
         os.replace(tmp_file, self.memory_file)
     
     def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None,
-                  session_id: str = None, scope: str = "global") -> Dict:
+                  session_id: str = None) -> Dict:
         """Add a new memory entry.
 
-        `scope` controls cross-chat visibility:
-        - "global": visible in every chat (default, historical behavior).
-        - "session": visible only in the chat identified by `session_id`.
+        Every entry is tied to a `session_id`; there is no global scope.
+        Entries are only surfaced in the chat identified by `session_id`.
         """
         if not text.strip():
             raise ValueError("Memory text cannot be empty")
@@ -241,7 +226,6 @@ class MemoryManager:
             "timestamp": int(time.time()),
             "source": source,
             "category": category,
-            "scope": scope if scope in ("global", "session") else "global",
         }
         if owner:
             entry["owner"] = owner

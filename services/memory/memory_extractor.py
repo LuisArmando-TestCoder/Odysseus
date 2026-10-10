@@ -229,7 +229,6 @@ async def extract_and_store(
     endpoint_url: str,
     model: str,
     headers: Optional[dict] = None,
-    scope: str = "global",
 ):
     """Extract facts from recent conversation and store them.
 
@@ -362,7 +361,7 @@ async def extract_and_store(
 
             entry = memory_manager.add_entry(
                 fact_text, source="auto", category=category, owner=_owner,
-                session_id=_sid, scope=scope,
+                session_id=_sid,
             )
             # Auto-pin identity facts (name, job, location) — core context
             if category == "identity":
