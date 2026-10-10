@@ -8,7 +8,7 @@ and the task scheduler / builtin actions system.
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,21 @@ _THROWAWAY_NAMES = {
     "ok", "lol", "bruh", "hmm", "hm", "meh",
 }
 _THROWAWAY_MAX_MESSAGES = 4
+# Never clean up a session touched this recently. A brand-new chat is "empty"
+# for the instant between POST /api/session and its first message — the tidy
+# task fires on `session_created`, so without this grace it deleted the very
+# session a request was about to stream into (→ /api/chat_stream 404), and
+# even the task's own result session (→ FOREIGN KEY error on delivery).
+_FRESH_GRACE = timedelta(minutes=30)
+
+
+def _is_fresh(row, now: datetime) -> bool:
+    stamps = [getattr(row, a, None) for a in ("created_at", "updated_at", "last_accessed", "last_message_at")]
+    stamps = [s for s in stamps if isinstance(s, datetime)]
+    if not stamps:
+        return True   # unknown age → don't risk deleting it
+    newest = max(s.replace(tzinfo=None) for s in stamps)
+    return now - newest < _FRESH_GRACE
 
 
 async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
@@ -50,8 +65,11 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
             *([DbSession.owner == owner] if owner else []),
         ).all()
 
+        now = datetime.utcnow()
         for row in rows:
             if getattr(row, 'is_important', False):
+                continue
+            if _is_fresh(row, now):
                 continue
             if (row.name or "").strip() == "Incognito":
                 deleted_throwaway += 1
