@@ -66,6 +66,18 @@ let _chatSid = null, _chatWasBusy = false;
 let _injectOK = true, _lastInjectAt = 0;
 let _respActive = false, _pendingBriefs = [];   // GPT-Live is mid-response → briefings wait
 
+// ── Incremental narration ───────────────────────────────────────────────────
+// While the chat is generating, read the growing AI message in batches and
+// speak each new chunk aloud (commentary) so the voice never waits for the
+// whole run to finish. Each batch tells GPT-Live whether we're still mid-run
+// or finished, so it can keep narrating discoveries or give the final summary.
+let _narratedLen = 0;        // watermark: chars of the streaming AI message already narrated
+let _lastNarrateAt = 0;      // last commentary timestamp (throttle)
+let _narrateActive = false;  // we are narrating a run in progress
+let _narrateStallAt = 0;     // when the text last grew (stall detection)
+let _narratedFinal = false;  // final summary already spoken by narration
+let _narrateEl = null;       // bubble currently being narrated (agent runs span several)
+
 // ── Event diagnostics ───────────────────────────────────────────────────────
 const _eventTypes = new Map();   // type → count
 let _transcriptSeen = false, _diagT = 0;
@@ -149,10 +161,11 @@ void main() {
   col += c * exp(-r * r * 13.0) * (0.22 + 0.7 * e);
   col += c * ring(r, coreR + 0.035, 0.006) * (0.7 + 0.6 * e);
 
-  // ── radial spectrum (mirrored) ──
-  float fx = abs(an * 2.0 - 1.0);
+  // ── radial spectrum (mirrored, rotated 45° counter-clockwise) ──
+  float anr = fract(an - 0.125);   // 0.125 of a turn = 45° CCW (screen space)
+  float fx = abs(anr * 2.0 - 1.0);
   float s = fft(fx * 0.85);
-  float seg = fract(an * 120.0);
+  float seg = fract(anr * 120.0);
   float bar = smoothstep(0.12, 0.24, seg) * smoothstep(0.88, 0.76, seg);
   float r0 = 0.39;
   float r1 = r0 + 0.035 + s * 0.27;
@@ -1354,6 +1367,7 @@ function _chatTick() {
   if (sid !== _chatSid) {
     const prev = _chatSid;
     _chatSid = sid;
+    _resetNarration();
     _markAllSeen();
     _chatWasBusy = _chatBusy();
     if (prev) {
@@ -1368,7 +1382,7 @@ function _chatTick() {
   _dispatchTick();
 
   const busy = _chatBusy();
-  if (busy && !_chatWasBusy) _setChatState('streaming', 'Responding');
+  if (busy && !_chatWasBusy) { _resetNarration(); _setChatState('streaming', 'Responding'); }
   if (!busy && _chatWasBusy) {
     const last = _lastAIEl();
     if (last && last.querySelector('.stopped-indicator')) {
@@ -1382,6 +1396,7 @@ function _chatTick() {
   _costTick = (_costTick + 1) % 10;
   if (_costTick === 0 || sid !== _costSid) { _costSid = sid; _refreshHudCost(); }
   _ingestChat(busy);
+  _narrateStream(busy);
   _renderChatFeed();          // no-op unless something changed (signature check)
 }
 
@@ -1478,8 +1493,78 @@ function _renderChatFeed() {
   if (atBottom || busy) box.scrollTop = box.scrollHeight;
 }
 
+function _resetNarration() {
+  _narratedLen = 0;
+  _lastNarrateAt = 0;
+  _narrateActive = false;
+  _narrateStallAt = 0;
+  _narratedFinal = false;
+  _narrateEl = null;
+}
+
+function _narrateStream(busy) {
+  if (!_active || !_injectOK || !_opts.speak) return;
+  if (_respActive) return;   // GPT-Live is already speaking — don't pile on
+  const el = _lastAIEl();
+  if (!el) return;
+  const now = Date.now();
+
+  if (busy) {
+    // Only narrate the bubble that is actually streaming — at run start the
+    // last .msg-ai can still be the previous, already-answered message.
+    if (!el.classList.contains('streaming')) {
+      if (_narrateActive && now - _narrateStallAt >= 10000 && now - _lastNarrateAt >= 10000) {
+        _lastNarrateAt = now;
+        _brief('Still working — no new findings yet. Let me keep researching.', true);
+      }
+      return;
+    }
+    if (!_narrateActive) {
+      _narrateActive = true;
+      _narrateStallAt = now;
+    }
+    // Agent runs open a new bubble per tool round — restart the watermark.
+    if (el !== _narrateEl) { _narrateEl = el; _narratedLen = 0; }
+    const text = _msgText(el, 4000);
+    const delta = text.slice(_narratedLen);
+    if (delta.length > 0) _narrateStallAt = now;
+    const enough = delta.length >= 180;
+    const stale = now - _lastNarrateAt >= 3000;
+    if (delta.length > 0 && (enough || stale)) {
+      _narratedLen = text.length;
+      _lastNarrateAt = now;
+      _brief(
+        `Still investigating. New findings so far:\n${delta.slice(-400)}\n\n` +
+        `Briefly tell the user what you just learned, in your own words — do not read it verbatim.`,
+        true
+      );
+    } else if (now - _narrateStallAt >= 10000 && now - _lastNarrateAt >= 10000) {
+      // No new text for a while — reassure without looping.
+      _lastNarrateAt = now;
+      _brief(`Still working — no new findings yet. Let me keep researching.`, true);
+    }
+  } else if (_narrateActive) {
+    // Run finished: deliver the final summary once.
+    const text = _msgText(el, 4000);
+    if (!text) return;
+    if (el.querySelector('.stopped-indicator')) { _resetNarration(); return; }  // cancelled run
+    _narrateActive = false;
+    _narratedFinal = true;
+    _lastNarrateAt = now;
+    _remember(_spokenKeys, _key('chat_ai', text));
+    _brief(
+      `The investigation is finished. Final result:\n${text.slice(-1800)}\n\n` +
+      `Briefly tell the user the outcome in one or two sentences, in your own words. Do not read lists verbatim.`,
+      true
+    );
+  }
+}
+
 function _speakResult(item, el) {
   if (!_opts.speak || !_active || !_injectOK) return;
+  // Incremental narration owns the final summary for any run it narrated —
+  // it fires right after this (same tick), so skip here to avoid speaking twice.
+  if (_narrateActive || _narratedFinal) { _narratedFinal = false; return; }
   el = el || _lastAIEl();
   const result = _msgText(el, 1800);
   if (!result) return;
