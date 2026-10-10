@@ -229,6 +229,7 @@ async def extract_and_store(
     endpoint_url: str,
     model: str,
     headers: Optional[dict] = None,
+    scope: str = "global",
 ):
     """Extract facts from recent conversation and store them.
 
@@ -351,14 +352,21 @@ async def extract_and_store(
                 logger.debug(f"Memory dedup (fuzzy): '{fact_text[:50]}' too similar to existing")
                 continue
 
-            entry = memory_manager.add_entry(fact_text, source="auto", category=category, owner=_owner)
+            _sid = None
+            if hasattr(session, "session_id"):
+                _sid = session.session_id
+            elif hasattr(session, "id"):
+                _sid = session.id
+            elif hasattr(session, "name"):
+                _sid = session.name
+
+            entry = memory_manager.add_entry(
+                fact_text, source="auto", category=category, owner=_owner,
+                session_id=_sid, scope=scope,
+            )
             # Auto-pin identity facts (name, job, location) — core context
             if category == "identity":
                 entry["pinned"] = True
-            if hasattr(session, "session_id"):
-                entry["session_id"] = session.session_id
-            elif hasattr(session, "name"):
-                entry["session_id"] = session.name
 
             existing.append(entry)
 

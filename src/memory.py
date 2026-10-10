@@ -124,12 +124,31 @@ class MemoryManager:
 
         return []
 
-    def load(self, owner: str = None) -> List[Dict]:
-        """Load memory entries, optionally filtered by owner."""
+    def load(self, owner: str = None, session_id: str = None, scope: str = None) -> List[Dict]:
+        """Load memory entries, filtered by owner and optionally by scope.
+
+        Scope semantics:
+        - scope == "session": return only entries tied to `session_id` plus
+          entries explicitly marked "global". This gives per-chat isolation
+          while still surfacing facts the user opted to share everywhere.
+        - scope == "global" (or None): return all entries for the owner
+          (the historical behavior).
+        """
         entries = self.load_all()
-        if owner is None:
-            return entries
-        return [e for e in entries if e.get("owner") == owner]
+        if owner is not None:
+            entries = [e for e in entries if e.get("owner") == owner]
+
+        if scope == "session":
+            if session_id:
+                entries = [
+                    e for e in entries
+                    if e.get("scope") == "global" or e.get("session_id") == session_id
+                ]
+            else:
+                # No session context — only global entries are safe to surface.
+                entries = [e for e in entries if e.get("scope") == "global"]
+
+        return entries
     
     def _validate_entries(self, entries: List[Dict]) -> List[Dict]:
         """Ensure all entries have required fields."""
@@ -145,6 +164,11 @@ class MemoryManager:
                 entry["category"] = "fact"
             if "uses" not in entry:
                 entry["uses"] = 0
+            # Default scope: pre-existing entries are global (shared across
+            # chats) so the historical behavior is preserved until a user
+            # opts into per-chat isolation.
+            if "scope" not in entry:
+                entry["scope"] = "global"
             validated.append(entry)
         return validated
     
@@ -194,8 +218,14 @@ class MemoryManager:
             json.dump(entries, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, self.memory_file)
     
-    def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None) -> Dict:
-        """Add a new memory entry."""
+    def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None,
+                  session_id: str = None, scope: str = "global") -> Dict:
+        """Add a new memory entry.
+
+        `scope` controls cross-chat visibility:
+        - "global": visible in every chat (default, historical behavior).
+        - "session": visible only in the chat identified by `session_id`.
+        """
         if not text.strip():
             raise ValueError("Memory text cannot be empty")
 
@@ -206,9 +236,12 @@ class MemoryManager:
             "source": source,
             "category": category,
             "uses": 0,
+            "scope": scope if scope in ("global", "session") else "global",
         }
         if owner:
             entry["owner"] = owner
+        if session_id:
+            entry["session_id"] = session_id
         return entry
 
     def increment_uses(self, ids: List[str]) -> None:

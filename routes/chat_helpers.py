@@ -448,6 +448,12 @@ async def build_chat_context(
 
     # Memory enabled?
     mem_enabled = not incognito and not no_memory and uprefs.get("memory_enabled", True)
+    # Per-chat vs global memory scope. "session" isolates memories to the
+    # current chat (plus explicitly-global entries); "global" (default) keeps
+    # the historical cross-chat sharing behavior.
+    memory_scope = uprefs.get("memory_scope", "global")
+    if memory_scope not in ("global", "session"):
+        memory_scope = "global"
     # Skills injection respects its own enable toggle (mirrors memory_enabled).
     # When off, the "Available skills" index is not added to the prompt.
     skills_enabled = not incognito and uprefs.get("skills_enabled", True)
@@ -480,6 +486,7 @@ async def build_chat_context(
         agent_mode=agent_mode,
         incognito=incognito,
         use_skills=skills_enabled,
+        memory_scope=memory_scope,
     )
     if use_rag is not None:
         _preface_kwargs["use_rag"] = use_rag_val
@@ -841,6 +848,7 @@ def run_post_response_tasks(
         asyncio.create_task(extract_and_store(
             sess, memory_manager, memory_vector,
             t_url, t_model, t_headers,
+            scope=uprefs.get("memory_scope", "global"),
         ))
 
     # Skill extraction from complex agent runs. Only when the user actually
