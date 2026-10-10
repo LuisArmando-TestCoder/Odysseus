@@ -368,7 +368,7 @@ body.bg-pattern-sparkles {
       .export-dropdown-menu {
         min-width: 200px;
         padding: 6px;
-        border-radius: 10px;
+        border-radius: 50%;
       }
       .export-dropdown-item {
         padding: 12px 14px;
@@ -2493,7 +2493,7 @@ body.bg-pattern-sparkles {
       flex-shrink: 0;
       height: 28px;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 50%;
       overflow: hidden;
       position: relative;
     }
@@ -2513,7 +2513,7 @@ body.bg-pattern-sparkles {
       transform: translateX(100%);
     }
     #mode-agent-btn {
-      border-radius: 10px 0 0 10px;
+      border-radius: 50% 0 0 10px;
     }
     #mode-chat-btn {
       border-radius: 0 10px 10px 0;
@@ -2917,7 +2917,7 @@ body.bg-pattern-sparkles {
       position: fixed;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 50%;
       padding: 4px;
       min-width: 170px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -3193,7 +3193,7 @@ body.bg-pattern-sparkles {
       color: var(--fg);
       font-size: 0.7rem;
       padding: 2px 8px;
-      border-radius: 10px;
+      border-radius: 50%;
       cursor: pointer;
       opacity: 0.6;
       transition: opacity 0.15s, background 0.15s;
@@ -5084,7 +5084,7 @@ body.bg-pattern-sparkles {
       content: '';
       position: absolute;
       inset: 0;
-      border-radius: 10px;
+      border-radius: 50%;
       padding: 1px;
       background: linear-gradient(to bottom, var(--border), color-mix(in srgb, var(--border) 30%, transparent));
       -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -5495,7 +5495,7 @@ body.bg-pattern-sparkles {
       position: fixed;
       pointer-events: none;
       border: 3px solid var(--accent, var(--red));
-      border-radius: 10px;
+      border-radius: 50%;
       z-index: 10000;
       animation: ody-breathe 1.4s ease-in-out infinite;
       opacity: 0;
@@ -5538,7 +5538,7 @@ body.bg-pattern-sparkles {
       background: var(--bg);
       color: var(--fg);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 50%;
       padding: 12px 14px 10px;
       width: 240px;
       font-size: 0.78rem;
@@ -5677,7 +5677,7 @@ body.bg-pattern-sparkles {
       right: 0;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 50%;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px color-mix(in srgb, var(--fg) 5%, transparent);
       z-index: 1000;
       display: none;
@@ -10703,7 +10703,7 @@ textarea.memory-add-input {
   padding: 0 8px;
   display: inline-flex;
   align-items: center;
-  border-radius: 10px;
+  border-radius: 50%;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
@@ -12380,7 +12380,7 @@ mark.doc-find-mark.current {
   width: 250px;
   background: var(--panel);
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: 50%;
   padding: 12px 12px 10px;
   font-size: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
@@ -13723,7 +13723,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 4px 3px 6px;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
-  border: 1px solid var(--border); border-radius: 10px;
+  border: 1px solid var(--border); border-radius: 50%;
   font-size: 11px; cursor: grab; user-select: none;
 }
 .search-fb-chip.dragging { opacity: 0.4; }
@@ -13743,7 +13743,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
 .search-fb-remove:hover { opacity: 1; color: var(--red); }
 .search-fb-add {
   background: var(--bg); color: var(--fg);
-  border: 1px dashed var(--border); border-radius: 10px;
+  border: 1px dashed var(--border); border-radius: 50%;
   padding: 2px 6px; font-family: inherit; font-size: 11px;
   outline: none; cursor: pointer;
 }
@@ -14735,7 +14735,7 @@ body.left-dock-active {
   align-items: center;
   font-size: 9px;
   padding: 0 8px;
-  border-radius: 10px;
+  border-radius: 50%;
 }
 .doclib-grid:has(.doclib-card-expanded) > .doclib-card:not(.doclib-card-expanded) {
   display: none;
@@ -16090,7 +16090,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 .skill-eval-head  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .skill-eval-badge {
   font-size: 10px; font-weight: 700; letter-spacing: 0.03em;
-  padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+  padding: 2px 8px; border-radius: 50%; flex-shrink: 0;
 }
 .skill-eval-ok   { background: color-mix(in srgb, var(--color-success, #4ade80) 26%, transparent); color: var(--color-success, #4ade80); }
 .skill-eval-warn { background: color-mix(in srgb, var(--color-warning, #f0ad4e) 26%, transparent); color: var(--color-warning, #f0ad4e); }
@@ -16659,7 +16659,7 @@ body.gallery-selecting .gallery-dl-btn,
 .gallery-ai-chip {
   background: color-mix(in srgb, var(--accent, var(--red)) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 25%, transparent);
-  border-radius: 10px; padding: 3px 8px; font-size: 10px;
+  border-radius: 50%; padding: 3px 8px; font-size: 10px;
   color: var(--fg); opacity: 0.8;
   font: inherit; font-size: 10px;
   cursor: pointer;
@@ -16836,7 +16836,7 @@ body.gallery-selecting .gallery-dl-btn,
 .vision-editor-panel {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 50%;
   padding: 14px 16px;
   width: min(560px, 92vw);
   max-height: 88vh;
@@ -18067,7 +18067,7 @@ body.gallery-selecting .gallery-dl-btn,
   display: inline-block;
   margin-left: 6px;
   padding: 1px 7px;
-  border-radius: 10px;
+  border-radius: 50%;
   font-size: 9px;
   font-weight: 500;
   text-transform: lowercase;
@@ -20650,7 +20650,7 @@ body.gallery-selecting .gallery-dl-btn,
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
 }
 .hwfit-panel-badge {
-  font-size: 9px; padding: 2px 8px; border-radius: 10px;
+  font-size: 9px; padding: 2px 8px; border-radius: 50%;
   background: color-mix(in srgb, var(--red) 12%, transparent);
   color: var(--red); font-weight: 600; flex-shrink: 0;
 }
@@ -21340,7 +21340,7 @@ body:not(.welcome-ready) #welcome-screen {
   letter-spacing: 0.02em;
   padding: 1px 7px;
   margin-right: 4px;
-  border-radius: 10px;
+  border-radius: 50%;
   color: var(--accent, var(--red));
   background: color-mix(in srgb, var(--accent, var(--red)) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 35%, transparent);
@@ -22488,7 +22488,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .research-synapse {
   margin: 6px 0 4px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 50%;
   background:
     radial-gradient(ellipse at center, color-mix(in srgb, var(--accent, var(--red)) 10%, transparent) 0%, transparent 70%),
     color-mix(in srgb, var(--panel) 50%, var(--bg));
@@ -23437,7 +23437,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-radius: 10px;
+  border-radius: 50%;
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--fg) 18%, transparent);
@@ -23462,7 +23462,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-shortcuts-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 50%;
   padding: 14px 18px 12px;
   box-shadow: 0 8px 30px color-mix(in srgb, var(--fg) 25%, transparent);
   width: min(720px, 92vw);
@@ -24457,7 +24457,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   position: fixed;
   z-index: 305;
   width: 320px;
-  border-radius: 10px;
+  border-radius: 50%;
   display: flex;
   flex-direction: column;
   font-size: 11px;
@@ -26735,7 +26735,7 @@ button .spinner-whirlpool {
   background: color-mix(in srgb, var(--accent, var(--red)) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 30%, transparent);
   color: var(--accent, var(--red));
-  border-radius: 10px; padding: 1px 6px; font-size: 9px; font-weight: 600;
+  border-radius: 50%; padding: 1px 6px; font-size: 9px; font-weight: 600;
   text-transform: lowercase; letter-spacing: 0.3px;
 }
 .email-spam-unflag {
@@ -26959,7 +26959,7 @@ button .spinner-whirlpool {
   padding: 1px 8px; font-size: 10px;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 50%;
   color: var(--fg);
   white-space: nowrap;
   cursor: pointer;
@@ -29312,7 +29312,7 @@ body.notes-drag-mode .note-card-pin svg {
   margin-top: 10px;
   padding: 4px 8px 4px 4px;
   border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
-  border-radius: 10px;
+  border-radius: 50%;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
@@ -29512,7 +29512,7 @@ body.notes-drag-mode .note-card-pin svg {
   flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 50%;
   overflow: hidden;
   width: min(880px, 92vw);
   height: min(80vh, 820px);
@@ -29602,7 +29602,7 @@ body.notes-drag-mode .note-card-pin svg {
   background-position: 6px center;
   background-size: 11px 11px;
   border: 1px solid color-mix(in srgb, #b48a4a 45%, transparent);
-  border-radius: 10px;
+  border-radius: 50%;
   vertical-align: middle;
 }
 /* Hide the "Add a to-do…" quick-add bar in archive view — you can't add
@@ -30517,7 +30517,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 @media (max-width: 768px) {
   .notes-quick-type-seg {
     height: 36px;
-    border-radius: 10px;
+    border-radius: 50%;
   }
   .notes-quick-type-seg::before {
     border-radius: 9px;
@@ -30679,7 +30679,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   font-size: 9px;
   font-weight: 500;
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: 50%;
   align-self: flex-start;
   margin-top: 2px;
 }
@@ -30859,7 +30859,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   display: inline-flex;
   height: 32px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 50%;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
@@ -31117,7 +31117,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   color: color-mix(in srgb, var(--fg) 60%, transparent);
   font-size: 10px;
   padding: 3px 10px;
-  border-radius: 10px;
+  border-radius: 50%;
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -32233,7 +32233,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   /* Accent-colored box around the whole control so it's instantly readable
      as "switch is on", and the sliding pill inside indicates which side. */
   border: 2px solid var(--accent);
-  border-radius: 10px;
+  border-radius: 50%;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
@@ -32651,7 +32651,7 @@ button.cal-add-btn.cal-add-btn-text:hover .cal-add-plus {
    animation is identical. Just shrunk a bit. */
 button.cal-add-btn.cal-add-btn-text.cal-add-btn-sm {
   height: 20px;
-  border-radius: 10px;
+  border-radius: 50%;
   /* At rest: tight, equal padding around the "+" so it sits centred
      with no trailing gap. On hover the right pad and the flex gap grow
      to make room for the revealed "New". */
@@ -34374,7 +34374,7 @@ body.research-panel-view #research-divider { display:none; }
 .research-hero {
   display: flex; align-items: center; gap: 14px;
   padding: 16px 18px; margin: 8px 0 14px;
-  border-radius: 10px;
+  border-radius: 50%;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--cat-color, var(--accent)) 18%, transparent) 0%,

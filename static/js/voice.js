@@ -82,8 +82,10 @@ let _tmpBands = new Uint8Array(BANDS);   // reused every frame — no per-frame 
 let _t0 = performance.now();
 let _col = STATE_COLORS.idle.slice();
 let _lvl = 0, _out = 0, _think = 0, _thinkTarget = 0;
-let _lastCssAt = 0, _lastCssR = -1, _lastCssG = -1, _lastCssB = -1, _lastCssE = -1;
 let _scale = 1, _scaleAt = 0, _lastFrameAt = 0;
+let _bgCanvas = null, _bgGl = null, _bgProg = null, _bgTex = null, _bgU = {};
+let _orbRect = null, _orbResizeBound = false;
+const _reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 let _root = null;
 let _assistantName = 'ALFRED';
@@ -188,12 +190,100 @@ void main() {
 }
 `;
 
-function _compile(type, src) {
-  const s = _gl.createShader(type);
-  _gl.shaderSource(s, src);
-  _gl.compileShader(s);
-  if (!_gl.getShaderParameter(s, _gl.COMPILE_STATUS)) {
-    console.error('voice shader error', _gl.getShaderInfoLog(s));
+// Full-screen background shader — replaces the old CSS layers (grid + aurora +
+// scan + vignette + halo) with a single GPU pass. Perlin noise (fbm) with
+// time-based domain warp, impulsed by the FFT amplitude (texture), tinted to
+// the accent colour, plus halo glow at the orb centre. Renders opaque over
+// `.vx`'s radial-gradient fallback.
+const BG_FRAG = `
+precision highp float;
+uniform vec2 u_res;
+uniform float u_time;
+uniform sampler2D u_fft;
+uniform float u_level;
+uniform float u_out;
+uniform vec3 u_color;
+uniform vec2 u_orb;
+uniform float u_orbR;
+#define TAU 6.28318530718
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+float noise(vec2 p){
+  vec2 i=floor(p), f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), f.x),
+             mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), f.x), f.y);
+}
+float fbm(vec2 p){
+  float v=0.0, a=0.5;
+  for(int i=0;i<5;i++){ v+=a*noise(p); p=p*2.03+7.1; a*=0.5; }
+  return v;
+}
+float fft(float x){ return texture2D(u_fft, vec2(clamp(x,0.0,1.0),0.5)).r; }
+
+vec3 palette(float t){
+  vec3 a=vec3(0.5), b=vec3(0.5), c=vec3(1.0), d=vec3(0.263,0.416,0.557);
+  return a + b*cos(TAU*(c*t+d));
+}
+
+void main(){
+  vec2 frag = gl_FragCoord.xy;
+  vec2 uv = (2.0*frag - u_res) / min(u_res.x, u_res.y);
+  float t = u_time;
+  float e = clamp(max(u_level, u_out), 0.0, 1.0);
+
+  // Aurora: time-based fluid perlin noise (domain warp) + FFT impulse (addition)
+  vec2 q = vec2(fbm(uv*1.7 + t*0.12), fbm(uv*1.7 - t*0.10));
+  vec2 r = vec2(fbm(uv*1.7 + q*1.3 + vec2(1.7,9.2) + t*0.14),
+                fbm(uv*1.7 + q*1.3 + vec2(8.3,2.8) - t*0.12));
+  float n = fbm(uv*1.7 + r*1.5);
+
+  float ang = atan(uv.y, uv.x)/TAU + 0.5;
+  float radl = length(uv);
+  float s = fft(abs(ang*2.0 - 1.0) * 0.85);
+  float impulse = s * exp(-radl*2.4) * (0.35 + 0.85*e);
+
+  float m = n + impulse;
+  vec3 aur = palette(m*0.5 + t*0.04 + e*0.18);
+  aur = mix(aur, u_color, 0.30 + 0.30*e);
+
+  vec3 col = vec3(0.012, 0.026, 0.05) + aur * (0.16 + 0.30*e);
+
+  // Grid + drift
+  float gs = 46.0;
+  vec2 g = frag/gs + vec2(t*0.03, t*0.03);
+  vec2 gv = abs(fract(g - 0.5) - 0.5);
+  float line = max(step(gv.x, 0.018), step(gv.y, 0.018));
+  float gridMask = smoothstep(1.1, 0.15, radl);
+  col += u_color * line * 0.04 * gridMask;
+
+  // Scan lines
+  float scan = 0.5 + 0.5*sin(frag.y * 1.5);
+  col += vec3(0.03) * step(0.98, scan);
+
+  // Sweep band
+  float sw = fract(t*0.14);
+  float band = smoothstep(0.025, 0.0, abs(frag.y/u_res.y - (1.0 - sw)));
+  col += u_color * band * 0.05;
+
+  // Halo glow at the orb (energy-scaled)
+  float d = length(frag - u_orb);
+  float halo = exp(-(d*d) / max(0.0001, 1.5*u_orbR*u_orbR));
+  col += u_color * halo * (0.09 + 0.22*e);
+
+  // Vignette
+  col *= smoothstep(1.65, 0.25, radl);
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+function _compile(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('voice shader error', gl.getShaderInfoLog(s));
     return null;
   }
   return s;
@@ -203,8 +293,8 @@ function _initGL(canvas) {
   _canvas = canvas;
   _gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true });
   if (!_gl) return false;
-  const vs = _compile(_gl.VERTEX_SHADER, VERT);
-  const fs = _compile(_gl.FRAGMENT_SHADER, FRAG);
+  const vs = _compile(_gl, _gl.VERTEX_SHADER, VERT);
+  const fs = _compile(_gl, _gl.FRAGMENT_SHADER, FRAG);
   if (!vs || !fs) { _gl = null; return false; }
   _prog = _gl.createProgram();
   _gl.attachShader(_prog, vs);
@@ -234,6 +324,83 @@ function _initGL(canvas) {
   _gl.enable(_gl.BLEND);
   _gl.blendFunc(_gl.ONE, _gl.ONE_MINUS_SRC_ALPHA);
   return true;
+}
+
+function _measureOrb() {
+  const wrap = $('.vx-orb-wrap');
+  if (!wrap) { _orbRect = null; return; }
+  const r = wrap.getBoundingClientRect();
+  if (!r.width || !r.height) { _orbRect = null; return; }
+  _orbRect = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, radius: Math.min(r.width, r.height) / 2 };
+}
+
+function _initBG(canvas) {
+  if (!canvas) return false;
+  _bgCanvas = canvas;
+  _bgGl = canvas.getContext('webgl', { antialias: false, alpha: false, depth: false, stencil: false });
+  if (!_bgGl) return false;
+  const vs = _compile(_bgGl, _bgGl.VERTEX_SHADER, VERT);
+  const fs = _compile(_bgGl, _bgGl.FRAGMENT_SHADER, BG_FRAG);
+  if (!vs || !fs) { _bgGl = null; return false; }
+  _bgProg = _bgGl.createProgram();
+  _bgGl.attachShader(_bgProg, vs);
+  _bgGl.attachShader(_bgProg, fs);
+  _bgGl.linkProgram(_bgProg);
+  _bgGl.useProgram(_bgProg);
+
+  const buf = _bgGl.createBuffer();
+  _bgGl.bindBuffer(_bgGl.ARRAY_BUFFER, buf);
+  _bgGl.bufferData(_bgGl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), _bgGl.STATIC_DRAW);
+  const loc = _bgGl.getAttribLocation(_bgProg, 'a_pos');
+  _bgGl.enableVertexAttribArray(loc);
+  _bgGl.vertexAttribPointer(loc, 2, _bgGl.FLOAT, false, 0, 0);
+
+  _bgTex = _bgGl.createTexture();
+  _bgGl.bindTexture(_bgGl.TEXTURE_2D, _bgTex);
+  _bgGl.texParameteri(_bgGl.TEXTURE_2D, _bgGl.TEXTURE_MIN_FILTER, _bgGl.LINEAR);
+  _bgGl.texParameteri(_bgGl.TEXTURE_2D, _bgGl.TEXTURE_MAG_FILTER, _bgGl.LINEAR);
+  _bgGl.texParameteri(_bgGl.TEXTURE_2D, _bgGl.TEXTURE_WRAP_S, _bgGl.CLAMP_TO_EDGE);
+  _bgGl.texParameteri(_bgGl.TEXTURE_2D, _bgGl.TEXTURE_WRAP_T, _bgGl.CLAMP_TO_EDGE);
+  _bgGl.texImage2D(_bgGl.TEXTURE_2D, 0, _bgGl.LUMINANCE, BANDS, 1, 0, _bgGl.LUMINANCE, _bgGl.UNSIGNED_BYTE, _fftBytes);
+
+  for (const n of ['u_res', 'u_time', 'u_fft', 'u_level', 'u_out', 'u_color', 'u_orb', 'u_orbR']) {
+    _bgU[n] = _bgGl.getUniformLocation(_bgProg, n);
+  }
+  _bgGl.uniform1i(_bgU.u_fft, 0);
+  return true;
+}
+
+function _drawBG(now) {
+  if (!_bgGl || !_bgCanvas) return;
+  const dprB = Math.min(window.devicePixelRatio || 1, 1.25) * _scale;
+  const cw = _bgCanvas.clientWidth, ch = _bgCanvas.clientHeight;
+  const w = Math.max(2, Math.round(cw * dprB));
+  const h = Math.max(2, Math.round(ch * dprB));
+  if (_bgCanvas.width !== w || _bgCanvas.height !== h) {
+    _bgCanvas.width = w; _bgCanvas.height = h;
+    _bgGl.viewport(0, 0, w, h);
+  }
+  const t = _reducedMotion ? 0.0 : (now - _t0) / 1000;
+  _bgGl.clearColor(0.01, 0.02, 0.05, 1.0);
+  _bgGl.clear(_bgGl.COLOR_BUFFER_BIT);
+  _bgGl.activeTexture(_bgGl.TEXTURE0);
+  _bgGl.bindTexture(_bgGl.TEXTURE_2D, _bgTex);
+  _bgGl.texSubImage2D(_bgGl.TEXTURE_2D, 0, 0, 0, BANDS, 1, _bgGl.LUMINANCE, _bgGl.UNSIGNED_BYTE, _fftBytes);
+  _bgGl.uniform2f(_bgU.u_res, w, h);
+  _bgGl.uniform1f(_bgU.u_time, t);
+  _bgGl.uniform1f(_bgU.u_level, _lvl);
+  _bgGl.uniform1f(_bgU.u_out, _out);
+  _bgGl.uniform3f(_bgU.u_color, _col[0], _col[1], _col[2]);
+  let ox = w * 0.5, oy = h * 0.5, orr = Math.min(w, h) * 0.16;
+  if (_orbRect && cw > 0 && ch > 0) {
+    const sx = w / cw, sy = h / ch;
+    ox = _orbRect.cx * sx;
+    oy = _orbRect.cy * sy;
+    orr = _orbRect.radius * ((sx + sy) * 0.5);
+  }
+  _bgGl.uniform2f(_bgU.u_orb, ox, oy);
+  _bgGl.uniform1f(_bgU.u_orbR, orr);
+  _bgGl.drawArrays(_bgGl.TRIANGLES, 0, 3);
 }
 
 function _readBands(analyser, into, mix) {
@@ -287,20 +454,10 @@ function _loop() {
     _col[i] += (want - _col[i]) * 0.07;
   }
 
-  // Writing CSS custom properties forces a style recalc + repaint of the whole
-  // HUD. Throttle to ~15 Hz and only when the values actually changed.
-  if (_root && now - _lastCssAt > 66) {
-    const r = Math.round(_col[0] * 255), g = Math.round(_col[1] * 255), b = Math.round(_col[2] * 255);
-    const e = Math.round(Math.max(_lvl, _out) * 20) / 20;
-    if (r !== _lastCssR || g !== _lastCssG || b !== _lastCssB || e !== _lastCssE) {
-      _lastCssR = r; _lastCssG = g; _lastCssB = b; _lastCssE = e;
-      _root.style.setProperty('--vx-energy', e.toFixed(2));
-      _root.style.setProperty('--vx-r', r);
-      _root.style.setProperty('--vx-g', g);
-      _root.style.setProperty('--vx-b', b);
-    }
-    _lastCssAt = now;
-  }
+  // Background + accent colour live on the GPU now — no per-frame CSS custom
+  // property writes (which forced a style recalc + repaint of the whole HUD).
+  // Accent colour is set only on state changes in _setState.
+  _drawBG(now);
 
   if (!_gl || !_canvas) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2) * _scale;
@@ -317,7 +474,7 @@ function _loop() {
   _gl.bindTexture(_gl.TEXTURE_2D, _tex);
   _gl.texSubImage2D(_gl.TEXTURE_2D, 0, 0, 0, BANDS, 1, _gl.LUMINANCE, _gl.UNSIGNED_BYTE, _fftBytes);
   _gl.uniform2f(_u.u_res, w, h);
-  _gl.uniform1f(_u.u_time, (now - _t0) / 1000);
+  _gl.uniform1f(_u.u_time, _reducedMotion ? 0.0 : (now - _t0) / 1000);
   _gl.uniform1f(_u.u_level, _lvl);
   _gl.uniform1f(_u.u_out, _out);
   _gl.uniform3f(_u.u_color, _col[0], _col[1], _col[2]);
@@ -364,7 +521,7 @@ function _buildHUD() {
   el.setAttribute('aria-label', 'Advanced voice mode');
   el.dataset.state = 'idle';
   el.innerHTML = `
-  <div class="vx-bg" aria-hidden="true"><div class="vx-grid"></div><div class="vx-aurora"></div><div class="vx-scan"></div><div class="vx-vignette"></div></div>
+  <div class="vx-bg" aria-hidden="true"><canvas id="vx-bg-canvas"></canvas></div>
   <header class="vx-top">
     <div class="vx-brand">
       <span class="vx-logo"><i></i></span>
@@ -400,8 +557,6 @@ function _buildHUD() {
 
     <section class="vx-center">
       <div class="vx-orb-wrap">
-        <div class="vx-ring vx-r1"></div><div class="vx-ring vx-r2"></div><div class="vx-ring vx-r3"></div>
-        <div class="vx-halo"></div>
         <canvas id="vx-canvas" aria-hidden="true"></canvas>
         <button class="vx-orb-hit" data-act="core" aria-label="Connect or disconnect"></button>
         <div class="vx-orb-label"><div class="vx-state">STANDBY</div><div class="vx-state-sub">Tap the core or press Space to connect</div></div>
@@ -458,6 +613,10 @@ function _setState(s) {
   _state = s;
   if (!_root) return;
   _root.dataset.state = s;
+  const cc = STATE_COLORS[s] || STATE_COLORS.idle;
+  _root.style.setProperty('--vx-r', Math.round(cc[0] * 255));
+  _root.style.setProperty('--vx-g', Math.round(cc[1] * 255));
+  _root.style.setProperty('--vx-b', Math.round(cc[2] * 255));
   const [a, b] = STATE_LABELS[s] || STATE_LABELS.idle;
   const st = $('.vx-state'); if (st) st.textContent = a;
   const sub = $('.vx-state-sub'); if (sub) sub.textContent = b;
@@ -1710,6 +1869,13 @@ export function openVoiceMode({ autostart = true } = {}) {
     document.body.appendChild(_root);
     _bind();
     _initGL($('#vx-canvas'));
+    _initBG($('#vx-bg-canvas'));
+    _measureOrb();
+    if (!_orbResizeBound) {
+      _orbResizeBound = true;
+      window.addEventListener('resize', _measureOrb);
+      window.addEventListener('orientationchange', _measureOrb);
+    }
   }
   _root.hidden = false;
   document.documentElement.classList.add('vx-open');

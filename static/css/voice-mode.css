@@ -1,15 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Odysseus · Advanced Voice Mode — holographic HUD
-   The accent colour (--vx-r/g/b) is streamed every frame from voice.js and
-   follows the orb's state: listening (cyan) · hearing you (mint) ·
-   responding (amber) · thinking (violet blend) · muted (slate) · error (red).
+   The accent colour (--vx-r/g/b) is set by voice.js only on state changes
+   (never per frame): listening (cyan) · hearing you (mint) · responding
+   (amber) · muted (slate) · error (red). The smooth per-frame colour blend
+   and audio energy live only on the GPU (shader uniforms).
    ═══════════════════════════════════════════════════════════════════════════ */
 
 html.vx-open, html.vx-open body { overflow: hidden; }
 
 .vx {
   --vx-r: 92; --vx-g: 158; --vx-b: 199;
-  --vx-energy: 0;
   --vx-acc: rgb(var(--vx-r), var(--vx-g), var(--vx-b));
   --vx-acc-a: rgba(var(--vx-r), var(--vx-g), var(--vx-b), .35);
   --vx-acc-s: rgba(var(--vx-r), var(--vx-g), var(--vx-b), .14);
@@ -37,39 +37,13 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx button:disabled { opacity: .35; cursor: not-allowed; }
 .vx :focus-visible { outline: 2px solid var(--vx-acc); outline-offset: 2px; border-radius: 8px; }
 
-/* ── Background layers ─────────────────────────────────────────────────── */
-.vx-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
-.vx-grid {
-  position: absolute; inset: -40px;
-  background-image:
-    linear-gradient(var(--vx-acc-s) 1px, transparent 1px),
-    linear-gradient(90deg, var(--vx-acc-s) 1px, transparent 1px);
-  background-size: 46px 46px;
-  mask-image: radial-gradient(70% 60% at 50% 48%, #000 0%, transparent 80%);
-  -webkit-mask-image: radial-gradient(70% 60% at 50% 48%, #000 0%, transparent 80%);
-  opacity: .35;
-  animation: vx-grid-drift 40s linear infinite;
-}
-@keyframes vx-grid-drift { to { transform: translate3d(46px, 46px, 0); } }
-.vx-aurora {
-  position: absolute; left: 50%; top: 46%; width: 120vmax; height: 120vmax;
-  transform: translate(-50%, -50%);
-  background:
-    radial-gradient(closest-side, rgba(var(--vx-r), var(--vx-g), var(--vx-b), calc(.16 + var(--vx-energy) * .25)), transparent 70%),
-    conic-gradient(from 0deg, transparent, rgba(var(--vx-r), var(--vx-g), var(--vx-b), .06), transparent 30%, rgba(120, 90, 255, .05), transparent 60%);
-  animation: vx-spin 60s linear infinite;
-}
-.vx-scan {
-  position: absolute; inset: 0;
-  background: repeating-linear-gradient(to bottom, rgba(255,255,255,.025) 0 1px, transparent 1px 3px);
-}
-.vx-scan::after {
-  content: ""; position: absolute; left: 0; right: 0; height: 22vh; top: -22vh;
-  background: linear-gradient(to bottom, transparent, rgba(var(--vx-r), var(--vx-g), var(--vx-b), .06), transparent);
-  animation: vx-sweep 7s cubic-bezier(.4,0,.6,1) infinite;
-}
-@keyframes vx-sweep { to { transform: translateY(130vh); } }
-.vx-vignette { position: absolute; inset: 0; box-shadow: inset 0 0 220px 60px rgba(0,0,0,.75); }
+/* ── Background ────────────────────────────────────────────────────────────
+   Grid, drift, aurora (perlin noise + FFT impulse), scan lines, sweep, halo
+   and vignette are all rendered by one WebGL pass on #vx-bg-canvas (voice.js
+   BG_FRAG). No DOM layers animate, so nothing here repaints per frame. The
+   .vx radial-gradient stays underneath as the no-WebGL fallback. */
+.vx-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; contain: strict; }
+.vx-bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* ── Top bar ───────────────────────────────────────────────────────────── */
 .vx-top {
@@ -279,35 +253,14 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 
 /* ── Orb ───────────────────────────────────────────────────────────────── */
 .vx-center { min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+/* The orb's energy pulse, halo and instrument rings are drawn in the orb /
+   background shaders — no CSS transform, box-shadow or spinning rings. */
 .vx-orb-wrap {
   --size: min(56vh, 44vw, 580px);
   position: relative; width: var(--size); height: var(--size);
   display: grid; place-items: center;
-  transform: scale(calc(1 + var(--vx-energy) * .045));
-  transition: transform .12s linear;
 }
 .vx-orb-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.vx-halo {
-  position: absolute; inset: 14%; border-radius: 50%;
-  box-shadow: 0 0 calc(60px + var(--vx-energy) * 120px) calc(10px + var(--vx-energy) * 30px) var(--vx-acc-a);
-  opacity: .55; transition: box-shadow .15s linear;
-}
-.vx-ring {
-  position: absolute; border-radius: 50%; pointer-events: none;
-  border: 1px solid var(--vx-acc-s);
-}
-.vx-r1 { inset: -4%; border-top-color: var(--vx-acc-a); border-bottom-color: var(--vx-acc-a); animation: vx-spin 24s linear infinite; }
-.vx-r2 { inset: -9%; border-style: dashed; opacity: .5; animation: vx-spin 48s linear infinite reverse; }
-.vx-r3 {
-  inset: -14%; border: 0;
-  background: conic-gradient(from 0deg, transparent 0 82%, var(--vx-acc-a) 88%, transparent 94%);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
-          mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
-  animation: vx-spin 6s linear infinite;
-  opacity: 0; transition: opacity .4s;
-}
-.vx.connected .vx-r3 { opacity: 1; }
-.vx[data-state="connecting"] .vx-r3 { opacity: 1; animation-duration: 1.4s; }
 
 .vx-orb-hit {
   position: absolute; inset: 22%; border-radius: 50%; border: 0; background: transparent;
@@ -492,7 +445,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx-card-edit {
   width: 100%; min-height: 84px; resize: vertical; box-sizing: border-box;
   font: 12.5px/1.5 var(--vx-sans); color: var(--vx-fg);
-  background: rgba(0,0,0,.3); border: 1px solid var(--vx-acc-a); border-radius: 10px; padding: 8px 10px;
+  background: rgba(0,0,0,.3); border: 1px solid var(--vx-acc-a); border-radius: 50%; padding: 8px 10px;
   outline: none; user-select: text;
 }
 .vx-card-note {
@@ -531,7 +484,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx-primary {
   width: 66px; height: 66px;
   color: #031018; background: var(--vx-acc); border-color: transparent;
-  box-shadow: 0 0 calc(18px + var(--vx-energy) * 40px) var(--vx-acc-a), inset 0 -6px 14px rgba(0,0,0,.25);
+  box-shadow: 0 0 22px var(--vx-acc-a), inset 0 -6px 14px rgba(0,0,0,.25);
 }
 .vx-primary.live { background: #ff4d6a; color: #fff; box-shadow: 0 0 28px rgba(255, 77, 106, .55); }
 .vx-primary.live:hover { background: #ff6680 !important; }
@@ -553,8 +506,6 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 /* ── Shared keyframes ──────────────────────────────────────────────────── */
 @keyframes vx-spin { to { transform: rotate(360deg); } }
 @keyframes vx-breathe { 50% { opacity: .45; transform: scale(.82); } }
-.vx-aurora { animation-name: vx-aurora-spin; }
-@keyframes vx-aurora-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
