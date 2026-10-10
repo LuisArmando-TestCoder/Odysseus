@@ -312,7 +312,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   box-shadow: 0 0 16px rgba(160, 120, 255, .45);
 }
 .vx-node[data-status="running"] .vx-node-ic::after {
-  content: ""; position: absolute; inset: -4px; border-radius: 13px;
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
   border: 1.5px solid transparent; border-top-color: #c9b2ff; animation: vx-spin .9s linear infinite;
 }
 .vx-node[data-status="done"] { opacity: 1; }
