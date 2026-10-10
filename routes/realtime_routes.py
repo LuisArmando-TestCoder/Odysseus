@@ -128,6 +128,20 @@ def setup_realtime_routes() -> APIRouter:
         instructions = (build_persona(settings) + "\n\n" + (instructions or "").strip()
                         + "\n\n" + VOICE_CONTRACT)
 
+        # Trusted user claims — the highest-trust tier of identity
+        # reconnaissance. The user is the authority on their own identity, so
+        # their first-person claims ("my name is X") are injected as trusted
+        # context the voice assistant may rely on (e.g. to address the user by
+        # name). Kept out of the persona/contract text so it stays per-user.
+        try:
+            from src.trusted_claims import get_trusted_claims_manager
+            _tcm = get_trusted_claims_manager()
+            _trusted_block = _tcm.prompt_block(owner=effective_user(request))
+            if _trusted_block:
+                instructions = instructions + "\n\n" + _trusted_block
+        except Exception as _tce:
+            logger.debug(f"voice trusted-claims injection skipped: {_tce}")
+
         session_cfg = {"model": model, "instructions": instructions}
         voice = (settings.get("voice_assistant_voice") or "").strip()
         if voice:

@@ -804,6 +804,31 @@ def run_post_response_tasks(
     extract_skills: bool = True,
 ):
     """Fire background tasks after a completed response: memory extraction, webhooks, auto-name, skill extraction."""
+    # Trusted-claim extraction — the highest-trust tier of identity
+    # reconnaissance. Runs on EVERY user message (deterministic, no LLM call)
+    # so a first-person claim ("my name is X") is captured immediately and
+    # folded into the trusted-claims store. A correction edits the prior claim
+    # instead of piling up a duplicate. Skipped in incognito/compare.
+    if not incognito and not compare_mode and message:
+        try:
+            from services.identity.claim_extractor import extract_claims, apply_claim_operations
+            from src.trusted_claims import get_trusted_claims_manager
+            _tcm = get_trusted_claims_manager()
+            _ops = extract_claims(message)
+            if _ops:
+                _applied = apply_claim_operations(
+                    _ops, _tcm,
+                    source="chat", session_id=session_id, owner=owner,
+                )
+                if _applied:
+                    logger.info(
+                        "Trusted claims updated for %s: %s",
+                        owner or "(anon)",
+                        [(r.get("action"), r.get("claim", {}).get("key")) for r in _applied],
+                    )
+        except Exception as _tce:
+            logger.debug(f"trusted claim extraction skipped: {_tce}")
+
     # Memory extraction — only every 4th message pair to avoid excess LLM calls
     _msg_count = len(sess.history) if hasattr(sess, 'history') else 0
     _should_extract = (_msg_count >= 4) and (_msg_count % 4 == 0)

@@ -190,6 +190,22 @@ class ChatProcessor:
             "content": UNTRUSTED_CONTEXT_POLICY,
         })
 
+        # Trusted user claims — the highest-trust tier of identity
+        # reconnaissance. These are facts the user stated directly in the
+        # first person, so they are injected as TRUSTED system information
+        # (not wrapped in untrusted_context_message).
+        try:
+            from src.trusted_claims import get_trusted_claims_manager
+            _tcm = get_trusted_claims_manager()
+            _trusted_block = _tcm.prompt_block(owner=owner)
+            if _trusted_block:
+                preface.append({
+                    "role": "system",
+                    "content": _trusted_block,
+                })
+        except Exception as _tce:
+            logger.debug(f"trusted claims injection skipped: {_tce}")
+
         # Memory: pinned (always included) + extended (RAG-retrieved when relevant)
         self._last_used_memories = []  # track what was injected
         if use_memory:

@@ -917,6 +917,21 @@ def _build_system_prompt(
         logger.debug(f"skill injection failed (non-fatal): {_sk_err}")
 
     agent_msg = {"role": "system", "content": agent_prompt}
+
+    # Trusted user claims — the highest-trust tier of identity reconnaissance.
+    # These are facts the user stated directly in the first person, so they are
+    # injected as TRUSTED system information. Kept OUT of the cached
+    # `agent_prompt` because they are per-owner and change over time.
+    _trusted_msg = None
+    try:
+        from src.trusted_claims import get_trusted_claims_manager
+        _tcm = get_trusted_claims_manager()
+        _trusted_block = _tcm.prompt_block(owner=owner)
+        if _trusted_block:
+            _trusted_msg = {"role": "system", "content": _trusted_block}
+    except Exception as _tce:
+        logger.debug(f"trusted claims injection skipped: {_tce}")
+
     insert_idx = 0
     for i, msg in enumerate(messages):
         if msg.get("role") == "system":
@@ -925,6 +940,8 @@ def _build_system_prompt(
             break
 
     messages = messages[:insert_idx] + [agent_msg] + messages[insert_idx:]
+    if _trusted_msg:
+        messages = messages[:insert_idx + 1] + [_trusted_msg] + messages[insert_idx + 1:]
 
     # Merge consecutive system messages — but skip _protected doc messages
     merged = []

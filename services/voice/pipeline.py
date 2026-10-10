@@ -319,6 +319,29 @@ async def run_pipeline(
     set_cost_scope(chat_session_id or None, "voice-pipeline", owner)
     mem = get_voice_memory(owner, voice_id)
     mem.add_turns(turns)
+
+    # Trusted-claim extraction from the user's spoken turns. The user is the
+    # most trusted source of identity reconnaissance, so a first-person claim
+    # spoken in voice ("my name is X") is captured into the trusted-claims
+    # store the same way a typed claim is. Deterministic, no LLM call.
+    try:
+        from services.identity.claim_extractor import extract_claims, apply_claim_operations
+        from src.trusted_claims import get_trusted_claims_manager
+        _tcm = get_trusted_claims_manager()
+        _spoken = " ".join(
+            t.get("text", "") for t in turns
+            if str(t.get("speaker", "")).lower() in ("user", "you")
+        ).strip()
+        if _spoken:
+            _ops = extract_claims(_spoken)
+            if _ops:
+                apply_claim_operations(
+                    _ops, _tcm,
+                    source="voice", session_id=chat_session_id, owner=owner,
+                )
+    except Exception as _tce:
+        logger.debug(f"voice trusted-claim extraction skipped: {_tce}")
+
     use_jev = jev_available()
     yield _ev(type="hello", engine="jev" if use_jev else "llm", memory=mem.stats())
 
