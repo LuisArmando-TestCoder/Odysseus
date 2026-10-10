@@ -1698,6 +1698,14 @@ function _chatTick() {
         ? 'Chat switched — the voice request keeps running in the background.'
         : 'Chat switched — now mirroring the new thread.', running ? 'warn' : 'info');
       _setChatState('switched', running ? 'Switched · running in bg' : 'Switched');
+      // The live GPT-Live session still holds the OLD chat's conversation
+      // context ("my name is Alfred"). Restart it so the new chat starts with
+      // a clean transcript trail — otherwise the old chat's context poisons
+      // the new one. Fire-and-forget: the restart re-seeds GPT-Live with the
+      // new chat's (empty) trail via _seedChatContext.
+      if (_active || _connecting) {
+        _restartVoiceForSessionSwitch();
+      }
     }
   }
 
@@ -2141,6 +2149,36 @@ function _handleEvent(evt) {
   }
 }
 
+// Per-chat transcript trail. Each chat's live transcript is saved here so it
+// can be restored when the user returns to that chat — and a NEW chat starts
+// empty instead of inheriting the previous chat's conversation.
+const _transcriptStore = {};   // voiceId -> innerHTML of #vx-transcript
+
+function _saveTranscript(voiceId) {
+  const box = $('#vx-transcript');
+  if (box) _transcriptStore[voiceId] = box.innerHTML;
+}
+
+function _restoreTranscript(voiceId) {
+  const box = $('#vx-transcript');
+  if (!box) return;
+  const saved = _transcriptStore[voiceId];
+  if (saved) {
+    box.innerHTML = saved;
+  } else {
+    box.innerHTML = '<div class="vx-empty">Conversation appears here in real time.<br><kbd>Space</kbd> connect · <kbd>M</kbd> mute · <kbd>⏎</kbd> send now · <kbd>Esc</kbd> close</div>';
+  }
+}
+
+// Clear the in-progress live transcript state so a half-finished turn from the
+// OLD chat is never finalized into the NEW chat's context (or re-seeded into
+// GPT-Live after a session-switch restart).
+function _clearLiveTranscriptState() {
+  _aiLine = null; _aiText = ''; clearTimeout(_aiFinalizeT);
+  _userLine = null; _userText = ''; _userTurnOpen = false; _userBase = 0;
+  clearTimeout(_userFinalizeT);
+}
+
 // Per-session state that must NOT leak between chats. When the user opens a
 // new chat, the voice mode starts clean — no memory summary, pasted notes,
 // resume line, missed answers, or unsent speech from the previous session.
@@ -2160,6 +2198,10 @@ function _bindVoiceToSession(sid) {
     vid = _pendingVoiceId;
   }
   if (vid === _voiceId) return;
+  // Save the OLD chat's transcript trail before switching, so it can be
+  // restored when the user returns to that chat.
+  _saveTranscript(_voiceId);
+  _clearLiveTranscriptState();
   _voiceId = vid;
   _memPreview = '';
   _notes = [];
@@ -2172,6 +2214,21 @@ function _bindVoiceToSession(sid) {
   _seenKeys.clear();
   _spokenKeys.clear();
   _resetNarration();
+  // Restore the NEW chat's transcript trail (empty for a brand-new chat).
+  _restoreTranscript(vid);
+}
+
+// Restart the live GPT-Live session so its accumulated conversation context is
+// cleared. Called when the user switches chats while voice is connected —
+// otherwise the old chat's transcript ("my name is Alfred") leaks into the new
+// chat and the voice assistant answers from the wrong context. After the
+// restart, _seedChatContext re-seeds GPT-Live with the NEW chat's (empty) trail.
+async function _restartVoiceForSessionSwitch() {
+  if (!_active && !_connecting) return;
+  await stopVoice();
+  // startVoice() re-binds to the current session (no-op — already bound) and
+  // re-seeds GPT-Live with the new chat's context via _seedChatContext.
+  await startVoice();
 }
 
 async function startVoice() {
