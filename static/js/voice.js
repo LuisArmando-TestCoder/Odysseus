@@ -1077,6 +1077,14 @@ function _onPipeEvent(ev) {
     case 'decision': _renderDecision(ev.decision || {}); break;
     case 'memory': _renderMemory(ev.memory); break;
     case 'forged': _enqueue(ev); break;
+    case 'answer_from_context':
+      // The answer was already in the chat/memory — speak it directly instead
+      // of re-asking the chat agent.
+      if (ev.answer) {
+        _systemLine('Answered from context — no chat round-trip.', 'done');
+        _queueSpeak(ev.answer, true);
+      }
+      break;
     case 'done':
       // Speech judged "still forming": once the user has been quiet for a
       // moment, decide again treating it as finished (rambling ≠ incomplete).

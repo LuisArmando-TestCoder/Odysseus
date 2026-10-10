@@ -135,6 +135,34 @@ If the promise is vague filler with no concrete subject ("I'll get on it", "let 
 something already sent to the chat, answer exactly {"title": "", "message": ""}.
 Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}"""
 
+# Lateral extractor: when the answer to the user's question is ALREADY in the
+# chat thread (or voice memory), pull it out and hand it straight to the voice
+# assistant — no round-trip to the chat agent. This is the "inference + extract"
+# pair the user described: JEV decides it's answerable, this LLM extracts it.
+EXTRACTOR_PROMPT = """You extract an answer that is ALREADY present in the provided context, so a voice
+assistant can say it aloud without asking the chat agent again.
+Given the user's question and the context (recent chat turns + voice memory), find the passage that answers
+it. Answer ONLY with JSON:
+{"answer": "<the answer, in the user's language, concise and spoken naturally>", "found": true|false}
+- found: true only if the context genuinely contains the answer. If it does not, found=false and answer="".
+- Do not invent, summarize beyond what is there, or add facts not in the context.
+- Keep the answer short enough to speak aloud (a few sentences)."""
+
+
+async def _extract_answer(owner: str, question: str, context: str) -> Optional[str]:
+    """Run the lateral extractor. Returns the answer text, or None if not found."""
+    try:
+        raw = await _utility(owner, EXTRACTOR_PROMPT,
+                             f"Question:\n{question}\n\nContext:\n{context[:12000]}", 400)
+    except Exception as e:
+        logger.info(f"voice extractor failed: {e}")
+        return None
+    data = _parse_json(raw)
+    if not data.get("found"):
+        return None
+    answer = (data.get("answer") or "").strip()
+    return answer or None
+
 
 def _ev(**kw) -> Dict[str, Any]:
     kw.setdefault("ts", time.time())
@@ -235,6 +263,17 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                     "instructions": "What kind of action does the user want from the chat agent?",
                     "criteria": INTENTS,
                 },
+                "answerable": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the answer to the user's question ALREADY present in the chat thread summary or the "
+                        "voice memory (recent_context / memory_overview)? If the chat agent already answered this "
+                        "or a closely related question, the answer is answerable from context and should NOT be "
+                        "sent to the chat again. If the answer is not there, this is false."
+                    ),
+                    "criteria": {"true": "The answer is already in the chat thread or voice memory",
+                                 "false": "The answer is not in the context — the chat agent must look it up"},
+                },
                 "urgency": {
                     "type": "score",
                     "instructions": "How urgent is it for the user?",
@@ -248,6 +287,7 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "already_sent": _f(ans["already_sent"]["value"]),
                 "intent": ans["intent"]["value"] or "none",
                 "intent_confidence": ans["intent"].get("confidence"),
+                "answerable": _f(ans["answerable"]["value"]),
                 "urgency": ans["urgency"]["value"],
             }
         except DecisionsUnavailable as e:
@@ -261,6 +301,7 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
         "ready": _f(data.get("ready", 1), 1.0),
         "already_sent": _f(data.get("already_sent")),
         "intent": data.get("intent") or "none",
+        "answerable": _f(data.get("answerable")),
         "urgency": data.get("urgency", 0),
     }
 
@@ -430,6 +471,17 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False)
         ms = int((time.time() - t0) * 1000)
         yield _ev(type="decision", decision=decision, ms=ms)
         yield _ev(type="stage", stage="decide", status="done" if send else "idle", ms=ms, engine=decision.get("engine"))
+
+        # ③b LATERAL EXTRACTOR — the answer is already in the chat/memory, so
+        # hand it straight to the voice assistant instead of re-asking the chat.
+        if send and decision.get("answerable", 0) >= 0.7:
+            context = (chat_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
+            answer = await _extract_answer(owner, new_text, context)
+            if answer:
+                yield _ev(type="answer_from_context", answer=answer, question=new_text[:300])
+                yield _ev(type="done", send=False, reason="answered-from-context")
+                return
+
         if not send:
             if not ready:
                 reason = "not-ready"
