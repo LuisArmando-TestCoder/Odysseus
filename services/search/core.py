@@ -93,15 +93,25 @@ _FALLBACK_ORDER = ["duckduckgo"]
 
 
 def _build_provider_chain(primary: str) -> List[str]:
-    """Build ordered list: primary first, then configured/default fallbacks."""
-    chain = [primary]
+    """Build ordered list: Brave first (when its key is configured), then the
+    primary provider, then configured/default fallbacks.
+
+    Brave is preferred over every other provider — it returns clean, ranked
+    results and is the user's explicit choice for chat searches. When no Brave
+    key is present it is simply skipped and the chain behaves as before.
+    """
+    chain: List[str] = []
     settings = _get_search_settings()
+    if _get_provider_key("brave"):
+        chain.append("brave")
+    if primary and primary != "brave" and primary not in chain and primary != "disabled":
+        chain.append(primary)
     user_chain = settings.get("search_fallback_chain") or []
     if isinstance(user_chain, str):
         user_chain = [s.strip() for s in user_chain.split(",") if s.strip()]
     fallbacks = user_chain if user_chain else _FALLBACK_ORDER
     for fb in fallbacks:
-        if fb and fb != primary and fb not in chain and fb != "disabled":
+        if fb and fb not in chain and fb != "disabled":
             chain.append(fb)
     return chain
 
