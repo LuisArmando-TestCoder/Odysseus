@@ -2136,8 +2136,21 @@ function _handleEvent(evt) {
 // Per-session state that must NOT leak between chats. When the user opens a
 // new chat, the voice mode starts clean — no memory summary, pasted notes,
 // resume line, missed answers, or unsent speech from the previous session.
+let _pendingVoiceId = null;   // ephemeral key while the chat is not yet materialized
 function _bindVoiceToSession(sid) {
-  const vid = sid ? `chat-${sid}` : 'global';
+  let vid;
+  if (sid) {
+    vid = `chat-${sid}`;
+    _pendingVoiceId = null;
+  } else {
+    // New chat, not yet materialized: use a fresh ephemeral key so it can
+    // NEVER load a previous chat's voice memory. The old 'global' fallback
+    // was a shared key that leaked a prior chat's context into a new chat.
+    if (!_pendingVoiceId) {
+      _pendingVoiceId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    vid = _pendingVoiceId;
+  }
   if (vid === _voiceId) return;
   _voiceId = vid;
   _memPreview = '';
