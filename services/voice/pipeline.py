@@ -64,6 +64,18 @@ NOT_A_REQUEST = (
     "create, edit, send, schedule, remember."
 )
 
+# Indirect asks: the words alone look like filler, but combined with the
+# conversation (pasted context, the last batch, the memory) they are requests.
+IMPLICIT_ASK = (
+    "INDIRECT / IMPLICIT ASKS count — infer them from recent_context, pasted_context and the memory, not only "
+    "from the literal words: (a) the user pasted/typed something (USER_NOTE / pasted_context) in the last few "
+    "turns and now says something short that refers to it ('so what do you think', 'what do you make of it', "
+    "'go ahead', 'use it', 'search it', 'look at this', 'get back to me') → a request about the pasted content "
+    "(intent research/question); (b) the user announced they are about to share something and then shared it → "
+    "they want it read/analysed; (c) a wish or complaint whose obvious remedy is something the chat agent can do. "
+    "In those cases should_send is high and ready is high."
+)
+
 SPEAKER_LEGEND = (
     "USER = the human speaking in the voice call; ASSISTANT = the voice model (GPT-Live); "
     "CHAT_USER = a message already sent into the chat thread; CHAT_AI = the chat agent's answer in the thread; "
@@ -82,7 +94,7 @@ Answer ONLY with JSON:
 - ready: probability the user has finished expressing it (not mid-sentence / still thinking)
 - already_sent: probability the same request is literally in already_sent_to_chat or a CHAT_USER turn
   (ASSISTANT acknowledgements like "I'll check" do NOT count)
-""" + NOT_A_REQUEST
+""" + NOT_A_REQUEST + "\n" + IMPLICIT_ASK
 
 FORGER_META_RULE = (
     "If NEW USER SPEECH is only meta-commentary about this voice system or the app, feedback/notes for the "
@@ -185,7 +197,7 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                         "remember — including IMPLICIT or INDIRECT requests ('I want to see…', 'bring me…', 'what time "
                         "is it', 'it'd be nice to know…', 'have you seen…', wishes, half-finished instructions)? "
                         "Filler, acknowledgements, small talk, and questions about the call itself ('can you hear me', "
-                        "'are you there') are false. " + NOT_A_REQUEST
+                        "'are you there') are false. " + NOT_A_REQUEST + " " + IMPLICIT_ASK
                     ),
                     "criteria": {"true": "An explicit, implicit or indirect request the chat agent can act on",
                                  "false": "Filler / small talk / meta-commentary about the system / notes for the "
@@ -364,9 +376,11 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False)
             decision = {"engine": "manual", "should_send": 1.0, "ready": 1.0, "already_sent": 0.0,
                         "intent": "task", "urgency": 1}
         else:
+            notes = [t for t in mem.recent_turns(16) if t.get("speaker") == "user_note"][-3:]
             state = {
                 "speaker_legend": SPEAKER_LEGEND,
                 "new_user_speech": new_text,
+                "pasted_context": [str(t.get("text", ""))[:800] for t in notes],
                 "recent_context": mem.recent_turns(8),
                 "already_sent_to_chat": spine["recently_sent"],
                 "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),

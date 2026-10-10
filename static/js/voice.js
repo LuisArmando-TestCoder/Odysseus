@@ -93,6 +93,8 @@ let _userTurnOpen = false;   // a user turn is accumulating (survives line split
 let _memPreview = '';        // top layer of the compressed voice memory (seeded into GPT-Live)
 let _seedTries = 0;          // retries while waiting for the link to be fully active
 let _notes = [];             // text the user typed/pasted as context (re-seeded on reconnect)
+let _lastAiSaid = '';        // ALFRED's last real line — a reconnect resumes in that state
+let _lastAiSaidAt = 0;
 
 // ── Proactivity: ALFRED's promises become real chat requests ──────────────
 let _lastForgeAt = 0;        // last time the pipeline forged a request (a promise right after is just an ack)
@@ -801,6 +803,8 @@ function _aiFinalize() {
   }
   if (text && !_isBackchannel(text)) {
     _pending.push({ speaker: 'AI', text });
+    _lastAiSaid = text; _lastAiSaidAt = Date.now();
+    try { localStorage.setItem('odysseus-voice-last-' + _voiceId, JSON.stringify({ t: text.slice(0, 400), at: _lastAiSaidAt })); } catch (e) { /* ignore */ }
     _maybeCommit(text);
   }
   _aiLine = null; _aiText = '';
@@ -1419,7 +1423,8 @@ function _seedChatContext() {
   if (!_active) { if (++_seedTries < 20) setTimeout(_seedChatContext, 300); return; }
   _seedTries = 0;
   const HEAD = '[Context — the conversation so far in the chat thread you are attached to. You DO know this; ' +
-    'use it when the user refers to earlier topics. Do not read it out or reply to it now.]';
+    'use it when the user refers to earlier topics. Do NOT read it out, summarise it or resume it now — ' +
+    'it is background, already told to the user.]';
   if (_memPreview) _brief(HEAD + '\nVoice memory summary:\n' + _memPreview.slice(0, 1200), false);
   // Newest turns, within a budget, back in chronological order.
   const lines = [];
@@ -1440,6 +1445,22 @@ function _seedChatContext() {
   }
   // Re-seed anything the user typed/pasted earlier (survives reconnects).
   for (const n of _notes.slice(-3)) _briefNote(n);
+  // Resume in the state the previous session ended in — a reconnect is not a
+  // new conversation. If ALFRED last said "standing by", it stays silent.
+  if (!_lastAiSaid) {
+    try {
+      const s = JSON.parse(localStorage.getItem('odysseus-voice-last-' + _voiceId) || 'null');
+      if (s && s.t) { _lastAiSaid = s.t; _lastAiSaidAt = s.at || 0; }
+    } catch (e) { /* ignore */ }
+  }
+  if (_lastAiSaid && Date.now() - _lastAiSaidAt < 6 * 3600 * 1000) {
+    _brief('[Resume state — the voice link was just re-established mid-conversation] Your last words before ' +
+      `the reconnect were: "${_lastAiSaid.slice(0, 300)}". Continue from exactly that state. Do not greet, ` +
+      'do not recap, do not resume reading any result. If you were standing by, keep standing by in silence ' +
+      'until the user speaks to you.', false);
+  } else {
+    _brief('[Session start] Do not start talking or summarise anything — wait for the user to speak first.', false);
+  }
 }
 
 // ── Typed / pasted context (E) ──────────────────────────────────────────────
