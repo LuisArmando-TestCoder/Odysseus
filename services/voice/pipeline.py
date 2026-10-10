@@ -115,6 +115,11 @@ BROWSER ACTIONS: when the user wants something opened, played, redirected or run
 YouTube video, a page), phrase it as "Find <thing> and open it in my browser (new tab) using run_javascript
 with window.open(url, '_blank')" — never ask for a script file or shell command for that; if the URL is
 already known from context, include it.
+SELF-REFERENCE: when the user asks about THEMSELVES ("audit me", "my own presence", "my name is X"), keep it
+first-person — "my own public presence", "my name is X" — never "his"/"her"/"the target". A self-audit is
+legitimate; a third-person phrasing makes it look like profiling a stranger and gets refused.
+IDENTIFIERS: carry EVERY username, handle, name, email, URL or number the user lists, verbatim, into the
+message — the chat agent cannot guess them and will otherwise stop and ask for exactly what you dropped.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
 Concise, no preamble, no mention of "voice" or "transcript".
 Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}

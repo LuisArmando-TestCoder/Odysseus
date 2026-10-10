@@ -126,7 +126,12 @@ def setup_realtime_routes() -> APIRouter:
         session_cfg = {"model": model, "instructions": instructions}
         voice = (settings.get("voice_assistant_voice") or "").strip()
         if voice:
-            session_cfg["voice"] = voice
+            # GPT-Live reads the voice from session.audio.output.voice, NOT a
+            # flat session.voice. A flat "voice" key is silently ignored and the
+            # session falls back to its default (marin, a female voice) — which
+            # is why the configured male voice never took effect.
+            session_cfg["audio"] = {"output": {"voice": voice}}
+        logger.info(f"GPT-Live session config: model={model!r} voice={voice!r}")
         payload = {
             "session": session_cfg,
             "transport": {"type": "webrtc", "sdp": sdp},
@@ -143,7 +148,7 @@ def setup_realtime_routes() -> APIRouter:
                 # anyway with its default voice rather than failing the call.
                 if r.status_code == 400 and voice and "voice" in r.text.lower():
                     logger.warning(f"GPT-Live rejected voice {voice!r}; retrying with default voice: {r.text[:200]}")
-                    session_cfg.pop("voice", None)
+                    session_cfg.pop("audio", None)
                     r = await client.post(
                         "https://api.openai.com/v1/live/sessions",
                         headers={"Authorization": f"Bearer {api_key}"},

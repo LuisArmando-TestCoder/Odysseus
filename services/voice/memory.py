@@ -206,8 +206,15 @@ class VoiceMemory:
             if now - s.get("ts", 0) > window_s:
                 break
             old = self._tokens(s.get("message", ""))
-            if old and len(new & old) / len(new | old) >= threshold:
-                return s.get("message")
+            if not old or len(new & old) / len(new | old) < threshold:
+                continue
+            # Similar wording but NEW specifics (handles, names, URLs, numbers
+            # the user just gave) is a refinement, not a repeat — e.g. the same
+            # audit request now with "LuisArmando-TestCoder, ArmandoOriens".
+            novel = {w for w in new - old if len(w) >= 4 or any(c.isdigit() for c in w)}
+            if len(novel) >= 2:
+                continue
+            return s.get("message")
         return None
 
     def record_sent(self, message: str, decision: Dict[str, Any]):
