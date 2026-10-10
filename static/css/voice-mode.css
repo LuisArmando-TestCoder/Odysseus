@@ -318,7 +318,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   opacity: .55;
 }
 .vx-node-ic {
-  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
   border: 1px solid var(--vx-line); background: rgba(255,255,255,.03);
   font: 700 12px/1 var(--vx-mono); color: var(--vx-dim); position: relative;
 }
