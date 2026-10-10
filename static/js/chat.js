@@ -21,6 +21,7 @@ import * as emailInbox from './emailInbox.js';
 import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
 import createResearchSynapse from './researchSynapse.js';
+import { handleEvalRequest } from './browserEval.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
@@ -2006,11 +2007,19 @@ import createResearchSynapse from './researchSynapse.js';
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_progress') {
+                if (_isBg) continue;
+                // Browser JavaScript execution bridge: the agent's
+                // run_javascript tool pushes an eval request this way, and
+                // awaits the result POSTed back by browserEval.js. Handle it
+                // before the bash/py tail path below (no tool bubble needed).
+                if (json.eval_request && json.eval_token) {
+                  handleEvalRequest(json);
+                  continue;
+                }
                 // Long-running subprocess (bash, python) is still in
                 // flight — refresh the running tool card with the
                 // elapsed-time + tail of its stdout/stderr so the
                 // user doesn't stare at a blind "Running…" spinner.
-                if (_isBg) continue;
                 if (!currentToolBubble) continue;
                 // The per-second ticker (started in tool_start) owns the
                 // elapsed display; here we just surface the live output tail.

@@ -89,7 +89,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # don't execute script, the residual risk is visual-only.
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                # 'unsafe-eval' is required by the chat-agent's run_javascript
+                # tool, which executes arbitrary JS in the user's own page via
+                # `new Function(...)`. Every execution is gated by a JEV safety /
+                # prompt-injection guard server-side BEFORE the code reaches the
+                # browser (see src/browser_eval.py), so the residual risk is the
+                # code actually running — not an un-gated eval surface.
+                f"script-src 'self' 'nonce-{nonce}' 'unsafe-eval' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "font-src 'self' https://cdn.jsdelivr.net; "
                 "img-src 'self' data: blob:; "

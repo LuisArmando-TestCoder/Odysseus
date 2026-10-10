@@ -1069,6 +1069,20 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_javascript",
+            "description": "Run JavaScript in the user's own browser (the open Odysseus page) and get the stringified result back. Use for anything only the browser can do: read the current page / URL / time, control the UI, open a link. The code runs as a function body; use `return <expr>;` to return a value.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "JavaScript to execute in the page (as a function body; optional `return` expression)"}
+                },
+                "required": ["code"]
+            }
+        }
+    },
 ]
 
 
@@ -1235,6 +1249,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = json.dumps(args)
     elif tool_type == "ask_teacher":
         content = args.get("model", "auto") + "\n" + args.get("problem", "")
+    elif tool_type == "run_javascript":
+        content = args.get("code", "")
     else:
         content = json.dumps(args)
 

@@ -818,6 +818,12 @@ async def execute_tool_block(
                   "ui_control", "ask_teacher"):
         from src.ai_interaction import dispatch_ai_tool
         desc, result = await dispatch_ai_tool(tool, content, session_id, owner=owner)
+    elif tool == "run_javascript":
+        desc = "run_javascript: executing in browser"
+        from src.browser_eval import do_run_javascript
+        result = await do_run_javascript(
+            content, session_id=session_id, owner=owner, progress_cb=progress_cb
+        )
     elif tool == "manage_tasks":
         desc = "manage_tasks"
         result = await do_manage_tasks(content, owner=owner)

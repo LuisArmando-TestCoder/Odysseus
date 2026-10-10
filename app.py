@@ -601,6 +601,11 @@ from routes.cost_routes import setup_cost_routes
 app.include_router(setup_cost_routes())
 logger.info("OpenAI Realtime routes initialized")
 
+# Browser JavaScript execution bridge (chat-agent run_javascript tool)
+from routes.browser_eval_routes import setup_browser_eval_routes
+app.include_router(setup_browser_eval_routes())
+logger.info("Browser eval routes initialized")
+
 # Documents (artifacts/canvas)
 from routes.document_routes import setup_document_routes
 app.include_router(setup_document_routes(session_manager, upload_handler))
