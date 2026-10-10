@@ -368,7 +368,7 @@ body.bg-pattern-sparkles {
       .export-dropdown-menu {
         min-width: 200px;
         padding: 6px;
-        border-radius: 50%;
+        border-radius: 10px;
       }
       .export-dropdown-item {
         padding: 12px 14px;
@@ -470,7 +470,7 @@ body.bg-pattern-sparkles {
     .user-bar-avatar {
       width: 24px;
       height: 24px;
-      border-radius: 50%;
+      border-radius: 10px;
       background: color-mix(in srgb, var(--fg) 12%, transparent);
       display: flex;
       align-items: center;
@@ -735,7 +735,7 @@ body.bg-pattern-sparkles {
       display: inline-block;
       width: 6px;
       height: 6px;
-      border-radius: 50%;
+      border-radius: 10px;
       background: var(--red);
       /* Match the Deep Research badge: right-aligned (auto) with the same
          4px left nudge, so both sidebar buttons' dots line up identically. */
@@ -762,7 +762,7 @@ body.bg-pattern-sparkles {
       /* Default for inline spans like #email-section-title — sit just to the
          right of the element so it never overlaps the icon. */
       top: 50%; right: -10px; transform: translateY(-50%);
-      width: 6px; height: 6px; border-radius: 50%;
+      width: 6px; height: 6px; border-radius: 10px;
       background: var(--accent, var(--red));
       box-shadow: 0 0 0 2px var(--bg);
       pointer-events: none;
@@ -891,7 +891,7 @@ body.bg-pattern-sparkles {
       .minimized-dock-chip {
         width: 40px; height: 40px;
         padding: 0 !important;
-        border-radius: 50% !important;
+        border-radius: 10px !important;
         justify-content: center;
         position: relative;
         overflow: visible;
@@ -964,7 +964,7 @@ body.bg-pattern-sparkles {
       position: fixed;
       left: 50%;
       width: 88px; height: 88px;
-      border-radius: 50%;
+      border-radius: 10px;
       background: var(--accent, var(--red, #e53935));
       color: #fff;
       display: flex; align-items: center; justify-content: center;
@@ -993,7 +993,7 @@ body.bg-pattern-sparkles {
        continuously, then bursts on drop. */
     #dock-trash-zone .whirlpool {
       position: absolute; inset: -8px;
-      border-radius: 50%;
+      border-radius: 10px;
       border: 2px solid transparent;
       border-top-color: rgba(255,255,255,0.9);
       border-right-color: rgba(255,255,255,0.55);
@@ -1062,7 +1062,7 @@ body.bg-pattern-sparkles {
 
     .minimized-dock-x {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 16px; height: 16px; border-radius: 50%;
+      width: 16px; height: 16px; border-radius: 10px;
       font-size: 14px; line-height: 1; opacity: 0.4;
       margin-left: 3px;
     }
@@ -1114,7 +1114,7 @@ body.bg-pattern-sparkles {
       transform: translateX(-50%);
       width: 4px;
       height: 4px;
-      border-radius: 50%;
+      border-radius: 10px;
       background: var(--accent, var(--red));
       opacity: 0.7;
     }
@@ -1163,7 +1163,7 @@ body.bg-pattern-sparkles {
          / assistant dots all line up vertically in the same column
          instead of trailing right after each (differently-sized) label. */
       margin-left: auto;
-      border-radius: 50%;
+      border-radius: 10px;
       background: var(--accent, var(--red));
       flex-shrink: 0;
       vertical-align: middle;
@@ -1386,7 +1386,7 @@ body.bg-pattern-sparkles {
     }
     .session-star {
       width: 10px; height: 10px;
-      border-radius: 50%;
+      border-radius: 10px;
       border: 1.5px solid color-mix(in srgb, var(--fg) 22%, transparent);
       flex-shrink: 0;
       position: relative;
@@ -1984,7 +1984,7 @@ body.bg-pattern-sparkles {
       content: '';
       width: 8px;
       height: 8px;
-      border-radius: 50%;
+      border-radius: 10px;
       background: var(--model-dot, color-mix(in srgb, var(--fg) 30%, transparent));
       flex-shrink: 0;
     }
@@ -2493,7 +2493,7 @@ body.bg-pattern-sparkles {
       flex-shrink: 0;
       height: 28px;
       border: 1px solid var(--border);
-      border-radius: 50%;
+      border-radius: 10px;
       overflow: hidden;
       position: relative;
     }
@@ -2513,7 +2513,7 @@ body.bg-pattern-sparkles {
       transform: translateX(100%);
     }
     #mode-agent-btn {
-      border-radius: 50% 0 0 10px;
+      border-radius: 10px 0 0 10px;
     }
     #mode-chat-btn {
       border-radius: 0 10px 10px 0;
@@ -2907,7 +2907,7 @@ body.bg-pattern-sparkles {
       width: 6px;
       height: 6px;
       background: var(--fg);
-      border-radius: 50%;
+      border-radius: 10px;
       display: none;
     }
     .overflow-plus-btn.has-active .plus-active-dot {
@@ -2917,7 +2917,7 @@ body.bg-pattern-sparkles {
       position: fixed;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 50%;
+      border-radius: 10px;
       padding: 4px;
       min-width: 170px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -3022,7 +3022,7 @@ body.bg-pattern-sparkles {
       width: 6px;
       height: 6px;
       background: var(--fg);
-      border-radius: 50%;
+      border-radius: 10px;
       margin-left: auto;
       display: none;
       flex-shrink: 0;
@@ -3193,7 +3193,7 @@ body.bg-pattern-sparkles {
       color: var(--fg);
       font-size: 0.7rem;
       padding: 2px 8px;
-      border-radius: 50%;
+      border-radius: 10px;
       cursor: pointer;
       opacity: 0.6;
       transition: opacity 0.15s, background 0.15s;
@@ -3843,7 +3843,7 @@ body.bg-pattern-sparkles {
     }
     .model-fav-btn {
       width: 8px; height: 8px;
-      border-radius: 50%;
+      border-radius: 10px;
       border: 1.5px solid color-mix(in srgb, var(--fg) 22%, transparent);
       flex-shrink: 0;
       cursor: pointer;
@@ -4671,7 +4671,7 @@ body.bg-pattern-sparkles {
       margin: 8px auto;
       border: 3px solid var(--border);
       border-top-color: var(--red);
-      border-radius: 50%;
+      border-radius: 10px;
       animation: spin 0.9s linear infinite;
     }
     /* Inline spinner for buttons */
@@ -4681,7 +4681,7 @@ body.bg-pattern-sparkles {
       height: 12px;
       border: 2px solid transparent;
       border-top-color: currentColor;
-      border-radius: 50%;
+      border-radius: 10px;
       animation: spin 1s linear infinite;
       margin-right: 6px;
     }
@@ -4708,7 +4708,7 @@ body.bg-pattern-sparkles {
       width: 6px;
       height: 6px;
       background-color: var(--red);
-      border-radius: 50%;
+      border-radius: 10px;
     }
     .loading-dot:nth-child(1) {
       animation: loading-bounce 1.4s infinite ease-in-out both;
@@ -5084,7 +5084,7 @@ body.bg-pattern-sparkles {
       content: '';
       position: absolute;
       inset: 0;
-      border-radius: 50%;
+      border-radius: 10px;
       padding: 1px;
       background: linear-gradient(to bottom, var(--border), color-mix(in srgb, var(--border) 30%, transparent));
       -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -5224,7 +5224,7 @@ body.bg-pattern-sparkles {
       width: 18px;
       height: 18px;
       border: 2px solid var(--border);
-      border-radius: 50%;
+      border-radius: 10px;
       outline: none;
       margin: 0;
       background: var(--bg);
@@ -5429,7 +5429,7 @@ body.bg-pattern-sparkles {
       width: 12px;
       height: 12px;
       background: var(--panel);
-      border-radius: 50%;
+      border-radius: 10px;
       transition: transform 0.2s;
       box-shadow: 0 1px 2px rgba(0,0,0,0.25);
     }
@@ -5495,7 +5495,7 @@ body.bg-pattern-sparkles {
       position: fixed;
       pointer-events: none;
       border: 3px solid var(--accent, var(--red));
-      border-radius: 50%;
+      border-radius: 10px;
       z-index: 10000;
       animation: ody-breathe 1.4s ease-in-out infinite;
       opacity: 0;
@@ -5538,7 +5538,7 @@ body.bg-pattern-sparkles {
       background: var(--bg);
       color: var(--fg);
       border: 1px solid var(--border);
-      border-radius: 50%;
+      border-radius: 10px;
       padding: 12px 14px 10px;
       width: 240px;
       font-size: 0.78rem;
@@ -5677,7 +5677,7 @@ body.bg-pattern-sparkles {
       right: 0;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 50%;
+      border-radius: 10px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px color-mix(in srgb, var(--fg) 5%, transparent);
       z-index: 1000;
       display: none;
@@ -6100,7 +6100,7 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
       display: flex; justify-content: center; margin-bottom: 3px;
     }
     .theme-swatch-colors span {
-      width: 15px; height: 15px; border-radius: 50%;
+      width: 15px; height: 15px; border-radius: 10px;
       margin-left: -5px;
       border: 1.5px solid color-mix(in srgb, var(--fg) 12%, transparent);
     }
@@ -6111,15 +6111,15 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
     .color-row label { font-size: 13px; font-weight: 500; color: var(--fg); opacity: 0.7; flex: 1; }
     .color-row input[type="color"],
     .color-row input.cp-swatch-input {
-      width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 50%;
+      width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 10px;
       background: none; cursor: pointer; padding: 0; flex-shrink: 0;
       overflow: hidden;
       -webkit-appearance: none;
       appearance: none;
     }
     .color-row input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-    .color-row input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
-    .color-row input[type="color"]::-moz-color-swatch { border: none; border-radius: 50%; }
+    .color-row input[type="color"]::-webkit-color-swatch { border: none; border-radius: 10px; }
+    .color-row input[type="color"]::-moz-color-swatch { border: none; border-radius: 10px; }
     .color-row input.cp-swatch-input {
       color: transparent;
       text-shadow: none;
@@ -6153,7 +6153,7 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
       height: 20px;
       padding: 0;
       border: none;
-      border-radius: 50%;
+      border-radius: 10px;
       background: var(--accent, var(--red, #d92534));
       color: #fff;
       cursor: pointer;
@@ -6243,11 +6243,11 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
     }
     .theme-fd-range::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none;
-      width: 14px; height: 14px; border-radius: 50%;
+      width: 14px; height: 14px; border-radius: 10px;
       background: var(--red); border: none; margin-top: -5px; cursor: pointer;
     }
     .theme-fd-range::-moz-range-thumb {
-      width: 14px; height: 14px; border-radius: 50%;
+      width: 14px; height: 14px; border-radius: 10px;
       background: var(--red); border: none; cursor: pointer;
     }
     .theme-fd-range:focus { outline: none; }
@@ -6735,7 +6735,7 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
       width: 18px; height: 18px;
       margin: 0 4px;
       font-size: 12px; font-weight: 700;
-      border-radius: 50%;
+      border-radius: 10px;
       border: 1px solid currentColor;
       flex-shrink: 0;
     }
@@ -7658,7 +7658,7 @@ button.hamburger {
   margin: 8px auto;
   border: 3px solid var(--border);
   border-top-color: var(--red);
-  border-radius: 50%;
+  border-radius: 10px;
   animation: spin 0.9s linear infinite;
 }
 
@@ -7669,7 +7669,7 @@ button.hamburger {
   height: 12px;
   border: 2px solid transparent;
   border-top-color: currentColor;
-  border-radius: 50%;
+  border-radius: 10px;
   animation: spin 1s linear infinite;
   margin-right: 6px;
 }
@@ -7689,7 +7689,7 @@ button.hamburger {
   width: 6px;
   height: 6px;
   background-color: var(--fg);
-  border-radius: 50%;
+  border-radius: 10px;
   opacity: 0.6;
 }
 .loading-dot:nth-child(1) {
@@ -7864,7 +7864,7 @@ button.hamburger {
   left: 2px;
   top: 2px;
   background-color: var(--panel);
-  border-radius: 50%;
+  border-radius: 10px;
   transition: transform 0.08s;
   box-shadow: 0 1px 2px rgba(0,0,0,0.25);
 }
@@ -8029,7 +8029,7 @@ button.hamburger {
   min-width: 0;
   padding: 0;
   border: 2px solid var(--bg);
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent-primary, var(--red));
   color: #fff;
   display: flex;
@@ -8060,7 +8060,7 @@ button.hamburger {
     min-width: 0;
     padding: 0;
     border: 2px solid var(--bg);
-    border-radius: 50%;
+    border-radius: 10px;
     background: var(--accent-primary, var(--red));
     color: #fff;
     display: flex;
@@ -8412,7 +8412,7 @@ body.hide-thinking .thinking-section { display: none !important; }
   justify-content: center;
   min-width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--fg) 15%, transparent);
   color: var(--fg);
   font-size: 0.7em;
@@ -8466,7 +8466,7 @@ body.hide-thinking .thinking-section { display: none !important; }
   right: 4px;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent, var(--red));
   animation: rail-notif-pulse 2s ease-in-out infinite;
   z-index: 1;
@@ -8563,7 +8563,7 @@ body.hide-thinking .thinking-section { display: none !important; }
   bottom: 5px;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   box-shadow: 0 0 4px 1px color-mix(in srgb, var(--red) 55%, transparent),
               0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
@@ -8576,7 +8576,7 @@ body.hide-thinking .thinking-section { display: none !important; }
   left: 4px;
   width: 4px;
   height: 4px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   box-shadow: 0 0 3px 1px color-mix(in srgb, var(--red) 50%, transparent);
   pointer-events: none;
@@ -8632,7 +8632,7 @@ body.hide-thinking .thinking-section { display: none !important; }
   top: 10px;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: 2px solid var(--bg);
   z-index: 1;
@@ -9387,7 +9387,7 @@ details a:hover {
   appearance: none;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red, var(--fg));
   cursor: pointer;
   border: 2px solid var(--panel);
@@ -9397,7 +9397,7 @@ details a:hover {
 .preset-range::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red, var(--fg));
   cursor: pointer;
   border: 2px solid var(--panel);
@@ -9457,7 +9457,7 @@ details a:hover {
   justify-content: center;
   width: 15px;
   height: 15px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1px solid var(--border);
   font-size: 10px;
   font-weight: 600;
@@ -10199,7 +10199,7 @@ textarea.memory-add-input {
   max-height: 6px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   background: transparent;
   cursor: pointer;
   flex-shrink: 0;
@@ -10663,7 +10663,7 @@ textarea.memory-add-input {
 .memory-pin-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--fg);
   opacity: 0.5;
   transition: all 0.15s;
@@ -10703,7 +10703,7 @@ textarea.memory-add-input {
   padding: 0 8px;
   display: inline-flex;
   align-items: center;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
@@ -10997,7 +10997,7 @@ textarea.memory-add-input {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--panel);
   color: var(--accent, var(--red));
   cursor: pointer;
@@ -11431,7 +11431,7 @@ textarea.memory-add-input {
 .doc-stream-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent);
 }
 @keyframes doc-stream-pulse {
@@ -12380,7 +12380,7 @@ mark.doc-find-mark.current {
   width: 250px;
   background: var(--panel);
   border: 1px solid var(--accent);
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 12px 12px 10px;
   font-size: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
@@ -12664,7 +12664,7 @@ mark.doc-find-mark.current {
   position: absolute;
   top: 6px; right: 8px;
   width: 6px; height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   animation: doc-pulse 0.8s ease-in-out infinite;
   z-index: 3;
@@ -13076,7 +13076,7 @@ body:has(.compare-active) .hamburger-btn { display: none !important; }
   appearance: none;
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent, var(--red));
   border: none;
   cursor: pointer;
@@ -13084,7 +13084,7 @@ body:has(.compare-active) .hamburger-btn { display: none !important; }
 .theme-opacity-wrap input[type="range"]::-moz-range-thumb {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent, var(--red));
   border: none;
   cursor: pointer;
@@ -13300,7 +13300,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
   width: 12px;
   height: 12px;
   background: var(--panel);
-  border-radius: 50%;
+  border-radius: 10px;
   transition: transform 0.08s;
   box-shadow: 0 1px 2px rgba(0,0,0,0.25);
 }
@@ -13510,7 +13510,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
   min-width: 12px;
   max-width: 12px;
   box-sizing: border-box;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1.5px solid color-mix(in srgb, var(--fg) 35%, transparent);
   position: relative;
   transition: background 0.2s, border-color 0.2s, transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -13685,7 +13685,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
 .adm-provider-logo svg { width: 14px; height: 14px; }
 .adm-provider-logo:empty {
   background: color-mix(in srgb, var(--fg) 12%, transparent);
-  border-radius: 50%;
+  border-radius: 10px;
 }
 .adm-provider-caret { flex-shrink: 0; opacity: 0.5; transition: transform 0.15s; }
 .adm-provider-picker:has(.adm-provider-menu:not(.hidden)) .adm-provider-caret {
@@ -13723,7 +13723,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 4px 3px 6px;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
-  border: 1px solid var(--border); border-radius: 50%;
+  border: 1px solid var(--border); border-radius: 10px;
   font-size: 11px; cursor: grab; user-select: none;
 }
 .search-fb-chip.dragging { opacity: 0.4; }
@@ -13743,7 +13743,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
 .search-fb-remove:hover { opacity: 1; color: var(--red); }
 .search-fb-add {
   background: var(--bg); color: var(--fg);
-  border: 1px dashed var(--border); border-radius: 50%;
+  border: 1px dashed var(--border); border-radius: 10px;
   padding: 2px 6px; font-family: inherit; font-size: 11px;
   outline: none; cursor: pointer;
 }
@@ -13844,7 +13844,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
   height: 12px;
   border: 2px solid var(--border);
   border-top-color: var(--red);
-  border-radius: 50%;
+  border-radius: 10px;
   animation: admin-spin 0.6s linear infinite;
   vertical-align: -2px;
   margin-right: 2px;
@@ -14735,7 +14735,7 @@ body.left-dock-active {
   align-items: center;
   font-size: 9px;
   padding: 0 8px;
-  border-radius: 50%;
+  border-radius: 10px;
 }
 .doclib-grid:has(.doclib-card-expanded) > .doclib-card:not(.doclib-card-expanded) {
   display: none;
@@ -15784,7 +15784,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 .skill-conf-dot {
   display: inline-block;
   width: 7px; height: 7px;
-  border-radius: 50%;
+  border-radius: 10px;
   flex-shrink: 0;
 }
 /* Name + description column. Name wraps to 2 lines (skill slugs are long —
@@ -16090,7 +16090,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 .skill-eval-head  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .skill-eval-badge {
   font-size: 10px; font-weight: 700; letter-spacing: 0.03em;
-  padding: 2px 8px; border-radius: 50%; flex-shrink: 0;
+  padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
 }
 .skill-eval-ok   { background: color-mix(in srgb, var(--color-success, #4ade80) 26%, transparent); color: var(--color-success, #4ade80); }
 .skill-eval-warn { background: color-mix(in srgb, var(--color-warning, #f0ad4e) 26%, transparent); color: var(--color-warning, #f0ad4e); }
@@ -16603,7 +16603,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  border-radius: 50%;
+  border-radius: 10px;
   pointer-events: none;
   z-index: 1;
 }
@@ -16616,7 +16616,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 
 .gallery-fav-btn {
   position: absolute; top: 0px; right: 4px; z-index: 2;
-  background: rgba(0,0,0,0.4); border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.4); border: none; border-radius: 10px;
   width: 26px; height: 26px; font-size: 14px;
   color: rgba(255,255,255,0.6); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -16628,7 +16628,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 
 .gallery-dl-btn {
   position: absolute; top: 0px; left: 4px; z-index: 2;
-  background: rgba(0,0,0,0.4); border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.4); border: none; border-radius: 10px;
   width: 26px; height: 26px;
   color: rgba(255,255,255,0.75); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -16659,7 +16659,7 @@ body.gallery-selecting .gallery-dl-btn,
 .gallery-ai-chip {
   background: color-mix(in srgb, var(--accent, var(--red)) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 25%, transparent);
-  border-radius: 50%; padding: 3px 8px; font-size: 10px;
+  border-radius: 10px; padding: 3px 8px; font-size: 10px;
   color: var(--fg); opacity: 0.8;
   font: inherit; font-size: 10px;
   cursor: pointer;
@@ -16701,7 +16701,7 @@ body.gallery-selecting .gallery-dl-btn,
   margin-left: 5px;
   width: 13px;
   height: 13px;
-  border-radius: 50%;
+  border-radius: 10px;
   font-size: 12px;
   line-height: 1;
   opacity: 0.55;
@@ -16836,7 +16836,7 @@ body.gallery-selecting .gallery-dl-btn,
 .vision-editor-panel {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 14px 16px;
   width: min(560px, 92vw);
   max-height: 88vh;
@@ -16932,7 +16932,7 @@ body.gallery-selecting .gallery-dl-btn,
 }
 .gallery-select-dot {
   position: absolute; top: 6px; left: 6px; z-index: 2;
-  width: 10px; height: 10px; border-radius: 50%; cursor: pointer;
+  width: 10px; height: 10px; border-radius: 10px; cursor: pointer;
   background: color-mix(in srgb, var(--fg) 30%, transparent);
   border: 1px solid color-mix(in srgb, var(--fg) 50%, transparent);
   transition: background 0.15s;
@@ -17204,7 +17204,7 @@ body.gallery-selecting .gallery-dl-btn,
   background: rgba(0, 0, 0, 0.45);
   color: rgba(255, 255, 255, 0.85);
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
   width: 40px;
   height: 40px;
   display: flex;
@@ -17228,7 +17228,7 @@ body.gallery-selecting .gallery-dl-btn,
   background: rgba(0, 0, 0, 0.45);
   color: rgba(255, 255, 255, 0.85);
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
   width: 36px;
   height: 36px;
   display: flex;
@@ -17959,7 +17959,7 @@ body.gallery-selecting .gallery-dl-btn,
   width: 6px;
   height: 6px;
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--color-success, #4caf50);
   /* Drives the breathing glow in the keyframes (matches email's dot). */
   --notif-glow: var(--color-success, #4caf50);
@@ -17975,7 +17975,7 @@ body.gallery-selecting .gallery-dl-btn,
 .cookbook-tab-error-dot { --notif-glow: var(--color-error, #f44); }
 .rail-notify-error { color: var(--color-error, #f44) !important; }
 .cookbook-tab-error-dot {
-  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  display: inline-block; width: 5px; height: 5px; border-radius: 10px;
   background: var(--color-error, #f44); margin-left: 4px; vertical-align: middle;
   animation: cookbook-notif-pulse 2s ease-in-out infinite;
 }
@@ -18017,7 +18017,7 @@ body.gallery-selecting .gallery-dl-btn,
 }
 .cookbook-bulk-bar.hidden { display: none; }
 .serve-select-cb {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
+  width: 8px; height: 8px; border-radius: 10px; flex-shrink: 0; cursor: pointer;
   background: var(--border); transition: background 0.15s;
   align-self: center;
   position: relative;
@@ -18067,7 +18067,7 @@ body.gallery-selecting .gallery-dl-btn,
   display: inline-block;
   margin-left: 6px;
   padding: 1px 7px;
-  border-radius: 50%;
+  border-radius: 10px;
   font-size: 9px;
   font-weight: 500;
   text-transform: lowercase;
@@ -18482,7 +18482,7 @@ body.gallery-selecting .gallery-dl-btn,
   height: 14px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--bg, #1a1a1a);
   color: var(--fg-muted);
   font-size: 12px;
@@ -18775,7 +18775,7 @@ body.gallery-selecting .gallery-dl-btn,
   left: 2px;
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #000;
   transition: transform 0.2s, background 0.2s;
 }
@@ -19556,7 +19556,7 @@ body.gallery-selecting .gallery-dl-btn,
   -webkit-appearance: none;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--fg);
   border: 2px solid var(--panel);
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
@@ -19574,7 +19574,7 @@ body.gallery-selecting .gallery-dl-btn,
 .cookbook-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--fg);
   border: 2px solid var(--panel);
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
@@ -19638,7 +19638,7 @@ body.gallery-selecting .gallery-dl-btn,
   left: 2px;
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--panel);
   box-shadow: 0 1px 2px rgba(0,0,0,0.25);
   transition: transform 0.08s;
@@ -20062,7 +20062,7 @@ body.gallery-selecting .gallery-dl-btn,
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #777;
   transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
   cursor: pointer;
@@ -20371,7 +20371,7 @@ body.gallery-selecting .gallery-dl-btn,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
   color: color-mix(in srgb, var(--fg) 55%, transparent);
   font-size: 9px;
@@ -20650,7 +20650,7 @@ body.gallery-selecting .gallery-dl-btn,
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
 }
 .hwfit-panel-badge {
-  font-size: 9px; padding: 2px 8px; border-radius: 50%;
+  font-size: 9px; padding: 2px 8px; border-radius: 10px;
   background: color-mix(in srgb, var(--red) 12%, transparent);
   color: var(--red); font-weight: 600; flex-shrink: 0;
 }
@@ -20853,7 +20853,7 @@ body.gallery-selecting .gallery-dl-btn,
 .shortcut-icon { display: inline-flex; opacity: 0.5; flex-shrink: 0; }
 .shortcut-warn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px; border-radius: 50%; background: var(--warn); color: #fff;
+  width: 14px; height: 14px; border-radius: 10px; background: var(--warn); color: #fff;
   font-size: 9px; font-weight: 700; margin-left: 4px;
 }
 .shortcut-controls { display: flex; align-items: center; gap: 4px; }
@@ -21340,7 +21340,7 @@ body:not(.welcome-ready) #welcome-screen {
   letter-spacing: 0.02em;
   padding: 1px 7px;
   margin-right: 4px;
-  border-radius: 50%;
+  border-radius: 10px;
   color: var(--accent, var(--red));
   background: color-mix(in srgb, var(--accent, var(--red)) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 35%, transparent);
@@ -21353,7 +21353,7 @@ body:not(.welcome-ready) #welcome-screen {
 .task-log-status {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 10px;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--fg) 30%, transparent);
 }
@@ -22138,7 +22138,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   justify-content: center;
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   color: var(--fg);
   font-size: 8px;
@@ -22488,7 +22488,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .research-synapse {
   margin: 6px 0 4px;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   background:
     radial-gradient(ellipse at center, color-mix(in srgb, var(--accent, var(--red)) 10%, transparent) 0%, transparent 70%),
     color-mix(in srgb, var(--panel) 50%, var(--bg));
@@ -23070,7 +23070,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   right: 8px;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
@@ -23195,7 +23195,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 0;
 }
 .ge-topbar-sep {
@@ -23355,7 +23355,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   display: none;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 10px;
   color: #fff;
   background: var(--red);
   cursor: pointer;
@@ -23437,7 +23437,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--fg) 18%, transparent);
@@ -23462,7 +23462,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-shortcuts-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 14px 18px 12px;
   box-shadow: 0 8px 30px color-mix(in srgb, var(--fg) 25%, transparent);
   width: min(720px, 92vw);
@@ -23922,7 +23922,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   width: 24px;
   height: 24px;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 0;
   cursor: pointer;
   background: none;
@@ -23933,11 +23933,11 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
 .ge-color-picker::-webkit-color-swatch {
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
 }
 .ge-color-picker::-moz-color-swatch {
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
 }
 /* attachColorPicker swaps the native <input type="color"> for a styled
    text input with the same `.ge-color-picker` class plus
@@ -23948,7 +23948,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   height: 24px;
   flex: 0 0 24px;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 0;
   cursor: pointer;
   -webkit-appearance: none;
@@ -23981,7 +23981,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   -webkit-appearance: none;
   appearance: none;
   width: 9px; height: 9px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none; cursor: pointer;
 }
@@ -23992,7 +23992,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 }
 .ge-size-slider::-moz-range-thumb {
   width: 9px; height: 9px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none; cursor: pointer;
 }
@@ -24176,7 +24176,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--fg) 12%, transparent);
   color: var(--fg-muted);
   font-size: 9px;
@@ -24254,7 +24254,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   appearance: none;
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -24268,7 +24268,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 }
 .ge-eraser-row input[type="range"]::-moz-range-thumb {
   width: 9px; height: 9px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -24303,7 +24303,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   font-size: 9px;
   font-weight: 600;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   color: var(--fg-muted);
   background: none;
   cursor: help;
@@ -24374,11 +24374,11 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 }
 .ge-fx-row input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 11px; height: 11px; border-radius: 50%;
+  width: 11px; height: 11px; border-radius: 10px;
   background: var(--red); border: none; cursor: pointer;
 }
 .ge-fx-row input[type="range"]::-moz-range-thumb {
-  width: 11px; height: 11px; border-radius: 50%;
+  width: 11px; height: 11px; border-radius: 10px;
   background: var(--red); border: none; cursor: pointer;
 }
 .ge-fx-row-value {
@@ -24457,7 +24457,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   position: fixed;
   z-index: 305;
   width: 320px;
-  border-radius: 50%;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   font-size: 11px;
@@ -24615,7 +24615,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-history-row.current .ge-history-row-dot { background: var(--accent, var(--red)); }
 .ge-history-row.future { opacity: 0.45; }
 .ge-history-row-dot {
-  width: 6px; height: 6px; border-radius: 50%;
+  width: 6px; height: 6px; border-radius: 10px;
   background: var(--fg-muted);
   flex-shrink: 0;
 }
@@ -24669,7 +24669,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   width: 32px; height: 32px;
   border: 3px solid color-mix(in srgb, var(--fg) 25%, transparent);
   border-top-color: var(--accent, var(--red));
-  border-radius: 50%;
+  border-radius: 10px;
   animation: ge-canvas-spin 0.8s linear infinite;
 }
 .ge-canvas-loading-msg { font-size: 12px; opacity: 0.85; }
@@ -24724,7 +24724,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-blur-icon {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 10px;
   display: inline-block;
   flex-shrink: 0;
   background: var(--fg);
@@ -24859,7 +24859,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-adj-row input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 12px; height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   cursor: pointer; border: none;
   transition: width 0.12s ease, height 0.12s ease;
@@ -24870,7 +24870,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 }
 .ge-adj-row input[type="range"]::-moz-range-thumb {
   width: 12px; height: 12px;
-  border-radius: 50%; background: var(--red); border: none; cursor: pointer;
+  border-radius: 10px; background: var(--red); border: none; cursor: pointer;
   transition: width 0.12s ease, height 0.12s ease;
 }
 .ge-adj-row input[type="range"]:hover::-moz-range-thumb,
@@ -24901,7 +24901,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   gap: 3px;
 }
 .ge-adj-cb-row .ge-adj-cb-dot {
-  width: 10px; height: 10px; border-radius: 50%;
+  width: 10px; height: 10px; border-radius: 10px;
   display: inline-block; flex-shrink: 0;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
 }
@@ -25012,7 +25012,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-eraser-preview {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--fg);
   flex-shrink: 0;
   display: inline-block;
@@ -25760,7 +25760,7 @@ button .spinner-whirlpool {
   appearance: none;
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -25769,7 +25769,7 @@ button .spinner-whirlpool {
 .gallery-editor-container input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -25822,7 +25822,7 @@ button .spinner-whirlpool {
   appearance: none;
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -25832,7 +25832,7 @@ button .spinner-whirlpool {
 .ge-layer-opacity::-moz-range-thumb {
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -25946,7 +25946,7 @@ button .spinner-whirlpool {
 }
 .ge-brush-cursor {
   position: fixed; pointer-events: none; z-index: 10000;
-  border: 1.5px solid #fff; border-radius: 50%;
+  border: 1.5px solid #fff; border-radius: 10px;
   display: none;
   box-sizing: border-box;
 }
@@ -25957,7 +25957,7 @@ button .spinner-whirlpool {
   width: 3px; height: 3px;
   margin: -1.5px 0 0 -1.5px;
   background: rgba(255,255,255,0.8);
-  border-radius: 50%;
+  border-radius: 10px;
 }
 .ge-inpaint-section {
   padding: 8px 0; border-top: 1px solid var(--border); margin-top: 4px;
@@ -26735,7 +26735,7 @@ button .spinner-whirlpool {
   background: color-mix(in srgb, var(--accent, var(--red)) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 30%, transparent);
   color: var(--accent, var(--red));
-  border-radius: 50%; padding: 1px 6px; font-size: 9px; font-weight: 600;
+  border-radius: 10px; padding: 1px 6px; font-size: 9px; font-weight: 600;
   text-transform: lowercase; letter-spacing: 0.3px;
 }
 .email-spam-unflag {
@@ -26746,7 +26746,7 @@ button .spinner-whirlpool {
 /* Unread state is now a subtle icon, not full styling */
 .email-done-check {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; background: transparent;
+  width: 16px; height: 16px; border-radius: 10px; background: transparent;
   border: 1.5px solid var(--border); color: transparent;
   flex-shrink: 0; cursor: pointer; transition: all 0.15s;
   margin-right: 4px;
@@ -26959,7 +26959,7 @@ button .spinner-whirlpool {
   padding: 1px 8px; font-size: 10px;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   color: var(--fg);
   white-space: nowrap;
   cursor: pointer;
@@ -27210,7 +27210,7 @@ button .spinner-whirlpool {
   top: 50%;
   width: 5px;
   height: 5px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent, var(--red));
   transform: translateY(-50%);
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent, var(--red)) 55%, transparent);
@@ -27285,7 +27285,7 @@ button .spinner-whirlpool {
   padding: 0 0 4px 0;
   font-size: 16px;
   line-height: 1;
-  border-radius: 50%;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -27309,7 +27309,7 @@ button .spinner-whirlpool {
   background: color-mix(in srgb, var(--fg) 6%, transparent);
   border: 1px solid var(--border);
   color: var(--fg);
-  border-radius: 50%;
+  border-radius: 10px;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -27448,7 +27448,7 @@ button .spinner-whirlpool {
   cursor: pointer;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 0;
   font-size: 18px;
   line-height: 0.55;
@@ -27879,7 +27879,7 @@ button .spinner-whirlpool {
   flex-shrink: 0;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: 10px;
   /* Per-sender color set inline (`style="background:hsl(...)"`); this
      fallback only kicks in when JS hasn't assigned one. */
   background: color-mix(in srgb, var(--fg) 14%, transparent);
@@ -28130,7 +28130,7 @@ body.doc-find-active mark.doc-find-mark.current {
 .emoji-picker-item svg { width: 16px; height: 16px; }
 
 .email-avatar {
-  width: 28px; height: 28px; border-radius: 50%; background: var(--accent, #4a9eff);
+  width: 28px; height: 28px; border-radius: 10px; background: var(--accent, #4a9eff);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600; flex-shrink: 0; margin-top: 1px;
 }
@@ -28215,7 +28215,7 @@ body.doc-find-active mark.doc-find-mark.current {
 .email-load-more-btn:hover { background: var(--hover-bg, rgba(255,255,255,0.05)); }
 .email-spinner {
   display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff; border-radius: 50%; animation: email-spin 0.6s linear infinite;
+  border-top-color: #fff; border-radius: 10px; animation: email-spin 0.6s linear infinite;
   vertical-align: middle; margin-right: 4px;
 }
 @keyframes email-spin { to { transform: rotate(360deg); } }
@@ -29224,7 +29224,7 @@ body.notes-drag-mode .note-card-pin svg {
   width: 16px;
   height: 16px;
   border-width: 2px;
-  border-radius: 50%;
+  border-radius: 10px;
   flex-shrink: 0;
   position: relative;
   /* Generous invisible tap target around the visible dot */
@@ -29312,7 +29312,7 @@ body.notes-drag-mode .note-card-pin svg {
   margin-top: 10px;
   padding: 4px 8px 4px 4px;
   border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
@@ -29512,7 +29512,7 @@ body.notes-drag-mode .note-card-pin svg {
   flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   overflow: hidden;
   width: min(880px, 92vw);
   height: min(80vh, 820px);
@@ -29602,7 +29602,7 @@ body.notes-drag-mode .note-card-pin svg {
   background-position: 6px center;
   background-size: 11px 11px;
   border: 1px solid color-mix(in srgb, #b48a4a 45%, transparent);
-  border-radius: 50%;
+  border-radius: 10px;
   vertical-align: middle;
 }
 /* Hide the "Add a to-do…" quick-add bar in archive view — you can't add
@@ -29872,7 +29872,7 @@ body.notes-drag-mode .note-card-pin svg {
   top: -8px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   width: 18px;
   height: 18px;
   padding: 0;
@@ -29907,7 +29907,7 @@ body.notes-drag-mode .note-card-pin svg {
      to expose actions. */
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer; padding: 0;
   display: inline-flex;
   align-items: center;
@@ -29947,7 +29947,7 @@ body.notes-drag-mode .note-card-pin svg {
   height: 26px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   padding: 0;
   display: inline-flex;
@@ -30008,7 +30008,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   height: 28px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   padding: 0;
   display: inline-flex;
@@ -30052,7 +30052,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   height: 28px;
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   padding: 0;
   display: inline-flex;
@@ -30094,7 +30094,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   height: 28px;
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   padding: 0;
   display: inline-flex;
@@ -30272,7 +30272,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 .note-card-color-dot {
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   border: 1.5px solid color-mix(in srgb, var(--fg) 20%, transparent);
   transition: transform 0.15s, border-color 0.15s;
@@ -30337,7 +30337,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   color: #fff;
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 20px;
   line-height: 1;
@@ -30517,7 +30517,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 @media (max-width: 768px) {
   .notes-quick-type-seg {
     height: 36px;
-    border-radius: 50%;
+    border-radius: 10px;
   }
   .notes-quick-type-seg::before {
     border-radius: 9px;
@@ -30660,7 +30660,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 25%, transparent);
   font-size: 12px;
   line-height: 1;
@@ -30679,7 +30679,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   font-size: 9px;
   font-weight: 500;
   padding: 2px 7px;
-  border-radius: 50%;
+  border-radius: 10px;
   align-self: flex-start;
   margin-top: 2px;
 }
@@ -30859,7 +30859,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   display: inline-flex;
   height: 32px;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 10px;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
@@ -31117,7 +31117,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   color: color-mix(in srgb, var(--fg) 60%, transparent);
   font-size: 10px;
   padding: 3px 10px;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -31369,7 +31369,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   flex-shrink: 0;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 2px solid color-mix(in srgb, var(--fg) 40%, transparent);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
@@ -31504,7 +31504,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 .note-pin-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1.5px solid color-mix(in srgb, var(--fg) 25%, transparent);
   transition: all 0.15s;
 }
@@ -31746,7 +31746,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 .note-check-dot {
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1.75px solid color-mix(in srgb, var(--fg) 35%, transparent);
   /* Solid panel fill so the dot reads as a tappable target even when an
      image or colored card background sits behind it. */
@@ -31866,7 +31866,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 .note-color-dot {
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   border: 2px solid transparent;
   transition: border-color 0.15s, transform 0.15s;
@@ -32110,7 +32110,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
   font-size: 18px;
@@ -32155,7 +32155,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   -webkit-appearance: none;
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
   background: none;
   cursor: pointer;
@@ -32172,13 +32172,13 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   height: 24px !important;
   min-width: 24px !important;
   max-width: 24px !important;
-  border-radius: 50%;
+  border-radius: 10px;
   padding: 0;
   box-sizing: border-box;
 }
-.note-form-draw-color::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
-.note-form-draw-color::-webkit-color-swatch { border: none; border-radius: 50%; }
-.note-form-draw-color::-moz-color-swatch { border: none; border-radius: 50%; }
+.note-form-draw-color::-webkit-color-swatch-wrapper { padding: 0; border-radius: 10px; }
+.note-form-draw-color::-webkit-color-swatch { border: none; border-radius: 10px; }
+.note-form-draw-color::-moz-color-swatch { border: none; border-radius: 10px; }
 .note-form-draw-size-wrap { width: 110px; display: inline-flex; align-items: center; }
 .note-form-photo-plus {
   font-size: 16px;
@@ -32206,7 +32206,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   -webkit-appearance: none;
   appearance: none;
   width: 12px; height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -32214,7 +32214,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 }
 .note-form-draw-size::-moz-range-thumb {
   width: 12px; height: 12px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--red);
   border: none;
   cursor: pointer;
@@ -32233,7 +32233,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   /* Accent-colored box around the whole control so it's instantly readable
      as "switch is on", and the sliding pill inside indicates which side. */
   border: 2px solid var(--accent);
-  border-radius: 50%;
+  border-radius: 10px;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
@@ -32402,7 +32402,7 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
 .note-cl-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1.5px solid color-mix(in srgb, var(--fg) 30%, transparent);
   flex-shrink: 0;
   cursor: pointer;
@@ -32651,7 +32651,7 @@ button.cal-add-btn.cal-add-btn-text:hover .cal-add-plus {
    animation is identical. Just shrunk a bit. */
 button.cal-add-btn.cal-add-btn-text.cal-add-btn-sm {
   height: 20px;
-  border-radius: 50%;
+  border-radius: 10px;
   /* At rest: tight, equal padding around the "+" so it sits centred
      with no trailing gap. On hover the right pad and the flex gap grow
      to make room for the revealed "New". */
@@ -32697,7 +32697,7 @@ button.cal-add-btn.cal-add-btn-text.cal-add-btn-sm:hover .cal-add-label {
   button.cal-add-btn.cal-add-btn-text.cal-add-btn-sm {
     width: 36px;
     height: 36px;
-    border-radius: 50%;
+    border-radius: 10px;
     padding: 0;
     gap: 0;
     justify-content: center;
@@ -32921,7 +32921,7 @@ button.cal-add-btn.cal-add-btn-text.cal-add-btn-sm:hover .cal-add-label {
    buttons. Always fully visible (not dimmed until hover). */
 .email-attach-toggle-inline,
 .email-undone-toggle-inline,
-.email-reminder-toggle-inline { border-radius: 50% !important; opacity: 1 !important; }
+.email-reminder-toggle-inline { border-radius: 10px !important; opacity: 1 !important; }
 .email-attach-toggle:not(.email-attach-toggle-inline):hover svg {
   animation: email-undone-jiggle 0.45s ease-in-out;
   transform-origin: 50% 50%;
@@ -33044,10 +33044,10 @@ button.cal-view-btn {
 /* Round the native color-input swatch in calendar settings. The outer
    <input> wraps a colored fill drawn by the browser; we need to round both
    the wrapper and the fill so it actually appears circular. */
-.cal-s-color { border-radius: 50%; overflow: hidden; }
-.cal-s-color::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
-.cal-s-color::-webkit-color-swatch { border: none; border-radius: 50%; }
-.cal-s-color::-moz-color-swatch { border: none; border-radius: 50%; }
+.cal-s-color { border-radius: 10px; overflow: hidden; }
+.cal-s-color::-webkit-color-swatch-wrapper { padding: 0; border-radius: 10px; }
+.cal-s-color::-webkit-color-swatch { border: none; border-radius: 10px; }
+.cal-s-color::-moz-color-swatch { border: none; border-radius: 10px; }
 .cal-filter-item { display:inline-flex; align-items:center; gap:4px; cursor:pointer; font-size:10px; padding:1px 8px; line-height:1.4; border-radius:10px; background:color-mix(in srgb, var(--fg) 5%, transparent); border:1px solid var(--border); transition:opacity 0.15s; }
 .cal-filter-item:hover { background:color-mix(in srgb, var(--fg) 10%, transparent); }
 .cal-filter-item.cal-filter-off { opacity:0.25; text-decoration:line-through; }
@@ -33403,7 +33403,7 @@ button.cal-view-btn {
   top: -4px;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent, var(--red, #f87171));
 }
 /* Event blocks */
@@ -34374,7 +34374,7 @@ body.research-panel-view #research-divider { display:none; }
 .research-hero {
   display: flex; align-items: center; gap: 14px;
   padding: 16px 18px; margin: 8px 0 14px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--cat-color, var(--accent)) 18%, transparent) 0%,
@@ -34385,7 +34385,7 @@ body.research-panel-view #research-divider { display:none; }
 }
 .research-hero::after {
   content: ''; position: absolute; right: -40px; top: -40px;
-  width: 160px; height: 160px; border-radius: 50%;
+  width: 160px; height: 160px; border-radius: 10px;
   background: radial-gradient(circle, color-mix(in srgb, var(--cat-color, var(--accent)) 15%, transparent) 0%, transparent 60%);
   pointer-events: none;
 }
@@ -34451,7 +34451,7 @@ body.research-panel-view #research-divider { display:none; }
 .research-body-howto ol > li::before {
   content: counter(howto-step);
   position: absolute; left: 10px; top: 14px;
-  width: 30px; height: 30px; border-radius: 50%;
+  width: 30px; height: 30px; border-radius: 10px;
   background: #82c882; color: white;
   font-weight: 700; font-size: 13px;
   display: flex; align-items: center; justify-content: center;
@@ -34605,7 +34605,7 @@ body.research-panel-view #research-divider { display:none; }
 .research-section-title { font-size: 14px; font-weight: 600; letter-spacing: -0.03em; }
 .research-section-chevron { flex-shrink: 0; opacity: 0.55; transition: transform 0.2s ease; }
 .research-section.collapsed .research-section-chevron { transform: rotate(-90deg); }
-.research-section-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; opacity: 0.9; }
+.research-section-dot { width: 8px; height: 8px; border-radius: 10px; flex-shrink: 0; opacity: 0.9; }
 /* Active section dot: pulsing accent glow (work in progress). */
 .research-section-dot.pulsing { animation: research-dot-pulse 1.5s ease-in-out infinite; }
 @keyframes research-dot-pulse {
@@ -34741,7 +34741,7 @@ body.research-panel-view #research-divider { display:none; }
   width: 6px;
   height: 6px;
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--color-success, #4caf50);
   animation: cookbook-notif-pulse 2s ease-in-out infinite;
   position: relative;
@@ -34800,7 +34800,7 @@ input.cp-swatch-input::selection { background: transparent; }
   width: 12px; height: 12px;
   margin: -6px 0 0 -6px;
   border: 2px solid #fff;
-  border-radius: 50%;
+  border-radius: 10px;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 1px 3px rgba(0,0,0,0.5);
   pointer-events: none;
 }
@@ -34827,7 +34827,7 @@ input.cp-swatch-input::selection { background: transparent; }
 }
 .cp-preview {
   width: 24px; height: 24px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1px solid var(--border, #333);
   flex-shrink: 0;
 }
@@ -34863,7 +34863,7 @@ input.cp-swatch-input::selection { background: transparent; }
 }
 .cp-swatch {
   width: 20px; height: 20px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1px solid var(--border, #333);
   cursor: pointer;
   padding: 0;
@@ -34977,7 +34977,7 @@ input.cp-swatch-input::selection { background: transparent; }
   border: 1px solid var(--accent, var(--red));
   background: #fff;
   color: var(--accent, var(--red));
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   opacity: 1;
 }
@@ -35011,7 +35011,7 @@ input.cp-swatch-input::selection { background: transparent; }
   appearance: none;
   margin: 0;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #fff;
   position: relative;
 }

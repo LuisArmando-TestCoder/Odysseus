@@ -55,16 +55,16 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 }
 .vx-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .vx-logo {
-  width: 34px; height: 34px; border-radius: 50%; position: relative; flex: none;
+  width: 34px; height: 34px; border-radius: 10px; position: relative; flex: none;
   border: 1.5px solid var(--vx-acc);
   box-shadow: 0 0 18px var(--vx-acc-a), inset 0 0 10px var(--vx-acc-a);
 }
 .vx-logo::before {
-  content: ""; position: absolute; inset: 4px; border-radius: 50%;
+  content: ""; position: absolute; inset: 4px; border-radius: 10px;
   border: 1.5px dashed var(--vx-acc-a); animation: vx-spin 9s linear infinite;
 }
 .vx-logo i {
-  position: absolute; inset: 11px; border-radius: 50%;
+  position: absolute; inset: 11px; border-radius: 10px;
   background: var(--vx-acc); box-shadow: 0 0 14px var(--vx-acc);
   animation: vx-breathe 2.6s ease-in-out infinite;
 }
@@ -79,7 +79,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   border: 1px solid var(--vx-line); background: rgba(8,18,30,.7);
   color: var(--vx-dim);
 }
-.vx-badge i { width: 7px; height: 7px; border-radius: 50%; background: #5a6675; }
+.vx-badge i { width: 7px; height: 7px; border-radius: 10px; background: #5a6675; }
 .vx-badge[data-ok="1"] { color: var(--vx-fg); border-color: rgba(110, 255, 200, .25); }
 .vx-badge[data-ok="1"] i { background: #4dffc0; box-shadow: 0 0 10px #4dffc0; }
 .vx-badge[data-ok="0"] i { background: #ffb547; box-shadow: 0 0 10px rgba(255,181,71,.7); }
@@ -134,7 +134,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   font: 700 10.5px/1 var(--vx-mono); letter-spacing: .26em; text-transform: uppercase; color: var(--vx-dim);
 }
 .vx-panel-h.vx-sm { padding-top: 6px; }
-.vx-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #3d4652; }
+.vx-live-dot { width: 8px; height: 8px; border-radius: 10px; background: #3d4652; }
 .vx.connected .vx-live-dot { background: #ff4d6a; box-shadow: 0 0 10px #ff4d6a; animation: vx-breathe 1.4s ease-in-out infinite; }
 .vx-engine {
   font: 700 10px/1 var(--vx-mono); letter-spacing: .14em; padding: 5px 8px; border-radius: 6px;
@@ -263,7 +263,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx-orb-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 .vx-orb-hit {
-  position: absolute; inset: 22%; border-radius: 50%; border: 0; background: transparent;
+  position: absolute; inset: 22%; border-radius: 10px; border: 0; background: transparent;
   z-index: 2;
 }
 .vx-orb-hit:hover ~ .vx-orb-label .vx-state { letter-spacing: .5em; }
@@ -296,7 +296,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   opacity: .55;
 }
 .vx-node-ic {
-  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
   border: 1px solid var(--vx-line); background: rgba(255,255,255,.03);
   font: 700 12px/1 var(--vx-mono); color: var(--vx-dim); position: relative;
 }
@@ -382,7 +382,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx-strata { padding: 0 16px 4px 18px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; flex: 1; }
 .vx-stratum {
   display: grid; grid-template-columns: 34px 54px 1fr auto; align-items: center; gap: 10px;
-  padding: 7px 10px; border-radius: 50%;
+  padding: 7px 10px; border-radius: 10px;
   background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.04);
   animation: vx-line-in .4s both;
 }
@@ -445,7 +445,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx-card-edit {
   width: 100%; min-height: 84px; resize: vertical; box-sizing: border-box;
   font: 12.5px/1.5 var(--vx-sans); color: var(--vx-fg);
-  background: rgba(0,0,0,.3); border: 1px solid var(--vx-acc-a); border-radius: 50%; padding: 8px 10px;
+  background: rgba(0,0,0,.3); border: 1px solid var(--vx-acc-a); border-radius: 10px; padding: 8px 10px;
   outline: none; user-select: text;
 }
 .vx-card-note {
@@ -475,7 +475,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   box-shadow: 0 16px 50px rgba(0,0,0,.45);
 }
 .vx-dock-btn {
-  width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center;
+  width: 50px; height: 50px; border-radius: 10px; display: grid; place-items: center;
   border: 1px solid var(--vx-line); background: rgba(255,255,255,.04);
   transition: transform .2s, background .2s, border-color .2s, box-shadow .2s;
 }
@@ -497,7 +497,7 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 .vx-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .vx-toggle em { font-style: normal; }
 .vx-sw { width: 30px; height: 17px; border-radius: 999px; background: rgba(255,255,255,.1); position: relative; transition: background .25s; flex: none; }
-.vx-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #c8d6e3; transition: transform .25s cubic-bezier(.3,1.4,.5,1), background .25s; }
+.vx-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 10px; background: #c8d6e3; transition: transform .25s cubic-bezier(.3,1.4,.5,1), background .25s; }
 .vx-toggle input:checked + .vx-sw { background: var(--vx-acc-a); }
 .vx-toggle input:checked + .vx-sw::after { transform: translateX(13px); background: var(--vx-acc); box-shadow: 0 0 8px var(--vx-acc); }
 .vx-toggle input:focus-visible + .vx-sw { outline: 2px solid var(--vx-acc); outline-offset: 2px; }

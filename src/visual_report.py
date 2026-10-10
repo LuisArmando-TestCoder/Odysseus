@@ -466,7 +466,7 @@ body::after {{
   background: rgba(0,0,0,0.55);
   color: #fff;
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s ease, background 0.15s ease, transform 0.05s ease;
@@ -483,7 +483,7 @@ body::after {{
   background: rgba(0,0,0,0.55);
   color: #fff;
   border: none;
-  border-radius: 50%;
+  border-radius: 10px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s ease, background 0.15s ease, transform 0.05s ease;
@@ -1440,7 +1440,7 @@ body.category-product .content h3 {
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
   background: var(--bg-surface);
-  border-radius: 50%;
+  border-radius: 10px;
   display: flex; align-items: baseline; gap: 10px;
   font-family: var(--font-display);
   letter-spacing: -0.01em;
