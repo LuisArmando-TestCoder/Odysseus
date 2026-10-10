@@ -7,6 +7,15 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 html.vx-open, html.vx-open body { overflow: hidden; }
+/* While the HUD covers the screen, the app underneath (chat streaming, agent
+   tool bubbles with their tickers, markdown re-renders) is invisible but was
+   still being laid out and painted every frame — the frame-rate drop seen when
+   an agent run starts. content-visibility:hidden skips its rendering entirely
+   while keeping the DOM (voice.js still reads the chat text). Dialogs that may
+   open on top of the HUD (styled confirm) stay rendered. */
+html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not(style):not(link) {
+  content-visibility: hidden;
+}
 
 .vx {
   --vx-r: 92; --vx-g: 158; --vx-b: 199;
@@ -192,6 +201,35 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   display: inline-block; padding: 4px 10px; font-size: 12px; font-style: italic;
   color: var(--vx-dim); background: transparent; border-color: rgba(255,255,255,.04);
 }
+/* Text the user typed/pasted as context (not spoken). */
+.vx-line.vx-note .vx-who { color: #9fd0ff; }
+.vx-line.vx-note .vx-say {
+  border-left: 2px dashed rgba(159, 208, 255, .6); font-size: 12.5px; color: var(--vx-dim);
+  max-height: 7.5em; overflow: hidden; white-space: pre-wrap;
+}
+
+/* ── Type / paste into the voice context ───────────────────────────────── */
+.vx-inject {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 16px 12px 18px; border-top: 1px solid var(--vx-line);
+}
+.vx-inject textarea {
+  width: 100%; box-sizing: border-box; resize: none; min-height: 40px; max-height: 120px;
+  font: 12.5px/1.45 var(--vx-sans); color: var(--vx-fg);
+  background: rgba(0, 0, 0, .28); border: 1px solid var(--vx-line); border-radius: 10px;
+  padding: 8px 10px; outline: none; user-select: text;
+}
+.vx-inject textarea:focus { border-color: var(--vx-acc-a); }
+.vx-inject-acts { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.vx-inject-acts small { margin-right: auto; font: 500 10px/1.2 var(--vx-mono); color: var(--vx-faint); }
+.vx-inject-acts button {
+  height: 26px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--vx-line); background: rgba(255, 255, 255, .04);
+  font: 600 11px/1 var(--vx-sans);
+}
+.vx-inject-acts button:hover { border-color: var(--vx-acc-a); }
+.vx-inject-acts [data-inject="ask"] { color: #04140f; background: var(--vx-acc); border-color: transparent; }
+
 .vx-sys {
   align-self: center; text-align: center; max-width: 92%;
   font: 600 10.5px/1.4 var(--vx-mono); letter-spacing: .08em; color: var(--vx-faint);

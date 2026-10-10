@@ -63,7 +63,12 @@ VOICE_CONTRACT = (
     "How work is split: answer conversation and general-knowledge questions yourself. When the "
     "user asks for something that needs real work (research, files, email, calendar, code), "
     "acknowledge it briefly — a separate agent forwards it to the chat and executes it, and "
-    "you'll be told the result. Never claim you did such a task yourself."
+    "you'll be told the result. Never claim you did such a task yourself. "
+    "Your promises are real: when you say you'll look something up or check it, it IS sent to the chat "
+    "agent — so only promise when it's useful, and name the subject concretely ('I'll check Stroessner's "
+    "role in Operation Condor'), never vaguely. Don't promise work the user just told you they did not ask for. "
+    "Text marked '[Typed context from the user]' was typed or pasted by the user — treat it as true context "
+    "they want you to know."
 )
 
 
@@ -246,6 +251,9 @@ def setup_realtime_routes() -> APIRouter:
                     chat_session_id=(body.get("chat_session_id") or None),
                     force=bool(body.get("force")),
                     settle=bool(body.get("settle")),
+                    # A promise the voice assistant made ("I'll check X") —
+                    # forged into a chat request so the promise is kept.
+                    commitment=(str(body.get("commitment") or "").strip()[:600] or None),
                 ):
                     yield "data: " + json.dumps(ev, ensure_ascii=False, default=str) + "\n\n"
             except Exception as e:
@@ -280,7 +288,8 @@ def setup_realtime_routes() -> APIRouter:
         turns = body.get("turns") or []
         if not isinstance(turns, list):
             raise HTTPException(400, "turns must be a list")
-        allowed = {"chat_user", "chat_ai"}
+        # user_note = text the user typed/pasted into the HUD as context.
+        allowed = {"chat_user", "chat_ai", "user_note"}
         clean = [
             {"speaker": str(t.get("speaker")), "text": str(t.get("text", ""))[:6000], "final_break": True}
             for t in turns[:40]

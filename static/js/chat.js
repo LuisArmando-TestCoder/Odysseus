@@ -2001,9 +2001,11 @@ import { handleEvalRequest } from './browserEval.js';
                     else hdr2.appendChild(el2);
                   }
                   const s = (Date.now() - node._startTime) / 1000;
-                  // Hundredths so it visibly counts sub-second (1.00, 1.05, …).
-                  el2.textContent = s < 60 ? `${s.toFixed(2)}s` : `${Math.floor(s / 60)}m ${(s % 60).toFixed(2).padStart(5, '0')}s`;
-                }, 50);
+                  // Tenths, ticked 4×/s: still visibly moving, but 5× fewer DOM
+                  // writes than the old 50ms ticker — a long agent run with many
+                  // tools was costing frame rate (notably under the voice HUD).
+                  el2.textContent = s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${(s % 60).toFixed(1).padStart(4, '0')}s`;
+                }, 250);
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_progress') {

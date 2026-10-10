@@ -92,6 +92,13 @@ let _userBase = 0;           // chars of the current user turn already shown in 
 let _userTurnOpen = false;   // a user turn is accumulating (survives line splits)
 let _memPreview = '';        // top layer of the compressed voice memory (seeded into GPT-Live)
 let _seedTries = 0;          // retries while waiting for the link to be fully active
+let _notes = [];             // text the user typed/pasted as context (re-seeded on reconnect)
+
+// ── Proactivity: ALFRED's promises become real chat requests ──────────────
+let _lastForgeAt = 0;        // last time the pipeline forged a request (a promise right after is just an ack)
+let _pendingCommit = null;   // a promise waiting for the pipeline to be free
+let _lastCommitAt = 0;
+let _lastUserFinalAt = 0;    // last finished user turn (its forge may still be on the way)
 
 // ── Render (WebGL) ──────────────────────────────────────────────────────────
 let _canvas = null, _gl = null, _raf = 0, _prog = null, _tex = null;
@@ -571,6 +578,14 @@ function _buildHUD() {
         <div class="vx-transcript" id="vx-transcript">
           <div class="vx-empty">Conversation appears here in real time.<br><kbd>Space</kbd> connect · <kbd>M</kbd> mute · <kbd>⏎</kbd> send now · <kbd>Esc</kbd> close</div>
         </div>
+        <div class="vx-inject">
+          <textarea id="vx-inject-ta" rows="2" placeholder="Type or paste — an article, a quote, a note…" aria-label="Type or paste text for the voice assistant"></textarea>
+          <div class="vx-inject-acts">
+            <small>⌘⏎ ask · ⌥⏎ context</small>
+            <button type="button" data-inject="context" title="Give it to ALFRED as context (not a request)">Add context</button>
+            <button type="button" data-inject="ask" title="Treat it as something you asked">Ask</button>
+          </div>
+        </div>
       </div>
       <div class="vx-pane vx-pane-chat">
         <div class="vx-panel-h"><span>Chat Feed</span><span class="vx-chat-state" data-s="idle">Idle</span></div>
@@ -784,8 +799,41 @@ function _aiFinalize() {
     // out of the pipeline so they don't pollute memory or decisions.
     if (_isBackchannel(text)) _aiLine.classList.add('vx-bc');
   }
-  if (text && !_isBackchannel(text)) _pending.push({ speaker: 'AI', text });
+  if (text && !_isBackchannel(text)) {
+    _pending.push({ speaker: 'AI', text });
+    _maybeCommit(text);
+  }
   _aiLine = null; _aiText = '';
+}
+
+// ALFRED promising to do real work ("I'll run a quick check on Stroessner").
+// Before, that promise went nowhere — only the user's own speech could reach
+// the chat. Now a concrete promise is forged into a chat request.
+const _COMMIT_RE = /\b(?:i'?ll|i will|let me|i'?m going to|i'?m gonna|i shall|voy a|d[eé]jame|lo voy a|te lo voy a)\s+(?:\w+\s+){0,3}?(?:run|do|check|look(?:\s+up|\s+into)?|search|research|find|pull(?:\s+up)?|dig|verify|investigate|fetch|confirm|try|review|compile|put together|gather|track down|buscar|revisar|investigar|verificar|consultar|averiguar|confirmar)\b/i;
+// "I'll check" with no subject, or the generic "I'm on it" acks — not a task.
+const _COMMIT_VAGUE = /^(?:[^.!?]*\b(?:on it|onto it|in hand|right away|one moment|a moment|just a moment|un momento)\b[^.!?]*[.!?]?\s*)+$/i;
+
+function _maybeCommit(text) {
+  if (!_active || !_COMMIT_RE.test(text) || _COMMIT_VAGUE.test(text)) return;
+  const now = Date.now();
+  // A promise right after a forge/dispatch is just ALFRED acknowledging the
+  // request that is already on its way — not a new one.
+  if (now - _lastForgeAt < 25000 || now - _lastCommitAt < 15000) return;
+  if (_awaiting || _queue.some(q => ['queued', 'sending', 'sent', 'running'].includes(q.status))) return;
+  _lastCommitAt = now;
+  // The user just finished a turn: its own forge is likely seconds away and
+  // the promise is probably ALFRED acknowledging it. Let the user's pipeline
+  // run first; the promise only goes out if nothing was forged meanwhile.
+  if (_pipeBusy || now - _lastUserFinalAt < 8000 || _pending.some(t => t.speaker === 'You')) {
+    _pendingCommit = text;
+    setTimeout(() => {
+      if (_pendingCommit !== text || _pipeBusy) return;   // handled by the pipeline's finally
+      _pendingCommit = null;
+      if (_active && Date.now() - _lastForgeAt > 25000) _runPipeline(false, false, text);
+    }, 9000);
+    return;
+  }
+  _runPipeline(false, false, text);
 }
 
 function _userDelta(chunk) {
@@ -832,6 +880,7 @@ function _userFinal(full) {
   _scrollTranscript();
   _pending.push({ speaker: 'You', text });   // the pipeline always gets the whole turn
   _userLine = null;
+  _lastUserFinalAt = Date.now();
   _schedulePipeline(1100);
 }
 
@@ -951,10 +1000,13 @@ function _renderMemory(m) {
   set('comp', `${m.compactions || 0} compactions`);
 }
 
-async function _runPipeline(force = false, settle = false) {
-  if (_pipeBusy) { _pipeRerun = true; return; }
+async function _runPipeline(force = false, settle = false, commitment = null) {
+  if (_pipeBusy) {
+    if (commitment) _pendingCommit = commitment; else _pipeRerun = true;
+    return;
+  }
   const turns = _pending.splice(0, _pending.length);
-  if (!turns.length && !force && !settle) return;
+  if (!turns.length && !force && !settle && !commitment) return;
   _pipeBusy = true;
   _thinkTarget = 1;
   _resetStages();
@@ -967,7 +1019,8 @@ async function _runPipeline(force = false, settle = false) {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       signal: ctrl.signal,
-      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle }),
+      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle,
+                             commitment: commitment || undefined }),
     });
     if (!resp.ok || !resp.body) throw new Error(`pipeline HTTP ${resp.status}`);
     const reader = resp.body.getReader();
@@ -997,6 +1050,11 @@ async function _runPipeline(force = false, settle = false) {
     _pipeAbort = null;
     _thinkTarget = 0;
     if (_pipeRerun) { _pipeRerun = false; _schedulePipeline(400); }
+    else if (_pendingCommit) {
+      const c = _pendingCommit; _pendingCommit = null;
+      // Only if nothing was forged meanwhile (then the promise was an ack).
+      if (Date.now() - _lastForgeAt > 25000) setTimeout(() => _runPipeline(false, false, c), 300);
+    }
   }
 }
 
@@ -1052,10 +1110,11 @@ function _enqueue(ev) {
     _systemLine(`Already queued — “${dup.title}”`, 'info');
     return;
   }
+  _lastForgeAt = now;
   const item = {
     created: now,
     id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    title: ev.title || 'Request',
+    title: (ev.source === 'commitment' ? '↻ ' : '') + (ev.title || 'Request'),
     message: ev.message,
     intent: ev.intent || 'task',
     urgency: ev.urgency,
@@ -1063,7 +1122,9 @@ function _enqueue(ev) {
   };
   _queue.push(item);
   _renderQueue();
-  _systemLine(`Forged → “${item.title}”`, 'forge');
+  _systemLine(ev.source === 'commitment'
+    ? `Following through on ${_assistantName}'s promise → “${ev.title || 'request'}”`
+    : `Forged → “${item.title}”`, 'forge');
   _ensureDispatcher();
 }
 
@@ -1370,9 +1431,60 @@ function _seedChatContext() {
     budget -= line.length;
     lines.unshift(line);
   }
-  if (!lines.length) return;
-  const parts = _chunks(lines.join('\n'));
-  parts.forEach((p, i) => _brief(`${HEAD}${parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : ''}\n${p}`, false));
+  if (lines.length) {
+    const parts = _chunks(lines.join('\n'));
+    parts.forEach((p, i) => _brief(`${HEAD}${parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : ''}\n${p}`, false));
+  }
+  // Re-seed anything the user typed/pasted earlier (survives reconnects).
+  for (const n of _notes.slice(-3)) _briefNote(n);
+}
+
+// ── Typed / pasted context (E) ──────────────────────────────────────────────
+function _briefNote(text) {
+  const parts = _chunks(text).slice(0, 8);
+  parts.forEach((p, i) => _brief(
+    `[Typed context from the user${parts.length > 1 ? `, part ${i + 1} of ${parts.length}` : ''}] ` +
+    'Treat this as true context the user wants you to know. Do not read it out or reply to it now.\n' + p, false));
+}
+
+function _noteLine(text, label) {
+  const line = _newLine('user');
+  if (!line) return;
+  line.classList.add('vx-note');
+  const who = line.querySelector('.vx-who');
+  if (who && who.firstChild) who.firstChild.textContent = label;
+  line.querySelector('.vx-say').textContent = text.length > 600 ? text.slice(0, 600) + '…' : text;
+  _scrollTranscript();
+}
+
+async function _addContext(text) {
+  _notes.push(text);
+  if (_notes.length > 10) _notes.shift();
+  _noteLine(text, 'YOU · TYPED CONTEXT');
+  if (_active) _briefNote(text);
+  // Into the voice memory too (as context, never evaluated as a request).
+  const pieces = [];
+  for (let i = 0; i < text.length && pieces.length < 6; i += 5000) {
+    pieces.push({ speaker: 'user_note', text: text.slice(i, i + 5000) });
+  }
+  try {
+    const r = await fetch(_api('/api/realtime/memory/ingest'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_id: _voiceId, turns: pieces, chat_session_id: _currentSid() }),
+    });
+    if (r.ok) _renderMemory((await r.json()).stats);
+  } catch (e) { /* best-effort */ }
+  _systemLine(`Context added (${text.length.toLocaleString()} chars) — ${_assistantName} now knows it.`, 'done');
+}
+
+function _askTyped(text) {
+  _noteLine(text, 'YOU · TYPED');
+  // Let the voice know what was asked (silently), then run it through the
+  // pipeline exactly like spoken user speech.
+  if (_active) _brief('[Typed by the user] ' + text.slice(0, 1400), false);
+  _pending.push({ speaker: 'You', text });
+  _schedulePipeline(50, true);
 }
 
 // ── API cost: GPT-Live usage → sidecar ledger; live readout in the HUD ─────
@@ -1624,12 +1736,28 @@ function _maybeSayStall(now) {
     '"Let me research a bit more." Do not ask the user anything and do not guess at results.');
 }
 
-// Text meant to be spoken: drop the chat agent's boilerplate about untrusted
-// context blocks, which the voice would otherwise parrot.
+// Text meant to be spoken. Drops two kinds of noise the voice would otherwise
+// read aloud:
+//  - the chat agent's boilerplate about untrusted context blocks;
+//  - the agent's running self-talk between tool calls ("Let me extract the
+//    full body text…", "Now let me check…", "I now have the key content…").
+const _BOILERPLATE_RE = /untrusted (block|context|content)|embedded instructions|instructions (inside|in) (it|that|the) block|won'?t follow|not follow(ing)? any|not act on any instructions|no tool calls|reference (material )?only/i;
+const _SELF_TALK_RE = /^(?:(?:ok(?:ay)?|alright|great|good|now|next|first|then|finally|perfect)[,.!—-]?\s+)*(?:let me|let's|i'?ll now|i will now|i'?m going to|i am going to|i need to|i now have|i have now|i'?ve now|now i have|i can now|i'?ll (?:extract|read|fetch|check|search|look|pull|open|parse|scan|grab|get|verify|confirm|try|use|run|call|query))\b/i;
 function _speakable(text) {
   return String(text || '').split('\n')
-    .filter(l => !/untrusted (block|context)|not following (any|anything)|reference (material )?only/i.test(l))
-    .join('\n').replace(/\s*·\s*\n/g, '\n').trim();
+    .map(l => {
+      const s = l.trim();
+      if (!s) return l;
+      if (_BOILERPLATE_RE.test(s)) return null;
+      // Drop self-talk per SENTENCE, so "I now have the key content. The
+      // article confirms the pardon." keeps the finding. Only short sentences
+      // count — a long one that starts with "Let me…" is real content.
+      const kept = s.split(/(?<=[.!?])\s+/)
+        .filter(sent => !(sent.length < 200 && _SELF_TALK_RE.test(sent)));
+      return kept.length ? kept.join(' ') : null;
+    })
+    .filter(l => l !== null)
+    .join('\n').replace(/\s*·\s*\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // GPT-Live is mid-response. Expires after 20s so a missed response.done can
@@ -2046,6 +2174,7 @@ async function stopVoice(keepError = false) {
   if (_userText) _userFinal(null);
   _dcSend({ type: 'session.close' });
   _sayQueue = [];
+  _pendingCommit = null;
   clearTimeout(_diagT);
   _active = false;
   _connecting = false;
@@ -2118,6 +2247,19 @@ function _bind() {
     if (_audioEl && _audioEl.paused) _audioEl.play().catch(() => {});
   });
   $('#vx-queue').addEventListener('click', _onQueueClick);
+  // Type / paste box: "Add context" (⌥⏎) or "Ask" (⌘⏎ / Ctrl⏎).
+  const ta = $('#vx-inject-ta');
+  const submitInject = (mode) => {
+    const text = (ta.value || '').trim();
+    if (!text) return;
+    ta.value = '';
+    if (mode === 'ask') _askTyped(text); else _addContext(text);
+  };
+  _root.querySelectorAll('[data-inject]').forEach(b => b.addEventListener('click', () => submitInject(b.dataset.inject)));
+  ta.addEventListener('keydown', (ke) => {
+    if (ke.key === 'Enter' && (ke.metaKey || ke.ctrlKey)) { ke.preventDefault(); submitInject('ask'); }
+    else if (ke.key === 'Enter' && ke.altKey) { ke.preventDefault(); submitInject('context'); }
+  });
   _root.querySelectorAll('[data-opt]').forEach(inp => {
     inp.checked = !!_opts[inp.dataset.opt];
     inp.addEventListener('change', () => {

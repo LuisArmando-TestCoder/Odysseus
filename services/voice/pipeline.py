@@ -48,12 +48,26 @@ INTENTS = {
     "research": "Look something up on the web or do deep research",
     "remember": "Store a fact, preference, or note for later",
     "followup": "Refine, correct, or continue something already sent to the chat",
-    "none": "Small talk, thinking out loud, acknowledgement — nothing to send",
+    "none": ("Small talk, thinking out loud, acknowledgement, commentary about this voice system / the "
+             "app / the developer or coding agent, notes-to-self, or reading a text aloud — nothing to send"),
 }
+
+# What the decider must NOT treat as a request (shared by JEV and the LLM fallback).
+NOT_A_REQUEST = (
+    "NOT requests (should_send false, intent none): (1) META-COMMENTARY — the user talking ABOUT this voice "
+    "system, the app, its bugs/frame rate/latency, how the assistant behaves, or giving feedback/notes meant "
+    "for the developer or 'the coding agent' ('I need the coding agent to take note', 'I'd love that ability', "
+    "'I like the state of the system'); (2) READING ALOUD — the user reciting or quoting a passage, headline "
+    "or article verbatim (long, literal, no ask of their own) — that is context, not a request, unless they "
+    "then ask something about it; (3) thinking out loud / musing without an ask; (4) telling the assistant "
+    "what they did NOT ask for. A real request is something the CHAT AGENT can do: answer, look up, research, "
+    "create, edit, send, schedule, remember."
+)
 
 SPEAKER_LEGEND = (
     "USER = the human speaking in the voice call; ASSISTANT = the voice model (GPT-Live); "
-    "CHAT_USER = a message already sent into the chat thread; CHAT_AI = the chat agent's answer in the thread."
+    "CHAT_USER = a message already sent into the chat thread; CHAT_AI = the chat agent's answer in the thread; "
+    "USER_NOTE = text the user typed/pasted as reference context (not a request by itself)."
 )
 
 DECIDER_FALLBACK_PROMPT = """You are the decision maker of a voice→chat pipeline. You receive a hierarchical
@@ -67,7 +81,14 @@ Answer ONLY with JSON:
   indirect requests count ("I want to see…", "bring me…", "what time is it")
 - ready: probability the user has finished expressing it (not mid-sentence / still thinking)
 - already_sent: probability the same request is literally in already_sent_to_chat or a CHAT_USER turn
-  (ASSISTANT acknowledgements like "I'll check" do NOT count)"""
+  (ASSISTANT acknowledgements like "I'll check" do NOT count)
+""" + NOT_A_REQUEST
+
+FORGER_META_RULE = (
+    "If NEW USER SPEECH is only meta-commentary about this voice system or the app, feedback/notes for the "
+    "developer or coding agent, musing, or the user reading a text aloud with no ask of their own, do NOT "
+    'invent a task — answer exactly {"title": "", "message": ""}.'
+)
 
 FORGER_PROMPT = """You are the message forger of a voice→chat pipeline. A separate chat agent will execute
 your message but CANNOT hear the voice conversation. Write exactly ONE message, in the user's own first-person
@@ -77,6 +98,17 @@ The request is ONLY what is in NEW USER SPEECH. Use the context and memory solel
 Speakers: USER = human; ASSISTANT = voice model; CHAT_USER = already sent; CHAT_AI = the chat agent's answer.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
 Concise, no preamble, no mention of "voice" or "transcript".
+Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}
+""" + FORGER_META_RULE
+
+# The voice assistant promised the user to do something ("I'll run a quick check
+# on Stroessner"). Turn that promise into a real chat request so the promise is
+# kept — this is what makes the assistant proactive instead of all talk.
+COMMITMENT_PROMPT = """You turn a promise made by the VOICE ASSISTANT into a request for a separate chat
+agent that will actually do the work (the chat agent cannot hear the call). Write ONE concise, self-contained
+message in the user's first-person voice ("Look up…", "Check…"), resolving names and details from context.
+If the promise is vague filler with no concrete subject ("I'll get on it", "let me think"), or it only repeats
+something already sent to the chat, answer exactly {"title": "", "message": ""}.
 Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}"""
 
 
@@ -141,14 +173,15 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "should_send": {
                     "type": "noul",
                     "instructions": (
-                        "Does new_user_speech contain anything the user wants done, looked up, answered or remembered — "
-                        "including IMPLICIT or INDIRECT requests ('I want to see…', 'bring me…', 'what time is it', "
-                        "'it'd be nice to know…', 'have you seen…', wishes, rhetorical asks, half-finished instructions)? "
+                        "Does new_user_speech contain anything the user wants the CHAT AGENT to do, look up, answer or "
+                        "remember — including IMPLICIT or INDIRECT requests ('I want to see…', 'bring me…', 'what time "
+                        "is it', 'it'd be nice to know…', 'have you seen…', wishes, half-finished instructions)? "
                         "Filler, acknowledgements, small talk, and questions about the call itself ('can you hear me', "
-                        "'are you there') are false."
+                        "'are you there') are false. " + NOT_A_REQUEST
                     ),
-                    "criteria": {"true": "Any explicit, implicit or indirect request, question, task or info to keep",
-                                 "false": "Only filler / acknowledgement / small talk"},
+                    "criteria": {"true": "An explicit, implicit or indirect request the chat agent can act on",
+                                 "false": "Filler / small talk / meta-commentary about the system / notes for the "
+                                          "developer / reading a text aloud"},
                 },
                 "ready": {
                     "type": "noul",
@@ -210,6 +243,7 @@ async def run_pipeline(
     chat_session_id: Optional[str] = None,
     force: bool = False,
     settle: bool = False,
+    commitment: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     from src.cost_ledger import set_cost_scope
     set_cost_scope(chat_session_id or None, "voice-pipeline", owner)
@@ -222,11 +256,67 @@ async def run_pipeline(
     # background nice-to-have that starts only once this run is finished.
     mem.pipeline_active += 1
     try:
-        async for ev in _run_locked(mem, owner, chat_session_id, force, use_jev, settle):
+        if commitment:
+            gen = _run_commitment(mem, owner, chat_session_id, commitment)
+        else:
+            gen = _run_locked(mem, owner, chat_session_id, force, use_jev, settle)
+        async for ev in gen:
             yield ev
     finally:
         mem.pipeline_active = max(0, mem.pipeline_active - 1)
         mem.schedule_compaction()
+
+
+async def _run_commitment(mem, owner, chat_session_id, commitment: str) -> AsyncIterator[Dict[str, Any]]:
+    """Forge a chat request from a promise the voice assistant made. No decider
+    call: the assistant already decided; the forger can still decline (empty)
+    and the duplicate guard drops anything already sent."""
+    async with _lock_for(mem):
+        yield _ev(type="stage", stage="observe", status="done", score=1.0, words=len(commitment.split()), ms=0)
+        spine = mem.spine()
+        chat_txt = chat_summary_spine(chat_session_id, owner)
+        yield _ev(type="stage", stage="compress", status="done", ms=0,
+                  depth=len(spine["layers"]), live=len(spine["current_batch"]))
+        decision = {"engine": "commitment", "should_send": 1.0, "ready": 1.0, "already_sent": 0.0,
+                    "intent": "research", "urgency": 1, "send": True}
+        yield _ev(type="decision", decision=decision, ms=0)
+        yield _ev(type="stage", stage="decide", status="done", ms=0, engine="commitment")
+        t0 = time.time()
+        yield _ev(type="stage", stage="forge", status="running")
+        forger_input = (
+            f"=== ASSISTANT PROMISE (turn into the request) ===\n{commitment}\n\n"
+            f"=== Recent context ===\n{_fmt(mem.recent_turns(10))}\n\n"
+            f"=== Chat thread so far ===\n{chat_txt[:3000] or '(empty)'}\n\n"
+            f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")
+        )
+        try:
+            from src.cost_ledger import cost_scope
+            with cost_scope(source="voice-forge"):
+                raw = await _utility(owner, COMMITMENT_PROMPT, forger_input[:12000], 400)
+            data = _parse_json(raw)
+            message = (data.get("message") or "").strip()
+            title = (data.get("title") or "").strip()[:60]
+        except Exception as e:
+            logger.warning(f"voice commitment forger failed: {e}")
+            yield _ev(type="stage", stage="forge", status="error", error=str(e)[:200])
+            yield _ev(type="done", send=False, reason="forger-error")
+            return
+        ms = int((time.time() - t0) * 1000)
+        if not message:
+            yield _ev(type="stage", stage="forge", status="idle", ms=ms)
+            yield _ev(type="done", send=False, reason="commitment-declined")
+            return
+        dup = mem.is_duplicate(message)
+        if dup:
+            yield _ev(type="stage", stage="forge", status="idle", ms=ms)
+            yield _ev(type="done", send=False, reason="duplicate", duplicate_of=dup[:160])
+            return
+        mem.record_sent(message, decision)
+        yield _ev(type="stage", stage="forge", status="done", ms=ms)
+        yield _ev(type="forged", title=title or "Assistant follow-through", message=message,
+                  intent="research", urgency=1, source="commitment")
+        yield _ev(type="memory", memory=mem.stats())
+        yield _ev(type="done", send=True)
 
 
 async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False) -> AsyncIterator[Dict[str, Any]]:
@@ -343,8 +433,9 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False)
             yield _ev(type="done", send=False, reason="forger-error")
             return
         if not message:
-            yield _ev(type="stage", stage="forge", status="error", error="empty message")
-            yield _ev(type="done", send=False, reason="forger-empty")
+            # The forger declined (meta-commentary / reading aloud) — not an error.
+            yield _ev(type="stage", stage="forge", status="idle", ms=int((time.time() - t0) * 1000))
+            yield _ev(type="done", send=False, reason="forger-declined")
             return
 
         dup = mem.is_duplicate(message)

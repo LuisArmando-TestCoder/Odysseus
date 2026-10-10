@@ -148,6 +148,11 @@ class VoiceMemory:
                 speaker = "chat_user"      # message that went into the chat thread
             elif raw_sp in ("chat_ai", "chat-ai", "chat_assistant"):
                 speaker = "chat_ai"        # the chat agent's answer
+            elif raw_sp in ("user_note", "note", "context"):
+                # Text the user typed/pasted into the HUD as reference context
+                # (an article, a quote). Kept in memory but never evaluated as
+                # new speech, so it can't trigger a forge on its own.
+                speaker = "user_note"
             else:
                 speaker = "assistant"      # the voice model (GPT-Live)
             # Merge streaming fragments from the same speaker into one turn.
