@@ -1149,8 +1149,22 @@ function _renderQueue() {
   if (!box) return;
   const visible = _queue.slice(-6);
   box.classList.toggle('has', visible.length > 0);
-  box.innerHTML = '';
+  // A card being edited keeps its exact DOM node (and so focus + cursor):
+  // other cards re-render around it as their status changes during dispatch.
+  const editing = visible.find(q => q.editing);
+  const keep = editing ? box.querySelector(`.vx-card[data-id="${editing.id}"]`) : null;
+  const keepOk = !!(keep && keep.querySelector('.vx-card-edit'));
+  for (const child of Array.from(box.children)) {
+    if (!(keepOk && child === keep)) child.remove();
+  }
+  let before = true;   // inserting cards that come before the kept card
   visible.forEach(item => {
+    if (keepOk && item === editing) {
+      before = false;
+      const pill = keep.querySelector('.vx-pill');
+      if (pill) pill.textContent = 'Editing';
+      return;
+    }
     const card = document.createElement('article');
     card.className = 'vx-card';
     card.dataset.status = item.status;
@@ -1160,14 +1174,30 @@ function _renderQueue() {
     chip.className = 'vx-chip'; chip.dataset.intent = item.intent;
     chip.textContent = INTENT_LABELS[item.intent] || item.intent;
     const title = document.createElement('b'); title.textContent = item.title;
-    const st = document.createElement('span'); st.className = 'vx-pill'; st.textContent = _statusLabel(item.status);
+    const st = document.createElement('span'); st.className = 'vx-pill'; st.textContent = item.editing ? 'Editing' : _statusLabel(item.status);
     head.append(chip, title, st);
-    const body = document.createElement('p');
-    body.className = 'vx-card-msg';
-    body.textContent = item.message;
+    let body;
+    if (item.editing) {
+      body = document.createElement('textarea');
+      body.className = 'vx-card-edit';
+      body.value = item.message;
+      body.addEventListener('input', () => { item.message = body.value; });
+      body.addEventListener('blur', () => _finishEdit(item, body), { once: true });
+      body.addEventListener('keydown', (ke) => {
+        if (ke.key === 'Enter' && (ke.metaKey || ke.ctrlKey)) { ke.preventDefault(); _finishEdit(item, body); }
+        ke.stopPropagation();
+      });
+    } else {
+      body = document.createElement('p');
+      body.className = 'vx-card-msg';
+      body.textContent = item.message;
+    }
     const acts = document.createElement('div');
     acts.className = 'vx-card-acts';
-    if (['review', 'queued', 'failed'].includes(item.status)) {
+    if (item.editing) {
+      // No buttons while editing — a click on them would race the blur that
+      // ends the edit. Click away or ⌘/Ctrl+⏎ to finish.
+    } else if (['review', 'queued', 'failed'].includes(item.status)) {
       const label = item.status === 'failed' ? 'Retry' : (item.status === 'queued' ? 'Send next' : 'Send');
       acts.innerHTML = `
         <button data-q="send" title="Send to chat">${ICON.send}<span>${label}</span></button>
@@ -1181,13 +1211,24 @@ function _renderQueue() {
       note.className = 'vx-card-note';
       note.textContent = item.note;
       card.append(head, body, note, acts);
-      box.appendChild(card);
-      return;
+    } else {
+      card.append(head, body, acts);
     }
-    card.append(head, body, acts);
-    box.appendChild(card);
+    if (keepOk && before) box.insertBefore(card, keep);
+    else box.appendChild(card);
   });
-  box.scrollLeft = box.scrollWidth;
+  if (!keepOk) box.scrollLeft = box.scrollWidth;   // don't yank the view while editing
+}
+
+// Finish editing a queued task: commit the text and unhalt the queue so it
+// auto-sends again. Called on blur (click away) or Ctrl/Cmd+Enter.
+function _finishEdit(item, ta) {
+  if (!item.editing) return;   // already finished (e.g. blur after Ctrl+Enter)
+  item.message = ta.value.trim() || item.message;
+  item.editing = false;
+  item.note = '';
+  _renderQueue();
+  _ensureDispatcher();         // unhalt: resume auto-send
 }
 
 function _onQueueClick(e) {
@@ -1216,19 +1257,14 @@ function _onQueueClick(e) {
   }
   else if (act === 'drop') { _queue = _queue.filter(q => q !== item); _renderQueue(); }
   else if (act === 'edit') {
-    const p = card.querySelector('.vx-card-msg');
-    const ta = document.createElement('textarea');
-    ta.className = 'vx-card-edit';
-    ta.value = item.message;
-    p.replaceWith(ta);
-    ta.focus();
-    item.status = 'review';
-    const commit = () => { item.message = ta.value.trim() || item.message; _renderQueue(); };
-    ta.addEventListener('blur', commit, { once: true });
-    ta.addEventListener('keydown', (ke) => {
-      if (ke.key === 'Enter' && (ke.metaKey || ke.ctrlKey)) { ke.preventDefault(); item.message = ta.value.trim() || item.message; item.status = 'queued'; ta.blur(); _ensureDispatcher(); }
-      ke.stopPropagation();
-    });
+    // Halt the queue at this exact task while it's being edited. The textarea
+    // is rendered by _renderQueue (so it survives re-renders); finishing the
+    // edit (blur or Ctrl/Cmd+Enter) unhalts and auto-sends.
+    item.editing = true;
+    item.note = 'Editing — the queue is paused here. Click away or ⌘/Ctrl+⏎ to resume.';
+    _renderQueue();
+    const ta = $('#vx-queue')?.querySelector(`.vx-card[data-id="${item.id}"] .vx-card-edit`);
+    if (ta) ta.focus();
   }
 }
 
@@ -1314,6 +1350,9 @@ function _dispatchTick(manual = false) {
   // ② Dispatch the next queued message only when the chat is idle.
   const next = _queue.find(q => q.status === 'queued');
   if (!next) return;
+  // A task being edited halts the queue right here: it (and everything after
+  // it) waits until the user finishes editing, then auto-sends.
+  if (next.editing) return;
   if (_chatBusy()) {
     const ahead = '';
     if (next.note !== 'Waiting — the chat is still answering. Sends as soon as it finishes.') {
@@ -1326,8 +1365,14 @@ function _dispatchTick(manual = false) {
     return;
   }
   // Batch: everything waiting goes out together, so a long chat run never
-  // leaves a pile of cards behind it.
-  const batch = _queue.filter(q => q.status === 'queued');
+  // leaves a pile of cards behind it — but stop at the first task being
+  // edited so it (and anything after) waits for the edit to finish.
+  const batch = [];
+  for (const q of _queue) {
+    if (q.status !== 'queued') continue;
+    if (q.editing) break;
+    batch.push(q);
+  }
   const text = batch.length === 1 ? batch[0].message
     : 'Please handle all of these:\n' + batch.map((q, i) => `${i + 1}. ${q.message}`).join('\n');
   batch.forEach(q => { q.note = ''; _setItem(q, 'sending'); });
@@ -1634,6 +1679,7 @@ function _chatTick() {
   if (sid !== _chatSid) {
     const prev = _chatSid;
     _chatSid = sid;
+    _bindVoiceToSession(sid);
     _resetNarration();
     _sayQueue = [];
     _markAllSeen();
@@ -2087,12 +2133,32 @@ function _handleEvent(evt) {
   }
 }
 
+// Per-session state that must NOT leak between chats. When the user opens a
+// new chat, the voice mode starts clean — no memory summary, pasted notes,
+// resume line, missed answers, or unsent speech from the previous session.
+function _bindVoiceToSession(sid) {
+  const vid = sid ? `chat-${sid}` : 'global';
+  if (vid === _voiceId) return;
+  _voiceId = vid;
+  _memPreview = '';
+  _notes = [];
+  _lastAiSaid = '';
+  _lastAiSaidAt = 0;
+  _missed = [];
+  _pending = [];
+  _pendingCommit = null;
+  _sayQueue = [];
+  _seenKeys.clear();
+  _spokenKeys.clear();
+  _resetNarration();
+}
+
 async function startVoice() {
   if (_active || _connecting) return;
   _connecting = true;
   _setState('connecting');
   const sid = window.sessionModule?.getCurrentSessionId?.();
-  _voiceId = sid ? `chat-${sid}` : 'global';
+  _bindVoiceToSession(sid);
 
   try {
     _micStream = await navigator.mediaDevices.getUserMedia({
@@ -2373,7 +2439,7 @@ export function openVoiceMode({ autostart = true } = {}) {
   if (!_raf) { _t0 = performance.now(); _raf = requestAnimationFrame(_loop); }
   else { _lastFrameAt = performance.now(); }
   const sid = window.sessionModule?.getCurrentSessionId?.();
-  if (!_active) _voiceId = sid ? `chat-${sid}` : 'global';
+  if (!_active) _bindVoiceToSession(sid);
   _setState(_active ? 'listening' : 'idle');
   _refreshStatus();
   _refreshMemory();
