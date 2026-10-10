@@ -185,6 +185,13 @@ html.vx-open, html.vx-open body { overflow: hidden; }
   background: currentColor; opacity: .7; animation: vx-caret 1s steps(2) infinite;
 }
 @keyframes vx-caret { 50% { opacity: 0; } }
+/* GPT-Live backchannels ("Mm-hmm", "I see") said while you talk: shown in
+   place so the order is true, but quiet — they are not real replies. */
+.vx-line.vx-bc .vx-who { opacity: .6; }
+.vx-line.vx-bc .vx-say {
+  display: inline-block; padding: 4px 10px; font-size: 12px; font-style: italic;
+  color: var(--vx-dim); background: transparent; border-color: rgba(255,255,255,.04);
+}
 .vx-sys {
   align-self: center; text-align: center; max-width: 92%;
   font: 600 10.5px/1.4 var(--vx-mono); letter-spacing: .08em; color: var(--vx-faint);
@@ -262,10 +269,21 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 }
 .vx-orb-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-.vx-orb-hit {
-  position: absolute; inset: 22%; border-radius: 10px; border: 0; background: transparent;
-  z-index: 2;
+/* The click target is the shader's own disc: the canvas fills the wrap and the
+   shader normalises by min(w,h), so a 50%-radius circle at inset 0 has the
+   exact same centre and diameter. The app's global button styles (black
+   hover/active background) must not leak in — this button is invisible. */
+.vx-orb-hit,
+.vx-orb-hit:hover,
+.vx-orb-hit:active,
+.vx-orb-hit:focus {
+  position: absolute; inset: 0; margin: 0; padding: 0;
+  border: 0; border-radius: 50%;
+  background: transparent !important; box-shadow: none !important; color: inherit;
+  cursor: pointer; z-index: 2;
+  -webkit-tap-highlight-color: transparent;
 }
+.vx-orb-hit:focus-visible { outline: 1px solid var(--vx-acc); outline-offset: -6px; border-radius: 50% !important; }
 .vx-orb-hit:hover ~ .vx-orb-label .vx-state { letter-spacing: .5em; }
 .vx-orb-label {
   position: absolute; left: 50%; bottom: -2%; transform: translateX(-50%);
@@ -277,8 +295,12 @@ html.vx-open, html.vx-open body { overflow: hidden; }
 }
 .vx-state-sub { margin-top: 8px; font-size: 12px; color: var(--vx-dim); letter-spacing: .02em; }
 
+/* Fixed height (3 lines) so a growing caption never pushes the orb — the orb
+   (and its click disc) stay put while text streams in below. */
 .vx-caption {
-  min-height: 3.2em; max-width: min(680px, 92%);
+  height: 4.5em; overflow: hidden; flex: none;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  width: min(680px, 92%); max-width: min(680px, 92%);
   text-align: center; font-size: clamp(15px, 1.6vw, 20px); line-height: 1.5; font-weight: 500;
   color: var(--vx-fg); text-shadow: 0 2px 20px rgba(0,0,0,.7);
   opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .3s;
