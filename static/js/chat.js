@@ -2569,8 +2569,11 @@ import { handleEvalRequest } from './browserEval.js';
           }
         }
       } else {
-        // Stop streaming TTS on any error/abort
-        if (streamingTTS && window.aiTTSManager) window.aiTTSManager.stop();
+        // Stop streaming TTS on any error/abort. `streamingTTS` is declared
+        // inside the try block and is out of scope here (referencing it threw
+        // "streamingTTS is not defined" and masked the real error), so stop
+        // unconditionally — stop() is a no-op when nothing is playing.
+        if (window.aiTTSManager && typeof window.aiTTSManager.stop === 'function') window.aiTTSManager.stop();
 
         if (currentAbort && currentAbort.signal.aborted) {
           const abortReason = currentAbort._reason || '';

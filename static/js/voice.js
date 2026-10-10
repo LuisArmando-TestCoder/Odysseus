@@ -77,6 +77,7 @@ let _narrateActive = false;  // we are narrating a run in progress
 let _narrateStallAt = 0;     // when the text last grew (stall detection)
 let _narratedFinal = false;  // final summary already spoken by narration
 let _narrateEl = null;       // bubble currently being narrated (agent runs span several)
+let _stallSpoken = false;    // "let me research more" already said for the current pause
 
 // ── Event diagnostics ───────────────────────────────────────────────────────
 const _eventTypes = new Map();   // type → count
@@ -1264,7 +1265,9 @@ function _msgText(el, max = 4000) {
   if (!el) return '';
   const body = el.querySelector('.body') || el;
   const clone = body.cloneNode(true);
-  clone.querySelectorAll('details, .think, .thinking, .sources-box, .msg-actions, .msg-metrics, button, svg, style, script')
+  clone.querySelectorAll('details, .think, .thinking, .thinking-section, .live-think-inner, .sources-box, ' +
+    '.msg-actions, .msg-metrics, .msg-footer, .agent-thread, .spinner, .research-timer, .stopped-indicator, ' +
+    'button, svg, style, script')
     .forEach(n => n.remove());
   // Detached nodes have no layout, so add breaks after blocks by hand.
   clone.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, pre, tr, br, blockquote').forEach(n => n.append('\n'));
@@ -1442,7 +1445,7 @@ async function _ingestChat(busy) {
 }
 
 function _injectContext(text) {
-  _brief('Chat agent answer (context for you; do not speak it now):\n' + text.slice(0, 1500), false);
+  _brief('Chat agent answer (context for you; do not speak it now):\n' + text.slice(0, 1200), false);
 }
 
 let _chatFeedSig = '';
@@ -1500,6 +1503,16 @@ function _resetNarration() {
   _narrateStallAt = 0;
   _narratedFinal = false;
   _narrateEl = null;
+  _stallSpoken = false;
+}
+
+// Said at most once per pause in new findings; re-armed when text grows again.
+function _maybeSayStall(now) {
+  if (_stallSpoken || now - _narrateStallAt < 15000 || now - _lastNarrateAt < 12000) return;
+  _stallSpoken = true;
+  _lastNarrateAt = now;
+  _brief('[Status — the chat agent is still researching; nothing new yet] Say one short line such as ' +
+    '"Let me research a bit more." Do not ask the user anything and do not guess at results.', true);
 }
 
 function _narrateStream(busy) {
@@ -1513,10 +1526,7 @@ function _narrateStream(busy) {
     // Only narrate the bubble that is actually streaming — at run start the
     // last .msg-ai can still be the previous, already-answered message.
     if (!el.classList.contains('streaming')) {
-      if (_narrateActive && now - _narrateStallAt >= 10000 && now - _lastNarrateAt >= 10000) {
-        _lastNarrateAt = now;
-        _brief('Still working — no new findings yet. Let me keep researching.', true);
-      }
+      if (_narrateActive) _maybeSayStall(now);
       return;
     }
     if (!_narrateActive) {
@@ -1527,21 +1537,21 @@ function _narrateStream(busy) {
     if (el !== _narrateEl) { _narrateEl = el; _narratedLen = 0; }
     const text = _msgText(el, 4000);
     const delta = text.slice(_narratedLen);
-    if (delta.length > 0) _narrateStallAt = now;
-    const enough = delta.length >= 180;
-    const stale = now - _lastNarrateAt >= 3000;
-    if (delta.length > 0 && (enough || stale)) {
+    if (delta.length > 0) { _narrateStallAt = now; _stallSpoken = false; }
+    // Batch: a substantial chunk, or a smaller one once it has settled a while.
+    const enough = delta.length >= 350;
+    const settled = delta.length >= 80 && now - _lastNarrateAt >= 8000;
+    if (enough || settled) {
       _narratedLen = text.length;
       _lastNarrateAt = now;
       _brief(
-        `Still investigating. New findings so far:\n${delta.slice(-400)}\n\n` +
-        `Briefly tell the user what you just learned, in your own words — do not read it verbatim.`,
+        '[Status — the chat agent is STILL researching; more results will follow] New findings:\n' +
+        delta.slice(-700) + '\n\nIn one or two short sentences, tell the user what was just found, in your own words. ' +
+        'Do not read it verbatim, do not ask the user questions, and do not claim the work is finished.',
         true
       );
-    } else if (now - _narrateStallAt >= 10000 && now - _lastNarrateAt >= 10000) {
-      // No new text for a while — reassure without looping.
-      _lastNarrateAt = now;
-      _brief(`Still working — no new findings yet. Let me keep researching.`, true);
+    } else {
+      _maybeSayStall(now);
     }
   } else if (_narrateActive) {
     // Run finished: deliver the final summary once.
@@ -1553,8 +1563,9 @@ function _narrateStream(busy) {
     _lastNarrateAt = now;
     _remember(_spokenKeys, _key('chat_ai', text));
     _brief(
-      `The investigation is finished. Final result:\n${text.slice(-1800)}\n\n` +
-      `Briefly tell the user the outcome in one or two sentences, in your own words. Do not read lists verbatim.`,
+      '[Status — the chat agent has FINISHED] Final result (tail):\n' + text.slice(-1100) +
+      '\n\nBriefly tell the user the outcome in one or two sentences, in your own words, and mention the full ' +
+      'answer is in the chat. Do not read lists verbatim.',
       true
     );
   }
@@ -1566,7 +1577,7 @@ function _speakResult(item, el) {
   // it fires right after this (same tick), so skip here to avoid speaking twice.
   if (_narrateActive || _narratedFinal) { _narratedFinal = false; return; }
   el = el || _lastAIEl();
-  const result = _msgText(el, 1800);
+  const result = _msgText(el, 1100);
   if (!result) return;
   _remember(_spokenKeys, _key('chat_ai', _msgText(el)));
   _systemLine(`Chat finished “${item?.title || 'request'}” — briefing you.`, 'done');
@@ -1588,8 +1599,12 @@ function _nowNote() {
 // `delegation_id` (null for session-wide context). A commentary append makes the
 // model speak on its own, so there is no response.create to synchronise.
 let _briefSeq = 0;
+// GPT-Live rejects appends over 500 tokens. ~1600 chars stays safely under
+// that even for token-dense text; keep the tail, where instructions live.
+const _BRIEF_MAX = 1600;
 function _brief(text, speak) {
   if (!_active || !_injectOK || !text) return;
+  if (text.length > _BRIEF_MAX) text = '…' + text.slice(-(_BRIEF_MAX - 1));
   _lastInjectAt = Date.now();
   const eventId = 'ody_' + (++_briefSeq) + '_' + Date.now().toString(36);
   const type = speak ? 'session.commentary.append' : 'session.thinking.append';
