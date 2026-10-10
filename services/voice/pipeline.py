@@ -111,6 +111,10 @@ Speakers: USER = human; ASSISTANT = voice model; CHAT_USER = already sent; CHAT_
 USER_NOTE = text the user typed/pasted. When the user's request refers to something they pasted ("search it",
 "read this", "the article") include the pasted URL/text from USER_NOTE verbatim in the message — the chat
 agent cannot see it otherwise.
+BROWSER ACTIONS: when the user wants something opened, played, redirected or run in their browser (a link, a
+YouTube video, a page), phrase it as "Find <thing> and open it in my browser (new tab) using run_javascript
+with window.open(url, '_blank')" — never ask for a script file or shell command for that; if the URL is
+already known from context, include it.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
 Concise, no preamble, no mention of "voice" or "transcript".
 Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}

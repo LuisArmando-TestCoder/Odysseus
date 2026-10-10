@@ -95,6 +95,9 @@ let _seedTries = 0;          // retries while waiting for the link to be fully a
 let _notes = [];             // text the user typed/pasted as context (re-seeded on reconnect)
 let _lastAiSaid = '';        // ALFRED's last real line — a reconnect resumes in that state
 let _lastAiSaidAt = 0;
+let _missed = [];            // chat answers that finished while the voice link was off
+const _knownEls = new WeakSet();   // chat bubbles already accounted for
+let _everWatched = false;
 
 // ── Proactivity: ALFRED's promises become real chat requests ──────────────
 let _lastForgeAt = 0;        // last time the pipeline forged a request (a promise right after is just an ack)
@@ -1445,6 +1448,15 @@ function _seedChatContext() {
   }
   // Re-seed anything the user typed/pasted earlier (survives reconnects).
   for (const n of _notes.slice(-3)) _briefNote(n);
+  // Results that finished while the link was off are new — deliver them now.
+  if (_missed.length) {
+    const missed = _missed.splice(0, _missed.length).slice(-2);
+    if (_opts.speak) {
+      for (const t of missed) _queueSpeak('(Finished while the voice link was off.)\n' + t, true);
+    } else {
+      for (const t of missed) _injectContext(t);
+    }
+  }
   // Resume in the state the previous session ended in — a reconnect is not a
   // new conversation. If ALFRED last said "standing by", it stays silent.
   if (!_lastAiSaid) {
@@ -1574,6 +1586,7 @@ function _setChatState(s, label) {
 function _markAllSeen() {
   for (const el of _chatMsgs().slice(-30)) {
     _ingestState.set(el, { text: '', stable: 0, done: true });
+    _knownEls.add(el);
   }
 }
 
@@ -1581,6 +1594,18 @@ function _startChatWatch() {
   if (_chatTickInt) return;
   _chatSid = _currentSid();
   _chatWasBusy = _chatBusy();
+  // HUD was closed (watcher stopped) while a chat run finished: those answers
+  // were never heard — keep them for the next voice link. Not on first open,
+  // where everything on screen is plain history.
+  if (_everWatched && _chatSid === _lastWatchedSid) {
+    for (const el of _chatMsgs().slice(-6)) {
+      if (_knownEls.has(el) || _spokenEls.has(el) || !el.classList.contains('msg-ai')) continue;
+      if (el.classList.contains('streaming') || el.querySelector('.stopped-indicator')) continue;
+      const t = _msgText(el, 12000);
+      if (t) { _missed.push(t); _spokenEls.add(el); }
+    }
+  }
+  _everWatched = true;
   _markAllSeen();  // existing history is already in the chat's own summary spine
   const hist = document.getElementById('chat-history');
   if (hist && !_chatObs) {
@@ -1595,7 +1620,9 @@ function _startChatWatch() {
   _renderChatFeed();
 }
 
+let _lastWatchedSid = null;
 function _stopChatWatch() {
+  _lastWatchedSid = _chatSid;
   clearInterval(_chatTickInt); _chatTickInt = 0;
   clearTimeout(_chatRenderT);
   _chatObs?.disconnect(); _chatObs = null;
@@ -1654,6 +1681,7 @@ async function _ingestChat(busy) {
   for (const el of msgs) {
     let st = _ingestState.get(el);
     if (!st) { st = { text: '', stable: 0, done: false }; _ingestState.set(el, st); }
+    _knownEls.add(el);
     if (st.done) continue;
     if (el.querySelector('.stopped-indicator')) { st.done = true; continue; }   // cancelled turn
     const isAi = el.classList.contains('msg-ai');
@@ -1675,7 +1703,8 @@ async function _ingestChat(busy) {
     if (t.speaker !== 'chat_ai' || _spokenEls.has(t.el) || _spokenKeys.has(_key('chat_ai', t.text))) continue;
     _spokenEls.add(t.el);
     _remember(_spokenKeys, _key('chat_ai', t.text));
-    if (_opts.speak && _active) _queueSpeak(_msgText(t.el, 12000), true);
+    if (!_active) _missed.push(_msgText(t.el, 12000));   // voice is off — deliver on reconnect
+    else if (_opts.speak) _queueSpeak(_msgText(t.el, 12000), true);
     else _injectContext(t.text);
   }
   for (const t of turns) delete t.el;

@@ -74,7 +74,11 @@ VOICE_CONTRACT = (
     "said they're just noting something for the record), stay silent — no recaps, no follow-ups, no "
     "check-ins — until the user speaks to you again or a new chat result arrives. "
     "RECONNECTS: when the link is re-established, you are continuing the same conversation, not starting a "
-    "new one: do not greet, recap or resume reading earlier results; keep the state you were in."
+    "new one: do not greet, recap or resume reading earlier results; keep the state you were in. "
+    "EXECUTION: you CAN get things executed in the user's browser. When the user asks to open a link, play a "
+    "video, redirect the page, or run a command in their browser, do NOT say you can't open tabs or redirect "
+    "the browser — forward it to the chat agent, which can run JavaScript in the user's browser. Acknowledge "
+    "briefly and let the chat agent do it; report the result when it comes back."
 )
 
 
