@@ -193,11 +193,13 @@ class ChatProcessor:
         # Trusted user claims — the highest-trust tier of identity
         # reconnaissance. These are facts the user stated directly in the
         # first person, so they are injected as TRUSTED system information
-        # (not wrapped in untrusted_context_message).
+        # (not wrapped in untrusted_context_message). Scoped PER-CHAT: a claim
+        # stated in this chat only surfaces in this chat, never another.
         try:
             from src.trusted_claims import get_trusted_claims_manager
             _tcm = get_trusted_claims_manager()
-            _trusted_block = _tcm.prompt_block(owner=owner)
+            _sid = getattr(session, "id", None)
+            _trusted_block = _tcm.prompt_block(owner=owner, session_id=_sid)
             if _trusted_block:
                 preface.append({
                     "role": "system",

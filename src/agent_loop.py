@@ -551,6 +551,7 @@ def _build_system_prompt(
     mcp_disabled_map: Optional[Dict[str, set]] = None,
     compact: bool = False,
     owner: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> List[Dict]:
     """Build agent system prompt, inject MCP/document context, merge consecutive system msgs."""
     global _cached_base_prompt, _cached_base_prompt_key
@@ -926,7 +927,7 @@ def _build_system_prompt(
     try:
         from src.trusted_claims import get_trusted_claims_manager
         _tcm = get_trusted_claims_manager()
-        _trusted_block = _tcm.prompt_block(owner=owner)
+        _trusted_block = _tcm.prompt_block(owner=owner, session_id=session_id)
         if _trusted_block:
             _trusted_msg = {"role": "system", "content": _trusted_block}
     except Exception as _tce:
@@ -1524,6 +1525,7 @@ async def stream_agent_loop(
         mcp_disabled_map=_mcp_disabled_map,
         compact=_is_api_model,
         owner=owner,
+        session_id=session_id,
     )
     prep_timings["prompt_build"] = time.time() - _t2
 

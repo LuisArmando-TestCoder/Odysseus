@@ -132,11 +132,15 @@ def setup_realtime_routes() -> APIRouter:
         # reconnaissance. The user is the authority on their own identity, so
         # their first-person claims ("my name is X") are injected as trusted
         # context the voice assistant may rely on (e.g. to address the user by
-        # name). Kept out of the persona/contract text so it stays per-user.
+        # name). Scoped PER-CHAT: a claim stated in this chat only surfaces in
+        # this chat's voice session, never another chat's.
         try:
             from src.trusted_claims import get_trusted_claims_manager
             _tcm = get_trusted_claims_manager()
-            _trusted_block = _tcm.prompt_block(owner=effective_user(request))
+            _chat_sid = (body.get("chat_session_id") or None)
+            _trusted_block = _tcm.prompt_block(
+                owner=effective_user(request), session_id=_chat_sid,
+            )
             if _trusted_block:
                 instructions = instructions + "\n\n" + _trusted_block
         except Exception as _tce:

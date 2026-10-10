@@ -2301,7 +2301,7 @@ async function startVoice() {
     const sdp = pc.localDescription?.sdp || offer.sdp;
     const resp = await fetch(_api('/api/realtime/session'), {
       method: 'POST',
-      body: JSON.stringify({ sdp }),
+      body: JSON.stringify({ sdp, chat_session_id: _currentSid() }),
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
     });

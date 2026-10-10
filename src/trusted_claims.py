@@ -105,6 +105,23 @@ class TrustedClaimsManager:
             return entries
         return [e for e in entries if e.get("owner") == owner]
 
+    def load_for_session(
+        self,
+        owner: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> List[Dict]:
+        """Load claims scoped to a specific chat (session_id).
+
+        The trusted system context is PER-CHAT, not global: a claim stated in
+        chat A ("my name is Alfred") must NOT leak into chat B. So injection
+        filters by session_id. A claim with session_id=None is unscoped and
+        only surfaces when no specific chat is being served.
+        """
+        entries = self.load(owner=owner)
+        if session_id is None:
+            return [e for e in entries if e.get("session_id") is None]
+        return [e for e in entries if e.get("session_id") == session_id]
+
     def save(self, entries: List[Dict]):
         try:
             from core.atomic_io import atomic_write_json
@@ -140,8 +157,13 @@ class TrustedClaimsManager:
         }
         return entry
 
-    def find_by_key(self, key: str, owner: Optional[str] = None) -> Optional[Dict]:
-        for e in self.load(owner=owner):
+    def find_by_key(
+        self,
+        key: str,
+        owner: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> Optional[Dict]:
+        for e in self.load_for_session(owner=owner, session_id=session_id):
             if e.get("key") == key:
                 return e
         return None
@@ -158,7 +180,8 @@ class TrustedClaimsManager:
     ) -> Dict:
         """Add a new claim, or edit the existing claim with the same key.
 
-        Returns {"action": "add"|"edit", "claim": {...}}.
+        Scoped by (owner, session_id): a claim stated in chat A edits chat A's
+        claim, never chat B's. Returns {"action": "add"|"edit", "claim": {...}}.
         """
         value = (value or "").strip()
         if not value:
@@ -167,7 +190,11 @@ class TrustedClaimsManager:
         entries = self.load_all()
         existing = None
         for e in entries:
-            if e.get("key") == key and (owner is None or e.get("owner") == owner):
+            if (
+                e.get("key") == key
+                and (owner is None or e.get("owner") == owner)
+                and (e.get("session_id") == session_id)
+            ):
                 existing = e
                 break
 
@@ -199,13 +226,18 @@ class TrustedClaimsManager:
         self.save([e for e in entries if e.get("id") != claim_id])
         return True
 
-    def prompt_block(self, owner: Optional[str] = None) -> str:
+    def prompt_block(
+        self,
+        owner: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> str:
         """Render the trusted claims as a system-prompt block.
 
-        Identity/PII claims first, then general claims. This is the text the
-        model receives as *trusted* system information.
+        Scoped to a specific chat (session_id) — the trusted system context is
+        PER-CHAT, not global. Identity/PII claims first, then general claims.
+        This is the text the model receives as *trusted* system information.
         """
-        claims = self.load(owner=owner)
+        claims = self.load_for_session(owner=owner, session_id=session_id)
         if not claims:
             return ""
 
