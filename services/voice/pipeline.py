@@ -95,7 +95,10 @@ your message but CANNOT hear the voice conversation. Write exactly ONE message, 
 voice, that the chat agent can act on directly.
 The request is ONLY what is in NEW USER SPEECH. Use the context and memory solely to resolve references
 ("it", "that file", "the meeting") and to fill in names, values, dates and constraints the user mentioned.
-Speakers: USER = human; ASSISTANT = voice model; CHAT_USER = already sent; CHAT_AI = the chat agent's answer.
+Speakers: USER = human; ASSISTANT = voice model; CHAT_USER = already sent; CHAT_AI = the chat agent's answer;
+USER_NOTE = text the user typed/pasted. When the user's request refers to something they pasted ("search it",
+"read this", "the article") include the pasted URL/text from USER_NOTE verbatim in the message — the chat
+agent cannot see it otherwise.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
 Concise, no preamble, no mention of "voice" or "transcript".
 Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}
@@ -125,6 +128,11 @@ def _parse_json(raw: str) -> Dict[str, Any]:
         return json.loads(m.group(0))
     except json.JSONDecodeError:
         return {}
+
+
+def _looks_like_json(text: str) -> bool:
+    """True for a bare/fenced JSON object, e.g. '{"title": "", "message": ""}'."""
+    return bool(re.fullmatch(r'\s*(?:```\w*)?\s*\{.*\}\s*(?:```)?\s*', text or "", re.DOTALL))
 
 
 def _f(x, default=0.0) -> float:
@@ -296,6 +304,8 @@ async def _run_commitment(mem, owner, chat_session_id, commitment: str) -> Async
             data = _parse_json(raw)
             message = (data.get("message") or "").strip()
             title = (data.get("title") or "").strip()[:60]
+            if _looks_like_json(message):
+                message = ""
         except Exception as e:
             logger.warning(f"voice commitment forger failed: {e}")
             yield _ev(type="stage", stage="forge", status="error", error=str(e)[:200])
@@ -425,13 +435,19 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False)
             data = _parse_json(raw)
             message = (data.get("message") or "").strip()
             title = (data.get("title") or "").strip()[:60]
-            if not message and raw and not raw.strip().startswith("{"):
-                message = raw.strip()
+            # Plain-text fallback ONLY when the reply had no JSON at all. A
+            # parsed {"message": ""} is a deliberate decline — and models often
+            # wrap it in ```json fences, which used to slip past a
+            # startswith("{") check and send the raw JSON to the chat.
+            if not message and not data and raw and '"message"' not in raw:
+                message = raw.strip().strip("`").strip()
         except Exception as e:
             logger.warning(f"voice forger failed: {e}")
             yield _ev(type="stage", stage="forge", status="error", error=str(e)[:200])
             yield _ev(type="done", send=False, reason="forger-error")
             return
+        if message and _looks_like_json(message):
+            message = ""   # never forward a JSON blob as the chat request
         if not message:
             # The forger declined (meta-commentary / reading aloud) — not an error.
             yield _ev(type="stage", stage="forge", status="idle", ms=int((time.time() - t0) * 1000))

@@ -1102,6 +1102,9 @@ function _similar(a, b) {
 }
 
 function _enqueue(ev) {
+  // A forger "decline" ({"title":"","message":""}) must never become a chat request.
+  const msg = String(ev.message || '').trim();
+  if (!msg || /^\s*(?:```\w*)?\s*\{[\s\S]*\}\s*(?:```)?\s*$/.test(msg)) return;
   // Never queue the same instruction twice (live items or anything sent in the last 30 min).
   const now = Date.now();
   const LIVE = ['review', 'queued', 'sending', 'sent', 'running', 'background'];
