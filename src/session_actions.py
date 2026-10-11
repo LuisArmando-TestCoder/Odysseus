@@ -71,6 +71,13 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
                 continue
             if _is_fresh(row, now):
                 continue
+            # Task result sessions ("[Task] …") are the scheduler's own
+            # delivery targets, not user chats. Deleting one here makes the
+            # task's _deliver_task_result insert fail with a FOREIGN KEY
+            # constraint (the session is gone by the time the result lands).
+            # Never tidy these.
+            if (row.name or "").strip().lower().startswith("[task]"):
+                continue
             if (row.name or "").strip() == "Incognito":
                 deleted_throwaway += 1
                 db.delete(row)
