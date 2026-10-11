@@ -574,6 +574,9 @@ def setup_chat_routes(
         _global_disabled = get_setting("disabled_tools", [])
         if _global_disabled and isinstance(_global_disabled, list):
             disabled_tools.update(_global_disabled)
+        # Strict per-chat isolation: search_chats reads other chats' messages
+        # into this one — a cross-chat context channel. Never offered.
+        disabled_tools.add("search_chats")
 
         # Light auto-escalation: the user is in chat mode and just expressed a
         # notes/calendar/email intent. Grant the relevant managers but withhold

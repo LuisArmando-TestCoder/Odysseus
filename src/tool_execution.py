@@ -809,9 +809,14 @@ async def execute_tool_block(
         result = await do_suggest_document(content, owner=owner)
         desc = f"suggest_document: {result.get('count', 0)} suggestions"
     elif tool == "search_chats":
-        query = content.split("\n")[0].strip()
-        desc = f"search_chats: {query[:80]}"
-        result = await do_search_chats(query, owner=owner)
+        # Disabled: it reads OTHER chats' messages into the current one, which
+        # breaks strict per-chat isolation. Blocked here for every caller
+        # (chat, scheduler, teacher) regardless of disabled_tools.
+        desc = "search_chats: BLOCKED"
+        result = {
+            "error": "search_chats is disabled — each chat only sees its own context.",
+            "exit_code": 1,
+        }
     elif tool in ("chat_with_model", "create_session", "list_sessions",
                   "send_to_session", "pipeline",
                   "manage_session", "manage_memory", "list_models",

@@ -351,13 +351,17 @@ async def extract_and_store(
                 logger.debug(f"Memory dedup (fuzzy): '{fact_text[:50]}' too similar to existing")
                 continue
 
+            # Only a real session id is valid. Never fall back to session.name:
+            # the old code wrote the chat's TITLE into session_id, which (a) is
+            # not an id and (b) made two chats with the same title share memory.
             _sid = None
             if hasattr(session, "session_id"):
                 _sid = session.session_id
             elif hasattr(session, "id"):
                 _sid = session.id
-            elif hasattr(session, "name"):
-                _sid = session.name
+            if not _sid:
+                # No session context — do not store an unscoped/global memory.
+                continue
 
             entry = memory_manager.add_entry(
                 fact_text, source="auto", category=category, owner=_owner,
