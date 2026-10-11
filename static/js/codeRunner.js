@@ -306,44 +306,88 @@ try {
 }
 
 /**
- * Run code server-side via POST /api/shell/exec
+ * Run code server-side via POST /api/shell/stream (SSE).
+ *
+ * Python is sent with `lang: 'python'` so the server runs it with the SAME
+ * interpreter the chat agent uses (sys.executable -I -c) — no shell, no
+ * `python3` PATH lookup. This makes the Run button behave identically to the
+ * agent's `python` tool. Output streams line-by-line so the user sees the
+ * script's logs live instead of waiting for a single buffered response.
  */
 export async function runServer(code, panel, lang) {
   showLoading(panel, 'Running on server...');
-  var command;
-  if (lang === 'python' || lang === 'py') {
-    command = 'python3 -c ' + JSON.stringify(code);
-  } else {
-    command = 'bash -c ' + JSON.stringify(code);
-  }
+  const isPython = lang === 'python' || lang === 'py';
   try {
-    var res = await fetch('/api/shell/exec', {
+    const res = await fetch('/api/shell/stream', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      // timeout: 0 = no server-side cap — a user-initiated "Run" from the
-      // document editor should run to completion, not be killed at 30s.
-      body: JSON.stringify({ command: command, timeout: 0 }),
+      body: JSON.stringify({
+        command: code,
+        lang: isPython ? 'python' : 'bash',
+        timeout: 0,   // no server-side cap — run to completion
+      }),
     });
-    var data = await res.json();
+    if (!res.ok || !res.body) {
+      throw new Error('HTTP ' + res.status);
+    }
+
+    // Build a live output buffer in the panel.
     panel.innerHTML = '';
-    if (data.stderr && data.stderr.trim()) {
-      showOutput(panel, data.stderr, true);
-      if (data.stdout && data.stdout.trim()) {
-        var stdoutEl = document.createElement('pre');
+    const pre = document.createElement('pre');
+    pre.className = 'code-runner-pre';
+    panel.appendChild(pre);
+    let stdout = '';
+    let stderr = '';
+    let exitCode = null;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+          if (ev.stream === 'stdout') {
+            stdout += (stdout ? '\n' : '') + ev.data;
+            pre.textContent = stdout;
+          } else if (ev.stream === 'stderr') {
+            stderr += (stderr ? '\n' : '') + ev.data;
+            pre.textContent = stdout + (stderr ? (stdout ? '\n' : '') + stderr : '');
+          } else if (ev.exit_code !== undefined) {
+            exitCode = ev.exit_code;
+          }
+        }
+      }
+    }
+
+    // Final render: stderr as error, stdout as normal, else "(no output)".
+    panel.innerHTML = '';
+    if (stderr.trim()) {
+      showOutput(panel, stderr, true);
+      if (stdout.trim()) {
+        const stdoutEl = document.createElement('pre');
         stdoutEl.className = 'code-runner-pre';
-        stdoutEl.textContent = data.stdout;
+        stdoutEl.textContent = stdout;
         panel.appendChild(stdoutEl);
       }
-    } else if (data.stdout && data.stdout.trim()) {
-      showOutput(panel, data.stdout, false);
+    } else if (stdout.trim()) {
+      showOutput(panel, stdout, false);
     } else {
-      showOutput(panel, '(no output)' + (data.exit_code ? ' — exit code ' + data.exit_code : ''), !data.exit_code ? false : true);
+      showOutput(panel, '(no output)' + (exitCode ? ' — exit code ' + exitCode : ''), !exitCode ? false : true);
     }
-    if (data.exit_code && data.exit_code !== 0) {
-      var exitEl = document.createElement('div');
+    if (exitCode && exitCode !== 0) {
+      const exitEl = document.createElement('div');
       exitEl.style.cssText = 'font-size:0.75rem;opacity:0.5;padding:2px 8px;';
-      exitEl.textContent = 'Exit code: ' + data.exit_code;
+      exitEl.textContent = 'Exit code: ' + exitCode;
       panel.appendChild(exitEl);
     }
   } catch (e) {

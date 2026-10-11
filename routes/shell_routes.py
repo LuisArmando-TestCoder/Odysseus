@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import uuid
 import tempfile
 from collections import namedtuple
@@ -360,6 +361,7 @@ class ShellExecRequest(BaseModel):
     timeout: int | None = None  # optional override; 0 = no timeout (run until client disconnects)
     use_pty: bool = False       # use pseudo-TTY (for progress bars)
     use_tmux: bool = False      # run in tmux session (survives browser disconnect)
+    lang: Optional[str] = None  # "python" → run via sys.executable -I -c (no shell)
 
 
 async def _create_shell(command: str, **kwargs):
@@ -376,12 +378,30 @@ async def _create_shell(command: str, **kwargs):
     return await asyncio.create_subprocess_shell(command, **kwargs)
 
 
-async def _exec_shell(command: str, timeout: int = EXEC_TIMEOUT) -> Dict[str, Any]:
+async def _create_process(command: str, lang: Optional[str] = None, **kwargs):
+    """Spawn the subprocess for `command`, honouring an optional language hint.
+
+    Python is run with the SAME interpreter the server itself uses
+    (``sys.executable -I -c``) via ``create_subprocess_exec`` — no shell, no
+    ``python3`` PATH lookup. This matches the chat agent's ``python`` tool
+    (src/tool_execution.py) exactly, so a script that runs when the agent
+    executes it also runs from the document editor's Run button. Everything
+    else falls through to the shell path.
+    """
+    if (lang or "").lower() in ("python", "py"):
+        return await asyncio.create_subprocess_exec(
+            (sys.executable or "python"), "-I", "-c", command, **kwargs
+        )
+    return await _create_shell(command, **kwargs)
+
+
+async def _exec_shell(command: str, timeout: int = EXEC_TIMEOUT, lang: Optional[str] = None) -> Dict[str, Any]:
     """Run a shell command and return stdout/stderr/exit_code."""
     proc = None
     try:
-        proc = await _create_shell(
+        proc = await _create_process(
             command,
+            lang=lang,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(Path.home()),
@@ -754,9 +774,9 @@ def setup_shell_routes() -> APIRouter:
         if not cmd:
             return {"stdout": "", "stderr": "No command provided", "exit_code": 1}
 
-        logger.info("User shell exec requested: length=%d", len(cmd))
+        logger.info("User shell exec requested: length=%d lang=%s", len(cmd), req.lang)
         timeout = req.timeout if req.timeout is not None else EXEC_TIMEOUT
-        result = await _exec_shell(cmd, timeout=timeout)
+        result = await _exec_shell(cmd, timeout=timeout, lang=req.lang)
         return result
 
     @router.post("/api/shell/stream")
@@ -799,8 +819,9 @@ def setup_shell_routes() -> APIRouter:
             proc = None
             reader_tasks = []
             try:
-                proc = await _create_shell(
+                proc = await _create_process(
                     cmd,
+                    lang=req.lang,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=str(Path.home()),
