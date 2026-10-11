@@ -571,10 +571,6 @@ function _buildHUD() {
       <span class="vx-badge" data-k="live" title="Realtime voice"><i></i><span>GPT-Live</span></span>
       <span class="vx-badge" data-k="jev" title="Decision maker"><i></i><span>JEV</span></span>
       <span class="vx-badge" data-k="util" title="Compressor / forger model"><i></i><span>Utility</span></span>
-      <span class="vx-badge vx-code-badge" data-k="code" title="Code-execution pipeline (decide → forge → execute)"><i></i><span>Code</span></span>
-    </div>
-    <div class="vx-code-strip" id="vx-code-strip" hidden>
-      <span data-cs="decide">Decide</span><i></i><span data-cs="forge">Forge</span><i></i><span data-cs="execute">Execute</span>
     </div>
     <div class="vx-top-right">
       <span class="vx-cost" title="API cost of this chat so far (voice + pipeline + chat)" aria-label="API cost">$0</span>
@@ -2552,56 +2548,6 @@ function _bind() {
     else if (e.key === 'Enter') { e.preventDefault(); if (_active) _forceSend(); }
   };
   document.addEventListener('keydown', _keyHandler, true);
-  _bindCodePipelineEvents();
-}
-
-// ── Code-execution pipeline (decide → forge → execute) header mirror ────────
-// The normal chat runs the code pipeline (static/js/codePipeline.js) and emits
-// window CustomEvents. The voice HUD mirrors them into a header badge + a
-// 3-stage strip so the same neural pipeline is visible in both surfaces.
-function _bindCodePipelineEvents() {
-  const strip = () => $('#vx-code-strip');
-  const badge = () => $('.vx-code-badge');
-  const setStage = (stage, status) => {
-    const s = strip();
-    if (!s) return;
-    s.hidden = false;
-    s.querySelectorAll('[data-cs]').forEach(el => {
-      el.dataset.status = el.dataset.cs === stage ? status : (el.dataset.status || '');
-    });
-  };
-  const reset = () => {
-    const s = strip();
-    if (s) { s.hidden = true; s.querySelectorAll('[data-cs]').forEach(el => { delete el.dataset.status; }); }
-    const b = badge();
-    if (b) b.dataset.ok = '';
-  };
-  window.addEventListener('code-pipeline-start', () => {
-    const b = badge(); if (b) b.dataset.ok = '1';
-    reset();
-    const s = strip(); if (s) s.hidden = false;
-  });
-  window.addEventListener('code-pipeline-stage', (e) => {
-    const ev = e.detail || {};
-    setStage(ev.stage, ev.status);
-  });
-  window.addEventListener('code-pipeline-executed', (e) => {
-    const ev = e.detail || {};
-    setStage('execute', ev.exit_code === 0 ? 'done' : 'error');
-  });
-  window.addEventListener('code-pipeline-done', (e) => {
-    const ev = e.detail || {};
-    const b = badge();
-    if (b) b.dataset.ok = ev.executed ? '1' : '0';
-    if (!ev.executed) setStage('execute', 'idle');
-  });
-  window.addEventListener('code-pipeline-end', () => {
-    // Leave the strip visible briefly, then clear it.
-    setTimeout(() => {
-      const b = badge(); if (b) b.dataset.ok = '';
-      reset();
-    }, 4000);
-  });
 }
 
 async function _resetMemory() {
