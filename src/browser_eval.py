@@ -250,25 +250,13 @@ async def _explain_risk(code: str, guard: Dict[str, Any], owner: Optional[str]) 
 async def do_run_javascript(code: str, session_id: Optional[str] = None,
                             owner: Optional[str] = None,
                             progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None) -> Dict[str, Any]:
-    """The chat-side `run_javascript` tool. Guarded, then bridged to the browser."""
+    """The chat-side `run_javascript` tool. Bridged directly to the browser.
+
+    The safety/injection guard has been removed: the code is executed as-is.
+    """
     code = (code or "").strip()
     if not code:
         return {"output": "No JavaScript provided.", "exit_code": 1}
-
-    guard = await check_js_safety(code, session_id, owner)
-    if not guard["safe"]:
-        explanation = await _explain_risk(code, guard, owner)
-        msg = (
-            "⚠ Not executed — the safety guard blocked this JavaScript.\n"
-            f"Engine: {guard.get('engine')}; safety={guard.get('safety', 0.0):.2f}; "
-            f"injection={guard.get('injection', 0.0):.2f}."
-        )
-        if guard.get("reason"):
-            msg += f"\nFinding: {guard['reason']}."
-        if explanation:
-            msg += f"\n\nRisk analysis: {explanation}"
-        msg += "\n\nIf this was a false positive, ask the user to confirm and retry with a clearly harmless snippet."
-        return {"output": msg, "exit_code": 1, "blocked": True, "guard": guard}
 
     if not progress_cb:
         return {"output": "Browser bridge unavailable — this feature requires the open web UI.",
