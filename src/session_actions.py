@@ -9,6 +9,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,21 +23,47 @@ _THROWAWAY_NAMES = {
     "ok", "lol", "bruh", "hmm", "hm", "meh",
 }
 _THROWAWAY_MAX_MESSAGES = 4
-# Never clean up a session touched this recently. A brand-new chat is "empty"
-# for the instant between POST /api/session and its first message — the tidy
-# task fires on `session_created`, so without this grace it deleted the very
-# session a request was about to stream into (→ /api/chat_stream 404), and
-# even the task's own result session (→ FOREIGN KEY error on delivery).
-_FRESH_GRACE = timedelta(minutes=30)
+# A session read/accessed within this window is part of an active
+# conversation and must never be tidied away, no matter how short it looks.
+# `last_accessed` is the "last time read" signal (bumped on open/read), so it
+# is the primary staleness gate. A brand-new chat is "empty" for the instant
+# between POST /api/session and its first message, and the tidy task fires on
+# `session_created` — the old 30-minute grace was far too short and deleted
+# the very session a request was about to stream into (→ /api/chat_stream 404)
+# and even the task's own result session (→ FOREIGN KEY error on delivery).
+_READ_GRACE = timedelta(days=7)
+# Trivial-content thresholds, raised so a legitimate short exchange
+# ("make this image black and white" → a script) is never nuked. Only
+# near-empty sessions qualify.
+_TRIVIAL_TOTAL_CHARS = 40
+_TRIVIAL_FIRST_WORDS = 3
+_TRIVIAL_FIRST_CHARS = 20
 
 
-def _is_fresh(row, now: datetime) -> bool:
-    stamps = [getattr(row, a, None) for a in ("created_at", "updated_at", "last_accessed", "last_message_at")]
+def _last_read(row) -> Optional[datetime]:
+    """The 'last time read' timestamp for a session (last_accessed)."""
+    la = getattr(row, "last_accessed", None)
+    if isinstance(la, datetime):
+        return la.replace(tzinfo=None)
+    return None
+
+
+def _is_recently_read(row, now: datetime) -> bool:
+    """True if the session was read/accessed recently (active conversation).
+
+    Uses `last_accessed` (the "last time read" signal) as the primary gate.
+    Falls back to created/updated/last_message_at when last_accessed is unset;
+    unknown age is treated as "recent" so we never risk deleting it.
+    """
+    lr = _last_read(row)
+    if lr is not None:
+        return now - lr < _READ_GRACE
+    stamps = [getattr(row, a, None) for a in ("created_at", "updated_at", "last_message_at")]
     stamps = [s for s in stamps if isinstance(s, datetime)]
     if not stamps:
         return True   # unknown age → don't risk deleting it
     newest = max(s.replace(tzinfo=None) for s in stamps)
-    return now - newest < _FRESH_GRACE
+    return now - newest < _READ_GRACE
 
 
 async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
@@ -69,7 +96,8 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
         for row in rows:
             if getattr(row, 'is_important', False):
                 continue
-            if _is_fresh(row, now):
+            # Active conversations (read/accessed recently) are never tidied.
+            if _is_recently_read(row, now):
                 continue
             # Task result sessions ("[Task] …") are the scheduler's own
             # delivery targets, not user chats. Deleting one here makes the
@@ -107,17 +135,20 @@ async def run_auto_sort(owner: str, skip_llm: bool = False) -> str:
                 elif msg_count == 1 and assistant_count == 0:
                     should_delete = True
                     deleted_throwaway += 1
-                elif msg_count <= 4 and first_text and len(first_text.split()) <= 8 and len(first_text) <= 80:
-                    # Short trivial chats — e.g. "write hi to a friend" → "Hi!"
+                elif msg_count <= 4 and first_text and len(first_text.split()) <= _TRIVIAL_FIRST_WORDS and len(first_text) <= _TRIVIAL_FIRST_CHARS:
+                    # Truly trivial chats — a stray "hi"/"ok"/"test", not a
+                    # real (short) request.
                     should_delete = True
                     deleted_throwaway += 1
                 else:
-                    # Aggressive: total message text under 250 chars combined = trivial
+                    # Near-empty: total message text under a tiny char budget
+                    # combined = junk. (Was 250 — far too aggressive; a real
+                    # short Q&A is under that.)
                     msg_rows = db.query(DbMsg.content).filter(
                         DbMsg.session_id == row.id
                     ).all()
                     total_chars = sum(len(m[0] or "") for m in msg_rows)
-                    if total_chars <= 250:
+                    if total_chars <= _TRIVIAL_TOTAL_CHARS:
                         should_delete = True
                         deleted_throwaway += 1
 
