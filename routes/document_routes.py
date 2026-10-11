@@ -77,7 +77,15 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             language = req.language
             if not language:
                 from src.tool_implementations import _looks_like_email_document, _sniff_doc_language
-                language = _sniff_doc_language(req.content)
+                # Only sniff when there is actual content. An empty doc must
+                # stay untyped (language=None) so the editor auto-detects the
+                # language once the user types/pastes code — storing 'markdown'
+                # here marked the doc as user-set and blocked auto-detection,
+                # so a pasted script stayed a plain-text editor.
+                if (req.content or "").strip():
+                    language = _sniff_doc_language(req.content)
+                else:
+                    language = None
             else:
                 from src.tool_implementations import _looks_like_email_document
             if _looks_like_email_document(req.content, req.title):

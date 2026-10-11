@@ -5847,7 +5847,10 @@ import * as Modals from './modalManager.js';
           session_id: sessionId,
           title: '',
           content: '',
-          language: 'markdown',
+          // No language — the server leaves it unset for an empty doc so the
+          // editor auto-detects the language once the user types/pastes code.
+          // Hardcoding 'markdown' here marked the doc as user-set and blocked
+          // auto-detection, so a pasted script stayed a plain-text editor.
         }),
       });
       const doc = await res.json();
