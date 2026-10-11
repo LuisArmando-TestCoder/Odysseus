@@ -386,8 +386,10 @@ async def _exec_shell(command: str, timeout: int = EXEC_TIMEOUT) -> Dict[str, An
             stderr=asyncio.subprocess.PIPE,
             cwd=str(Path.home()),
         )
+        # timeout=0 (or None) means "no timeout" — run until completion.
+        effective_timeout = timeout if timeout else None
         stdout_b, stderr_b = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
+            proc.communicate(), timeout=effective_timeout
         )
         stdout = stdout_b.decode(errors="replace")[:MAX_OUTPUT]
         stderr = stderr_b.decode(errors="replace")[:MAX_OUTPUT]
@@ -753,7 +755,8 @@ def setup_shell_routes() -> APIRouter:
             return {"stdout": "", "stderr": "No command provided", "exit_code": 1}
 
         logger.info("User shell exec requested: length=%d", len(cmd))
-        result = await _exec_shell(cmd, timeout=EXEC_TIMEOUT)
+        timeout = req.timeout if req.timeout is not None else EXEC_TIMEOUT
+        result = await _exec_shell(cmd, timeout=timeout)
         return result
 
     @router.post("/api/shell/stream")

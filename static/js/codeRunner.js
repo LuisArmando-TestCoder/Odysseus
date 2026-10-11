@@ -321,7 +321,9 @@ export async function runServer(code, panel, lang) {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: command }),
+      // timeout: 0 = no server-side cap — a user-initiated "Run" from the
+      // document editor should run to completion, not be killed at 30s.
+      body: JSON.stringify({ command: command, timeout: 0 }),
     });
     var data = await res.json();
     panel.innerHTML = '';
