@@ -974,7 +974,8 @@ async def llm_call_async(
     headers: Optional[Dict] = None,
     timeout: int = LLMConfig.STREAM_TIMEOUT,
     max_retries: int = LLMConfig.MAX_RETRIES,
-    prompt_type: Optional[str] = None
+    prompt_type: Optional[str] = None,
+    reasoning_effort: Optional[str] = None
 ) -> str:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
     provider = _detect_provider(url)
@@ -1035,6 +1036,13 @@ async def llm_call_async(
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
+        # reasoning_effort is only accepted by OpenAI o-series models and
+        # OpenRouter reasoning models. Sending it to a plain chat model (or a
+        # local endpoint) can 400, so gate it to the models/providers that
+        # actually support it. "low" keeps enough reasoning for reference
+        # resolution while skipping the deep chain-of-thought.
+        if reasoning_effort and (_restricts_temperature(model) or provider == "openrouter"):
+            payload["reasoning_effort"] = reasoning_effort
         if provider == "openrouter":
             payload["usage"] = {"include": True}   # exact per-call cost for the cost ledger
 

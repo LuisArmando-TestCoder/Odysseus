@@ -279,7 +279,13 @@ async def _utility(owner: Optional[str], system: str, user: str, max_tokens: int
     return await llm_call_async(
         url, model,
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        temperature=0.1, max_tokens=max_tokens, headers=headers, timeout=30,
+        temperature=0.1, max_tokens=max_tokens, headers=headers, timeout=60,
+        # The forger/decider/extractor are small, deterministic transforms that
+        # only need reference resolution — not deep chain-of-thought. "low" keeps
+        # enough reasoning to resolve "it"/"that file" while skipping the long
+        # think that (a) burns the token budget and (b) blows past the timeout.
+        # Only sent for o-series/OpenRouter models; ignored elsewhere.
+        reasoning_effort="low",
     )
 
 
@@ -458,7 +464,7 @@ async def _run_commitment(mem, owner, chat_session_id, commitment: str) -> Async
         try:
             from src.cost_ledger import cost_scope
             with cost_scope(source="voice-forge"):
-                raw = await _utility(owner, COMMITMENT_PROMPT, forger_input[:12000], 1200)
+                raw = await _utility(owner, COMMITMENT_PROMPT, forger_input[:12000], 400)
             forged = _parse_forged(raw)
             message, title = forged["message"], forged["title"]
             if forged["malformed"]:
@@ -601,7 +607,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False)
         try:
             from src.cost_ledger import cost_scope
             with cost_scope(source="voice-forge"):
-                raw = await _utility(owner, FORGER_PROMPT, forger_input[:14000], 1200)
+                raw = await _utility(owner, FORGER_PROMPT, forger_input[:14000], 500)
             # Plain-text envelope (see FORGE_FORMAT). _parse_forged never turns
             # real content into a decline: only an explicit NO_MESSAGE (or an
             # empty reply) declines; malformed output is salvaged and logged.
