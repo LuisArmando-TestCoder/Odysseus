@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 # These are the most commonly needed and should never be missing.
 ALWAYS_AVAILABLE = frozenset({
     "bash", "python", "web_search", "web_fetch", "read_file",
+    # Browser-side execution — the user can ask to open a link, read the page,
+    # or run JS in their own browser at any time, so it must always be in reach
+    # (otherwise the model narrates "I can't run JavaScript" instead of acting).
+    "run_javascript",
     "api_call",  # For configured integrations (Miniflux, Gitea, Linkding, etc.)
     # The two genuinely AMBIENT cookbook tools — "what's running" and
     # "kill it" can be asked any time without prior cookbook context,
@@ -410,16 +414,25 @@ class ToolIndex:
         # Tool on/off / panel open intent — user says "turn off shell",
         # "disable search", "open library", "show gallery", etc.
         frozenset({"turn off", "turn on", "disable", "enable",
-                   "shell off", "shell on", "search off", "search on",
-                   "research off", "research on", "incognito",
-                   "switch model", "change model", "set mode", "agent mode", "chat mode",
-                   "open library", "open documents", "open gallery", "open email",
-                   "open inbox", "open settings", "open memories", "open memory",
-                   "open skills", "open notes", "open chats", "open sessions",
-                   "show library", "show gallery", "show inbox", "show settings",
-                   "show memory", "show memories", "show skills", "show notes",
-                   "show chats", "show sessions", "show documents"}):
+                    "shell off", "shell on", "search off", "search on",
+                    "research off", "research on", "incognito",
+                    "switch model", "change model", "set mode", "agent mode", "chat mode",
+                    "open library", "open documents", "open gallery", "open email",
+                    "open inbox", "open settings", "open memories", "open memory",
+                    "open skills", "open notes", "open chats", "open sessions",
+                    "show library", "show gallery", "show inbox", "show settings",
+                    "show memory", "show memories", "show skills", "show notes",
+                    "show chats", "show sessions", "show documents"}):
             {"ui_control"},
+        # Browser-side execution intent — "open X in my browser", "run JS",
+        # "new tab", "window.open", "navigate to", "click the button", etc.
+        frozenset({"browser", "new tab", "open in", "open it in", "open youtube",
+                    "open google", "open the page", "open the site", "open the link",
+                    "open a link", "open link", "navigate", "window.open", "window open",
+                    "run javascript", "run js", "run_javascript", "javascript",
+                    "in my browser", "my browser", "click the button", "click on",
+                    "scroll", "current page", "current url", "page title", "the url"}):
+            {"run_javascript"},
         # Document creation intent
         frozenset({"write a", "create a doc", "draft", "compose", "poem", "story",
                    "essay", "outline", "letter"}):
