@@ -65,6 +65,20 @@ _TOOL_INTENT_PATTERNS: tuple[Pattern[str], ...] = tuple(
         r"\b(can|could|please|would)\s+you\s+(run|execute|exec)\b",
         r"\b(deploy|build|install|restart|reboot|kill|tail|grep|cat|ls|cd|cp|mv|rm)\b\s+\S+",
         r"\b(check|see)\s+(if|whether|what)\s+.{1,40}\b(running|process|service|port|file|exists?)\b",
+
+        # Browser-side execution intent — "open X in my browser", "run JS",
+        # "new tab", "window.open", "navigate to", "click the button", etc.
+        # These must promote to agent mode so the run_javascript tool is
+        # available; otherwise the model narrates "I can't run JavaScript".
+        r"\b(?:open|launch|go\s+to|visit|navigate\s+to)\b.{0,80}\b(?:in\s+)?(?:my\s+|the\s+)?browser\b",
+        r"\b(?:open|launch)\b.{0,60}\b(?:new\s+)?tab\b",
+        r"\b(?:open|launch|visit|go\s+to)\b.{0,60}\b(?:youtube|google|gmail|github|twitter|x\.com|reddit|netflix|spotify|maps|drive|docs)\b",
+        r"\brun(?:_|\s+)?javascript\b",
+        r"\brun\s+js\b",
+        r"\bwindow\.open\b",
+        r"\b(?:in|on)\s+my\s+browser\b",
+        r"\b(?:click|press|scroll|hover)\s+(?:on\s+)?(?:the\s+)?(?:button|link|tab|page)\b",
+        r"\b(?:read|get|check)\s+(?:the\s+)?(?:current\s+)?(?:page|url|title|tab)\b",
     )
 )
 
