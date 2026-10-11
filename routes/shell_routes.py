@@ -13,7 +13,7 @@ import uuid
 import tempfile
 from collections import namedtuple
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # POSIX-only: `pty`/`fcntl` transitively import `termios`, which does NOT exist
 # on Windows, so importing them unconditionally crashed app startup there
