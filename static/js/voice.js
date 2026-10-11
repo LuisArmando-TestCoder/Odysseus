@@ -1764,6 +1764,7 @@ function _chatTick() {
     _sayQueue = [];
     _markAllSeen();
     _chatWasBusy = _chatBusy();
+    _refreshMemory();   // load this chat's persisted transcript + memory strata
     if (prev) {
       const running = !!(_awaiting && _awaiting.sid === prev && _streamActive(prev));
       _systemLine(running
@@ -2470,10 +2471,39 @@ function _forceSend() {
   _runPipeline(true);
 }
 
+// Rebuild the live transcript from the persisted voice memory (user + assistant
+// turns). Only runs on a fresh load — never wipes a live conversation in
+// progress, so reconnecting mid-call keeps the streaming lines intact.
+function _renderTranscript(turns) {
+  const box = $('#vx-transcript');
+  if (!box) return;
+  if (!Array.isArray(turns) || !turns.length) return;
+  if (!box.querySelector('.vx-empty')) return;   // live conversation — don't clobber
+  box.innerHTML = '';
+  for (const t of turns) {
+    const who = t.speaker === 'user' ? 'user' : 'ai';
+    const line = document.createElement('div');
+    line.className = `vx-line vx-${who}`;
+    const tag = document.createElement('div');
+    tag.className = 'vx-who';
+    tag.textContent = who === 'user' ? 'YOU' : _assistantName;
+    const body = document.createElement('div');
+    body.className = 'vx-say';
+    body.textContent = t.text || '';
+    line.append(tag, body);
+    box.appendChild(line);
+  }
+  _scrollTranscript();
+}
+
 async function _refreshMemory() {
   try {
     const r = await fetch(_api(`/api/realtime/memory?voice_id=${encodeURIComponent(_voiceId)}`), { credentials: 'same-origin' });
-    if (r.ok) _renderMemory((await r.json()).stats);
+    if (r.ok) {
+      const d = await r.json();
+      _renderMemory(d.stats);
+      _renderTranscript(d.transcript);
+    }
   } catch (e) { /* ignore */ }
 }
 

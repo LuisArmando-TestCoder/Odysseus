@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_SENT_HISTORY = 30
 _MAX_LIVE_TURNS = 400  # safety valve if compression is failing
+_MAX_TRANSCRIPT_TURNS = 2000  # full raw voice transcript (user + assistant), never compressed
 
 
 def _memory_dir() -> str:
@@ -73,6 +74,7 @@ class VoiceMemory:
         self.live: List[Dict[str, Any]] = []          # raw, uncompressed turns
         self.levels: Dict[int, List[str]] = {}        # level -> summaries (chronological)
         self.sent: List[Dict[str, Any]] = []          # messages forged into the chat
+        self.transcript: List[Dict[str, Any]] = []    # full raw voice turns (user + assistant), never compressed
         self.turns_total = 0
         self.compactions = 0
         self.seq = 0            # monotonically increasing turn sequence number
@@ -97,6 +99,7 @@ class VoiceMemory:
         self.live = d.get("live") or []
         self.levels = {int(k): v for k, v in (d.get("levels") or {}).items() if isinstance(v, list)}
         self.sent = d.get("sent") or []
+        self.transcript = d.get("transcript") or []
         self.turns_total = int(d.get("turns_total") or 0)
         self.compactions = int(d.get("compactions") or 0)
         self.seq = int(d.get("seq") or 0)
@@ -113,6 +116,7 @@ class VoiceMemory:
                 "live": self.live,
                 "levels": {str(k): v for k, v in self.levels.items()},
                 "sent": self.sent[-_MAX_SENT_HISTORY:],
+                "transcript": self.transcript,
                 "turns_total": self.turns_total,
                 "compactions": self.compactions,
                 "seq": self.seq,
@@ -124,7 +128,7 @@ class VoiceMemory:
             logger.warning(f"voice memory save failed: {e}")
 
     def reset(self):
-        self.live, self.levels, self.sent = [], {}, []
+        self.live, self.levels, self.sent, self.transcript = [], {}, [], []
         self.turns_total = self.compactions = 0
         self.seq = self.forge_seq = 0
         self.updated_at = time.time()
@@ -164,13 +168,24 @@ class VoiceMemory:
                     last["ts"] = time.time()
                     self.seq += 1
                     last["seq"] = self.seq   # grown turn counts as new speech
+                    # Keep the permanent transcript in lock-step with the merged turn.
+                    if speaker in ("user", "assistant") and self.transcript and self.transcript[-1]["speaker"] == speaker:
+                        self.transcript[-1]["text"] = last["text"]
+                        self.transcript[-1]["ts"] = last["ts"]
                     continue
             self.seq += 1
             self.live.append({"speaker": speaker, "text": text, "ts": time.time(), "seq": self.seq})
             self.turns_total += 1
             added += 1
+            # The permanent transcript is the full voice conversation (user +
+            # assistant) — chat feed / pasted notes live elsewhere and are not
+            # part of the spoken transcript.
+            if speaker in ("user", "assistant"):
+                self.transcript.append({"speaker": speaker, "text": text, "ts": time.time()})
         if len(self.live) > _MAX_LIVE_TURNS:
             self.live = self.live[-_MAX_LIVE_TURNS:]
+        if len(self.transcript) > _MAX_TRANSCRIPT_TURNS:
+            self.transcript = self.transcript[-_MAX_TRANSCRIPT_TURNS:]
         self.updated_at = time.time()
         self._save()
         return added

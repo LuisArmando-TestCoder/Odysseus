@@ -369,7 +369,7 @@ def setup_realtime_routes() -> APIRouter:
             raise HTTPException(401, "Authentication required")
         from services.voice.memory import get_voice_memory
         mem = get_voice_memory(str(user), _voice_id(voice_id))
-        return {"stats": mem.stats(), "spine": mem.spine()}
+        return {"stats": mem.stats(), "spine": mem.spine(), "transcript": mem.transcript}
 
     @router.post("/memory/ingest")
     async def voice_memory_ingest(request: Request):
