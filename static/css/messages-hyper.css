@@ -238,6 +238,61 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   CODE PIPELINE (decide → forge → execute) — side lines in the chat
+   ═══════════════════════════════════════════════════════════════════════════ */
+.code-pipeline {
+  position: relative;
+  margin: 10px 0 10px 18px;
+  padding: 10px 12px 10px 16px;
+  border-left: 2px solid var(--ms-acc, #7aa2ff);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--ms-acc, #7aa2ff) 6%, transparent);
+  font-size: 12px;
+}
+.code-pipeline-head {
+  display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;
+}
+.code-pipeline-title {
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  font-size: 10px; color: var(--ms-acc, #7aa2ff);
+}
+.code-pipeline-req {
+  color: var(--ms-faint, #8a97a8); font-style: italic;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.code-pipeline-stages { display: flex; flex-direction: column; }
+.code-pipeline-node {
+  display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px;
+  padding: 3px 0;
+}
+.code-pipeline-ic {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  border: 1px solid rgba(160,180,200,.4); color: #9fb2c4; font-weight: 700; font-size: 11px;
+}
+.code-pipeline-tx b { display: block; font-size: 12px; font-weight: 650; }
+.code-pipeline-tx small { display: block; font-size: 10px; color: var(--ms-faint, #8a97a8); }
+.code-pipeline-ms { font-size: 10px; color: var(--ms-faint, #8a97a8); font-variant-numeric: tabular-nums; }
+.code-pipeline-link { height: 8px; width: 2px; margin-left: 12px; background: rgba(160,180,200,.25); }
+.code-pipeline-link.flow { background: var(--ms-acc, #7aa2ff); }
+.code-pipeline-node[data-status="running"] .code-pipeline-ic {
+  color: #e4d9ff; border-color: rgba(190,160,255,.7);
+  box-shadow: 0 0 10px rgba(160,120,255,.5);
+}
+.code-pipeline-node[data-status="done"] .code-pipeline-ic {
+  color: #04140f; background: #59ffc5; border-color: #59ffc5;
+  box-shadow: 0 0 12px rgba(89,255,197,.5);
+}
+.code-pipeline-node[data-status="error"] .code-pipeline-ic {
+  color: #2a0508; background: #ff6b7f; border-color: #ff6b7f;
+}
+.code-pipeline-out { margin-top: 8px; }
+.code-pipeline-out pre {
+  margin: 0; padding: 8px 10px; border-radius: 6px; font-size: 11px;
+  background: rgba(0,0,0,.2); max-height: 180px; overflow: auto; white-space: pre-wrap;
+}
+.code-pipeline-out.error pre { border-left: 2px solid var(--color-error, #ff6b7f); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
    REDUCED MOTION
    ═══════════════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {

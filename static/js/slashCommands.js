@@ -1632,6 +1632,24 @@ async function _cmdShell(args, ctx) {
   return true;
 }
 
+// ── Code pipeline (decide → forge → execute) ──
+// Runs the code-execution neural pipeline: the decider decides whether code is
+// needed, the forger writes the script, the executor runs it (system or
+// browser). The 3-stage timeline renders as "side lines" in the chat.
+async function _cmdCode(args, ctx) {
+  const request = args.join(' ').trim();
+  if (!request) { slashReply('Usage: /code <what should the code do?>'); return true; }
+  try {
+    const mod = await import('./codePipeline.js');
+    const sid = sessionModule.getCurrentSessionId?.() || null;
+    // Fire-and-forget: the pipeline renders its own side-line panel.
+    mod.runCodePipeline(request, sid);
+  } catch (e) {
+    slashReply(`Code pipeline unavailable — ${ctx.esc(e.message || e)}`);
+  }
+  return true;
+}
+
 // ── RAG ──
 
 async function _cmdRagList(args, ctx) {
@@ -5682,6 +5700,14 @@ const COMMANDS = {
     help: 'Run a shell command',
     handler: _cmdShell,
     usage: '/sh command'
+  },
+  code: {
+    alias: ['script', 'codegen'],
+    category: 'Utility',
+    hidden: true,
+    help: 'Run the code pipeline (decide → forge → execute)',
+    handler: _cmdCode,
+    usage: '/code what should the code do?'
   },
   shortcuts: {
     alias: ['keys', 'keybinds', 'bind'],

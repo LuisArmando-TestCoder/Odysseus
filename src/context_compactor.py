@@ -226,6 +226,11 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     1. RAG/memory system messages (keep preset system prompt)
     2. Older conversation turns
     Reserves space for the response.
+
+    The compaction summary spine ("[Conversation summary]" / "[Summary L{n}]")
+    is the SAVED context of a previously-compacted conversation. It is never
+    dropped — re-injecting it is what lets a "tired" conversation resume
+    seamlessly when the user revisits it and types again.
     """
     budget = context_length - reserve_tokens
     used = estimate_tokens(messages)
@@ -234,48 +239,55 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
 
     logger.info(f"Trimming messages: {used} tokens > {budget} budget (ctx={context_length})")
 
-    # Separate system messages from conversation.
-    # Messages marked _protected (e.g. active document) are never trimmed.
+    # Separate summary spine, system messages, protected messages, and convo.
     system_msgs = []
+    summary_msgs = []   # compaction summary spine — the saved context
     protected_msgs = []
     convo_msgs = []
     for msg in messages:
         if msg.get("_protected"):
             protected_msgs.append(msg)
         elif msg.get("role") == "system":
-            system_msgs.append(msg)
+            if _summary_level(msg.get("content", "")) > 0:
+                summary_msgs.append(msg)
+            else:
+                system_msgs.append(msg)
         else:
             convo_msgs.append(msg)
 
-    # Protected messages count toward budget but are never dropped
-    protected_tokens = estimate_tokens(protected_msgs)
-    budget -= protected_tokens
+    # Protected + summary spine count toward budget but are never dropped.
+    fixed_tokens = estimate_tokens(protected_msgs) + estimate_tokens(summary_msgs)
+    budget -= fixed_tokens
 
     # Priority: keep first system msg (preset prompt), drop others (memory, RAG, memo)
     essential_system = system_msgs[:1] if system_msgs else []
     extra_system = system_msgs[1:]
 
+    # The fixed prefix (preset + summary spine + protected) is always kept.
+    fixed = essential_system + summary_msgs + protected_msgs
+
     # Try dropping extra system messages one by one (from the end)
-    trimmed = essential_system + convo_msgs
+    trimmed = fixed + convo_msgs
     if estimate_tokens(trimmed) <= budget:
         # Dropping extras was enough — try adding back some
-        result = list(essential_system)
+        result = list(fixed)
         for msg in extra_system:
             candidate = result + [msg] + convo_msgs
             if estimate_tokens(candidate) <= budget:
                 result.append(msg)
             else:
                 break
-        return _sanitize_tool_messages(result + protected_msgs + convo_msgs)
+        return _sanitize_tool_messages(result + convo_msgs)
 
     # Still too big — truncate the first system message (but keep more than 500 chars)
     if essential_system:
         sys_text = essential_system[0].get("content", "")
         if len(sys_text) > 2000:
             essential_system[0] = {"role": "system", "content": sys_text[:2000] + "\n[System prompt truncated for context limits]"}
-            trimmed = essential_system + convo_msgs
+            fixed = essential_system + summary_msgs + protected_msgs
+            trimmed = fixed + convo_msgs
             if estimate_tokens(trimmed) <= budget:
-                return _sanitize_tool_messages(essential_system + protected_msgs + convo_msgs)
+                return _sanitize_tool_messages(fixed + convo_msgs)
 
     # Still too big — drop older conversation turns BUT always keep the current
     # user turn. If a pasted message alone exceeds the model context, truncate
@@ -288,22 +300,22 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     if len(prior_convo) >= PROTECT_RECENT:
         old_msgs = prior_convo[:-(PROTECT_RECENT - 1)]
         recent_msgs = prior_convo[-(PROTECT_RECENT - 1):] + current_msg
-        while old_msgs and estimate_tokens(essential_system + old_msgs + recent_msgs) > budget:
+        while old_msgs and estimate_tokens(fixed + old_msgs + recent_msgs) > budget:
             old_msgs.pop(0)
         convo_msgs = old_msgs + recent_msgs
     else:
         convo_msgs = prior_convo + current_msg
-        while prior_convo and estimate_tokens(essential_system + prior_convo + current_msg) > budget:
+        while prior_convo and estimate_tokens(fixed + prior_convo + current_msg) > budget:
             prior_convo.pop(0)
         convo_msgs = prior_convo + current_msg
 
     # If the current message itself is too large, shrink only that message.
-    if current_msg and estimate_tokens(essential_system + protected_msgs + convo_msgs) > budget:
-        prefix = essential_system + protected_msgs + convo_msgs[:-1]
+    if current_msg and estimate_tokens(fixed + convo_msgs) > budget:
+        prefix = fixed + convo_msgs[:-1]
         available_for_current = max(64, budget - estimate_tokens(prefix))
         convo_msgs[-1] = _truncate_message_to_token_budget(convo_msgs[-1], available_for_current)
 
-    result = _sanitize_tool_messages(essential_system + protected_msgs + convo_msgs)
+    result = _sanitize_tool_messages(fixed + convo_msgs)
     logger.info(f"Trimmed to {estimate_tokens(result)} tokens ({len(result)} messages)")
     return result
 

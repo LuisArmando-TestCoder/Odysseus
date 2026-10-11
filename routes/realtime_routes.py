@@ -307,6 +307,61 @@ def setup_realtime_routes() -> APIRouter:
         return StreamingResponse(_gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    @router.post("/code-pipeline")
+    async def code_pipeline(request: Request):
+        """Run the code-execution neural pipeline (decide → forge → execute),
+        streaming each stage as Server-Sent Events (``data: {json}``)."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        req_text = str(body.get("request") or "").strip()
+        if not req_text:
+            raise HTTPException(400, "request is required")
+        session_id = body.get("session_id") or None
+
+        from services.code.pipeline import run_pipeline
+
+        async def _gen():
+            import asyncio
+            q: asyncio.Queue = asyncio.Queue()
+
+            # The browser executor needs a progress_cb to push the eval_request
+            # to the frontend. It lands in the same queue as the pipeline events
+            # so it streams out as an SSE event in the same stream.
+            async def _progress(payload: dict):
+                await q.put(payload)
+
+            async def _runner():
+                try:
+                    async for ev in run_pipeline(
+                        owner=str(user),
+                        request=req_text[:8000],
+                        session_id=session_id,
+                        progress_cb=_progress,
+                    ):
+                        await q.put(ev)
+                except Exception as e:
+                    logger.error(f"code pipeline crashed: {e}", exc_info=True)
+                    await q.put({"type": "done", "executed": False, "reason": "error",
+                                 "error": str(e)[:200]})
+                finally:
+                    await q.put(None)  # sentinel
+
+            task = asyncio.create_task(_runner())
+            while True:
+                ev = await q.get()
+                if ev is None:
+                    break
+                yield "data: " + json.dumps(ev, ensure_ascii=False, default=str) + "\n\n"
+            await task
+
+        return StreamingResponse(_gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
     @router.get("/memory")
     async def voice_memory(request: Request, voice_id: str = "default"):
         user = effective_user(request)

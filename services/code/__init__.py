@@ -1,0 +1,1 @@
+"""Code-execution neural pipeline (decide → forge → execute)."""

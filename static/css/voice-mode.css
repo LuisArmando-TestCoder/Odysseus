@@ -93,6 +93,21 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 .vx-badge[data-ok="1"] i { background: #4dffc0; box-shadow: 0 0 10px #4dffc0; }
 .vx-badge[data-ok="0"] i { background: #ffb547; box-shadow: 0 0 10px rgba(255,181,71,.7); }
 
+/* Code-execution pipeline badge + 3-stage strip (decide → forge → execute) */
+.vx-code-badge[data-ok="1"] { color: var(--vx-fg); border-color: rgba(160, 120, 255, .4); }
+.vx-code-badge[data-ok="1"] i { background: #a078ff; box-shadow: 0 0 10px #a078ff; }
+.vx-code-badge[data-ok="0"] i { background: #ff6b7f; box-shadow: 0 0 10px rgba(255,107,127,.7); }
+.vx-code-strip {
+  display: flex; align-items: center; gap: 8px;
+  font: 600 10px/1 var(--vx-mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--vx-dim);
+}
+.vx-code-strip i { width: 14px; height: 1px; background: var(--vx-line); }
+.vx-code-strip [data-cs] { padding: 3px 8px; border-radius: 999px; border: 1px solid transparent; }
+.vx-code-strip [data-cs="running"] { color: #e4d9ff; border-color: rgba(190,160,255,.5); background: rgba(160,120,255,.1); }
+.vx-code-strip [data-cs="done"] { color: #59ffc5; border-color: rgba(89,255,197,.4); }
+.vx-code-strip [data-cs="error"] { color: #ff6b7f; border-color: rgba(255,107,127,.5); }
+
 .vx-top-right { display: flex; align-items: center; gap: 14px; }
 .vx-timer {
   font: 600 13px/1 var(--vx-mono); letter-spacing: .14em; color: var(--vx-faint);
