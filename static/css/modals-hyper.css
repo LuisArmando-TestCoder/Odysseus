@@ -1,0 +1,508 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Hypermodern Modals & Slot Elements — Star Citizen HUD
+   Diegetic holographic treatment for every modal window and the slot
+   elements inside them (cards, tabs, switches, buttons, inputs, selects,
+   rows, provider pickers, etc.). Theme-aware (--accent-primary / --red).
+   Pure CSS — no JS changes required.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --md-acc: var(--accent-primary, var(--red, #5c9ec7));
+  --md-acc-a: color-mix(in srgb, var(--md-acc) 40%, transparent);
+  --md-acc-s: color-mix(in srgb, var(--md-acc) 16%, transparent);
+  --md-acc-soft: color-mix(in srgb, var(--md-acc) 8%, transparent);
+  --md-line: color-mix(in srgb, var(--md-acc) 24%, var(--border));
+  --md-glass: color-mix(in srgb, var(--panel) 88%, transparent);
+  --md-glass-deep: color-mix(in srgb, var(--panel) 94%, var(--bg));
+  --md-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODAL FRAME
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.modal-content {
+  background:
+    linear-gradient(180deg, var(--md-acc-s) 0%, transparent 14%),
+    linear-gradient(160deg, var(--md-glass) 0%, var(--md-glass-deep) 100%) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    0 0 0 1px var(--md-acc-s),
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+/* HUD corner brackets on the modal frame */
+.modal-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    linear-gradient(var(--md-acc), var(--md-acc)) top left / 18px 2px,
+    linear-gradient(var(--md-acc), var(--md-acc)) top left / 2px 18px,
+    linear-gradient(var(--md-acc), var(--md-acc)) bottom right / 18px 2px,
+    linear-gradient(var(--md-acc), var(--md-acc)) bottom right / 2px 18px;
+  background-repeat: no-repeat;
+  opacity: 0.4;
+}
+
+/* ── Modal header → HUD title bar ──────────────────────────────────────── */
+.modal-header {
+  position: relative;
+  border-bottom: 1px solid var(--md-line);
+  padding: 10px 14px 10px 16px;
+  margin: -1px -1px 0 -1px;
+  border-radius: 14px 14px 0 0;
+  background:
+    linear-gradient(90deg, var(--md-acc-s) 0%, transparent 40%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      color-mix(in srgb, var(--md-acc) 3%, transparent) 3px,
+      color-mix(in srgb, var(--md-acc) 3%, transparent) 4px
+    ),
+    color-mix(in srgb, var(--panel) 60%, transparent);
+  box-shadow: inset 0 -1px 0 var(--md-line);
+}
+/* Accent underline that glows */
+.modal-header::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--md-acc), var(--md-acc-a) 40%, transparent 80%);
+  box-shadow: 0 0 8px var(--md-acc-a);
+  pointer-events: none;
+}
+.modal-header h4 {
+  position: relative;
+  color: var(--md-acc) !important;
+  font-family: var(--md-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-shadow: 0 0 14px var(--md-acc-a);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Left accent notch before the title */
+.modal-header h4::before {
+  content: "";
+  width: 3px;
+  height: 14px;
+  background: var(--md-acc);
+  box-shadow: 0 0 8px var(--md-acc);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.modal-header h4 svg {
+  color: var(--md-acc);
+  filter: drop-shadow(0 0 4px var(--md-acc-a));
+}
+/* Header action buttons (peek, etc.) */
+.modal-header .theme-opacity-toggle {
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+  border: 1px solid var(--md-line);
+  border-radius: 6px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.modal-header .theme-opacity-toggle:hover {
+  color: var(--md-acc);
+  background: var(--md-acc-soft);
+  border-color: var(--md-acc-a);
+  box-shadow: 0 0 10px var(--md-acc-s);
+}
+.modal-header .theme-opacity-label {
+  font-family: var(--md-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+/* Close / minimize buttons → glass chips */
+.close-btn,
+.modal-close,
+.minimize-btn {
+  background: color-mix(in srgb, var(--fg) 4%, transparent) !important;
+  color: color-mix(in srgb, var(--fg) 70%, transparent) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 6px !important;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.close-btn:hover,
+.modal-close:hover,
+.minimize-btn:hover {
+  background: var(--md-acc-soft) !important;
+  color: var(--md-acc) !important;
+  border-color: var(--md-acc-a) !important;
+  box-shadow: 0 0 12px var(--md-acc-s);
+}
+
+/* ── Modal dock (minimized windows) ─────────────────────────────────────── */
+.modal-dock-item {
+  background: var(--md-glass-deep) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 8px 8px 0 0 !important;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--md-acc-s);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.modal-dock-item:hover {
+  background: var(--md-acc-soft) !important;
+}
+.modal-dock-label {
+  font-family: var(--md-mono);
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+.modal-dock-close:hover {
+  color: var(--md-acc) !important;
+  text-shadow: 0 0 8px var(--md-acc-a);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLOT ELEMENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Admin cards ────────────────────────────────────────────────────────── */
+.admin-card {
+  background: color-mix(in srgb, var(--panel) 70%, transparent) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+.admin-card h2 {
+  color: var(--fg);
+  font-family: var(--md-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+  border-bottom: 1px solid var(--md-line) !important;
+}
+.admin-card h2 svg {
+  color: var(--md-acc);
+  opacity: 0.8;
+}
+.admin-danger-card {
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-error) 15%, transparent);
+}
+
+/* ── Tabs (admin / memory / preset) ─────────────────────────────────────── */
+.admin-tab,
+.memory-tab,
+.preset-tab {
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  font-family: var(--md-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.admin-tab:hover,
+.memory-tab:hover,
+.preset-tab:hover {
+  color: var(--fg);
+  background: var(--md-acc-soft);
+  border-color: var(--md-line);
+}
+.admin-tab.active,
+.memory-tab.active,
+.preset-tab.active {
+  color: var(--md-acc) !important;
+  background: var(--md-acc-soft) !important;
+  border-color: var(--md-acc-a) !important;
+  box-shadow: 0 0 14px var(--md-acc-s), inset 0 0 6px var(--md-acc-s);
+  text-shadow: 0 0 10px var(--md-acc-a);
+}
+.admin-tabs {
+  border-bottom: 1px solid var(--md-line);
+}
+
+/* ── Settings nav items ─────────────────────────────────────────────────── */
+.settings-nav-item {
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.settings-nav-item:hover {
+  color: var(--fg);
+  background: var(--md-acc-soft);
+  border-color: var(--md-line);
+}
+.settings-nav-item.active {
+  color: var(--md-acc) !important;
+  background: var(--md-acc-soft) !important;
+  border-color: var(--md-acc-a) !important;
+  box-shadow: inset 2px 0 0 var(--md-acc), 0 0 12px var(--md-acc-s);
+}
+.settings-nav-item svg {
+  color: var(--md-acc);
+  opacity: 0.75;
+}
+.settings-sidebar-divider {
+  background: var(--md-line);
+  box-shadow: 0 0 6px var(--md-acc-s);
+}
+.settings-sidebar-label {
+  font-family: var(--md-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 9px;
+  color: color-mix(in srgb, var(--md-acc) 60%, transparent);
+}
+
+/* ── Toggle switches ────────────────────────────────────────────────────── */
+.admin-slider {
+  background: color-mix(in srgb, var(--fg) 30%, transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--md-line);
+}
+.admin-slider::before {
+  background: var(--fg) !important;
+  box-shadow: 0 0 6px var(--md-acc-s);
+}
+.admin-switch input:checked + .admin-slider {
+  background: var(--md-acc) !important;
+  box-shadow: 0 0 12px var(--md-acc-a), inset 0 0 0 1px var(--md-acc-a);
+}
+.admin-switch input:checked + .admin-slider::before {
+  background: #fff !important;
+  box-shadow: 0 0 8px var(--md-acc);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.admin-btn,
+.admin-btn-sm,
+.admin-btn-add,
+.admin-btn-delete,
+.memory-toolbar-btn,
+.theme-io-btn,
+.harmony-generate-btn,
+.settings-fallback-add,
+.shortcut-action-btn {
+  font-family: var(--md-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  border: 1px solid var(--md-line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: color-mix(in srgb, var(--fg) 75%, transparent);
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.admin-btn:hover,
+.admin-btn-sm:hover,
+.admin-btn-add:hover,
+.memory-toolbar-btn:hover,
+.theme-io-btn:hover,
+.harmony-generate-btn:hover,
+.settings-fallback-add:hover,
+.shortcut-action-btn:hover {
+  color: var(--fg);
+  background: var(--md-acc-soft);
+  border-color: var(--md-acc-a);
+  box-shadow: 0 0 12px var(--md-acc-s);
+}
+.admin-btn-add {
+  color: var(--md-acc);
+  background: var(--md-acc-soft);
+  border-color: var(--md-acc-a);
+}
+.admin-btn-add:hover {
+  background: var(--md-acc-a);
+  color: #fff;
+}
+.admin-btn-delete {
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+}
+.admin-btn-delete:hover {
+  background: color-mix(in srgb, var(--color-error) 18%, transparent);
+  border-color: var(--color-error);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-error) 40%, transparent);
+}
+
+/* ── Inputs & selects ───────────────────────────────────────────────────── */
+.settings-select,
+.settings-label + input,
+.admin-card input[type="text"],
+.admin-card input[type="password"],
+.admin-card input[type="number"],
+.admin-card input[type="email"],
+.admin-card input[type="url"],
+.admin-card textarea,
+.admin-card select,
+.memory-search-input,
+.memory-add-input,
+.memory-sort-select,
+.settings-col input,
+.settings-col select,
+.settings-col textarea {
+  background: color-mix(in srgb, var(--bg) 55%, transparent) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 7px !important;
+  color: var(--fg) !important;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.settings-select:focus,
+.admin-card input:focus,
+.admin-card textarea:focus,
+.admin-card select:focus,
+.memory-search-input:focus,
+.memory-add-input:focus,
+.settings-col input:focus,
+.settings-col select:focus,
+.settings-col textarea:focus {
+  border-color: var(--md-acc) !important;
+  box-shadow: 0 0 0 3px var(--md-acc-s), 0 0 14px var(--md-acc-s);
+  outline: none;
+}
+.settings-label {
+  font-family: var(--md-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+
+/* ── Visibility rows (appearance tab) ───────────────────────────────────── */
+.vis-row {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.vis-row:hover {
+  background: var(--md-acc-soft);
+  border-color: var(--md-line);
+}
+.vis-icon {
+  color: var(--md-acc);
+  opacity: 0.8;
+}
+.vis-switch {
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+  box-shadow: inset 0 0 0 1px var(--md-line);
+}
+.vis-row input:checked + .vis-switch {
+  background: var(--md-acc);
+  box-shadow: 0 0 10px var(--md-acc-a);
+}
+
+/* ── User rows / endpoint sections ──────────────────────────────────────── */
+.admin-user-row {
+  border: 1px solid var(--md-line) !important;
+  border-radius: 9px !important;
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+}
+.admin-user-row:hover {
+  background: var(--md-acc-soft);
+}
+.adm-ep-section-head {
+  font-family: var(--md-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+.adm-section-toggle {
+  border: 1px solid var(--md-line);
+  border-radius: 7px;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.adm-section-toggle:hover {
+  background: var(--md-acc-soft);
+  border-color: var(--md-acc-a);
+  box-shadow: 0 0 10px var(--md-acc-s);
+}
+.adm-section-toggle:focus-visible {
+  outline: 1px solid var(--md-acc);
+  outline-offset: 1px;
+}
+
+/* ── Provider picker ────────────────────────────────────────────────────── */
+.adm-provider-btn {
+  background: color-mix(in srgb, var(--bg) 55%, transparent) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 7px !important;
+  color: var(--fg) !important;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.adm-provider-btn:hover {
+  border-color: var(--md-acc-a) !important;
+  box-shadow: 0 0 10px var(--md-acc-s);
+}
+.adm-provider-menu {
+  background: var(--md-glass-deep) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--md-acc-s);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+.adm-provider-menu .adm-provider-option:hover {
+  background: var(--md-acc-soft);
+}
+
+/* ── Model form rows ────────────────────────────────────────────────────── */
+.admin-model-form-row {
+  gap: 6px;
+}
+.admin-model-form input,
+.admin-model-form select {
+  background: color-mix(in srgb, var(--bg) 55%, transparent) !important;
+  border: 1px solid var(--md-line) !important;
+  border-radius: 7px !important;
+  color: var(--fg) !important;
+}
+.admin-model-form input:focus,
+.admin-model-form select:focus {
+  border-color: var(--md-acc) !important;
+  box-shadow: 0 0 0 3px var(--md-acc-s);
+  outline: none;
+}
+
+/* ── Range sliders ──────────────────────────────────────────────────────── */
+.preset-range,
+.theme-fd-range {
+  accent-color: var(--md-acc);
+}
+
+/* ── Color inputs ───────────────────────────────────────────────────────── */
+.color-row input[type="color"] {
+  border: 1px solid var(--md-line);
+  border-radius: 6px;
+  background: transparent;
+}
+.color-row input[type="color"]:hover {
+  border-color: var(--md-acc-a);
+  box-shadow: 0 0 10px var(--md-acc-s);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .modal-content,
+  .admin-card,
+  .admin-tab, .memory-tab, .preset-tab,
+  .settings-nav-item,
+  .admin-btn, .admin-btn-sm, .admin-btn-add, .admin-btn-delete,
+  .memory-toolbar-btn, .theme-io-btn, .harmony-generate-btn,
+  .settings-fallback-add, .shortcut-action-btn,
+  .vis-row, .adm-section-toggle, .adm-provider-btn {
+    transition-duration: 0.001s !important;
+  }
+}

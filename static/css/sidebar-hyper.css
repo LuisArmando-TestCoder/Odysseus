@@ -1,0 +1,281 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Hypermodern Sidebar — Star Citizen diegetic holographic HUD
+   Sci-fi, in-universe UI: angled panels, corner brackets, scan-line texture,
+   accent glow, mono micro-labels, clipped/notched edges, and a subtle
+   holographic flicker. Theme-aware (--accent-primary / --red / --panel).
+   Pure CSS — no JS changes required.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sidebar {
+  --sc-acc: var(--accent-primary, var(--red, #5c9ec7));
+  --sc-acc-a: color-mix(in srgb, var(--sc-acc) 40%, transparent);
+  --sc-acc-s: color-mix(in srgb, var(--sc-acc) 16%, transparent);
+  --sc-acc-soft: color-mix(in srgb, var(--sc-acc) 8%, transparent);
+  --sc-line: color-mix(in srgb, var(--sc-acc) 24%, var(--border));
+  --sc-glass: color-mix(in srgb, var(--panel) 78%, transparent);
+  --sc-glass-deep: color-mix(in srgb, var(--panel) 90%, var(--bg));
+  --sc-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  position: relative;
+  background:
+    linear-gradient(180deg, var(--sc-acc-s) 0%, transparent 18%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      color-mix(in srgb, var(--sc-acc) 3%, transparent) 3px,
+      color-mix(in srgb, var(--sc-acc) 3%, transparent) 4px
+    ),
+    linear-gradient(160deg, var(--sc-glass) 0%, var(--sc-glass-deep) 100%);
+  border-right: 1px solid var(--sc-line);
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--sc-acc) 8%, transparent),
+    inset 0 0 40px color-mix(in srgb, var(--sc-acc) 4%, transparent);
+}
+
+/* ── Holographic corner brackets on the sidebar frame ───────────────────── */
+.sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background:
+    linear-gradient(var(--sc-acc), var(--sc-acc)) top left / 22px 2px,
+    linear-gradient(var(--sc-acc), var(--sc-acc)) top left / 2px 22px,
+    linear-gradient(var(--sc-acc), var(--sc-acc)) bottom right / 22px 2px,
+    linear-gradient(var(--sc-acc), var(--sc-acc)) bottom right / 2px 22px;
+  background-repeat: no-repeat;
+  opacity: 0.4;
+}
+
+/* ── Subtle holographic flicker (very low amplitude) ────────────────────── */
+.sidebar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--sc-acc) 2%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 100% 200%;
+  animation: sc-flicker 7s ease-in-out infinite;
+  opacity: 0.5;
+}
+@keyframes sc-flicker {
+  0%, 100% { background-position: 0 0; }
+  50% { background-position: 0 100%; }
+}
+
+/* ── Brand header ───────────────────────────────────────────────────────── */
+.sidebar .sidebar-header {
+  border-bottom: 1px solid var(--sc-line);
+  background: color-mix(in srgb, var(--sc-acc) 5%, transparent);
+}
+.sidebar .sidebar-brand-title {
+  font-family: var(--sc-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 13px;
+  color: var(--fg);
+  text-shadow: 0 0 12px var(--sc-acc-a);
+}
+.sidebar .sidebar-hamburger {
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.sidebar .sidebar-hamburger:hover {
+  color: var(--sc-acc);
+  background: var(--sc-acc-soft);
+  box-shadow: 0 0 12px var(--sc-acc-s);
+}
+
+/* ── Section headers → HUD labels ───────────────────────────────────────── */
+.sidebar .section-title {
+  font-family: var(--sc-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.sidebar .section-title .section-icon {
+  color: var(--sc-acc);
+  opacity: 0.8;
+}
+.sidebar .section-header-flex {
+  border-bottom: 1px solid color-mix(in srgb, var(--sc-acc) 12%, transparent);
+  padding-bottom: 4px;
+}
+.sidebar .section-header-btn {
+  color: color-mix(in srgb, var(--fg) 50%, transparent);
+  border-radius: 5px;
+  transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.sidebar .section-header-btn:hover {
+  color: var(--sc-acc);
+  background: var(--sc-acc-soft);
+  box-shadow: 0 0 10px var(--sc-acc-s);
+}
+
+/* ── List items (sessions, tools) → holographic rows ────────────────────── */
+.sidebar .list-item {
+  position: relative;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: color-mix(in srgb, var(--fg) 72%, transparent);
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.sidebar .list-item:hover {
+  color: var(--fg);
+  background: var(--sc-acc-soft);
+  border-color: var(--sc-line);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc-acc) 10%, transparent);
+}
+.sidebar .list-item.active-session,
+.sidebar .session-item.active {
+  color: var(--fg);
+  background: linear-gradient(90deg, var(--sc-acc-s), transparent 80%);
+  border-color: var(--sc-acc-a);
+  box-shadow:
+    inset 2px 0 0 var(--sc-acc),
+    0 0 14px var(--sc-acc-s);
+}
+/* Left accent notch on the active row */
+.sidebar .list-item.active-session::before,
+.sidebar .session-item.active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 20%;
+  bottom: 20%;
+  width: 2px;
+  background: var(--sc-acc);
+  box-shadow: 0 0 8px var(--sc-acc);
+}
+
+/* Session name text */
+.sidebar .session-item .session-name,
+.sidebar .list-item .grow {
+  font-family: var(--sc-sans, inherit);
+}
+.sidebar .session-item .session-name {
+  letter-spacing: 0.01em;
+}
+
+/* ── Session star / fav ─────────────────────────────────────────────────── */
+.sidebar .session-star {
+  color: color-mix(in srgb, var(--fg) 35%, transparent);
+  transition: color 0.2s, text-shadow 0.2s;
+}
+.sidebar .session-star.faved,
+.sidebar .session-star.active {
+  color: var(--sc-acc);
+  text-shadow: 0 0 8px var(--sc-acc-a);
+}
+
+/* ── Session cost / meta micro-labels ───────────────────────────────────── */
+.sidebar .session-cost,
+.sidebar .session-meta {
+  font-family: var(--sc-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--sc-acc) 55%, transparent);
+}
+
+/* ── Dropdowns (session actions, sort) → glass panels ───────────────────── */
+.sidebar .dropdown,
+.sidebar #session-actions-dropdown {
+  background: var(--sc-glass-deep);
+  border: 1px solid var(--sc-line);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--sc-acc-s);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+.sidebar .dropdown-item {
+  color: color-mix(in srgb, var(--fg) 78%, transparent);
+  border-radius: 5px;
+}
+.sidebar .dropdown-item:hover {
+  background: var(--sc-acc-soft);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--sc-line);
+}
+.sidebar .dropdown-item h4 {
+  font-family: var(--sc-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+/* ── User bar → HUD footer ──────────────────────────────────────────────── */
+.sidebar .sidebar-user-bar {
+  border-top: 1px solid var(--sc-line);
+  background: color-mix(in srgb, var(--sc-acc) 5%, transparent);
+}
+.sidebar .user-bar-name {
+  font-family: var(--sc-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.sidebar .user-bar-avatar {
+  border: 1px solid var(--sc-acc-a);
+  box-shadow: 0 0 10px var(--sc-acc-s);
+}
+.sidebar .user-bar-btn {
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.sidebar .user-bar-btn:hover {
+  color: var(--sc-acc);
+  background: var(--sc-acc-soft);
+  box-shadow: 0 0 10px var(--sc-acc-s);
+}
+
+/* ── Icon rail → vertical HUD strip ─────────────────────────────────────── */
+.icon-rail {
+  background: linear-gradient(180deg, var(--sc-glass) 0%, var(--sc-glass-deep) 100%);
+  border-right: 1px solid var(--sc-line);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--sc-acc) 8%, transparent);
+}
+.icon-rail .icon-rail-btn {
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.icon-rail .icon-rail-btn:hover {
+  color: var(--fg);
+  background: var(--sc-acc-soft);
+  border-color: var(--sc-line);
+  box-shadow: 0 0 12px var(--sc-acc-s);
+}
+.icon-rail .icon-rail-btn.active {
+  color: var(--sc-acc);
+  background: var(--sc-acc-soft);
+  border-color: var(--sc-acc-a);
+  box-shadow: 0 0 14px var(--sc-acc-s), inset 0 0 6px var(--sc-acc-s);
+}
+.icon-rail .rail-separator {
+  background: var(--sc-line);
+  box-shadow: 0 0 6px var(--sc-acc-s);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar::after { animation: none; }
+  .sidebar *,
+  .sidebar *::before,
+  .sidebar *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}

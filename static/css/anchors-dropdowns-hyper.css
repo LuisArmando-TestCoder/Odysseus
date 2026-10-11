@@ -1,0 +1,241 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Hypermodern Anchors & Dropdown Items — Star Citizen HUD
+   Diegetic holographic treatment for inline links and every interactive
+   dropdown/list item across the app. Theme-aware (--accent-primary / --red).
+   Pure CSS — no JS changes required.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --ad-acc: var(--accent-primary, var(--red, #5c9ec7));
+  --ad-acc-a: color-mix(in srgb, var(--ad-acc) 40%, transparent);
+  --ad-acc-s: color-mix(in srgb, var(--ad-acc) 16%, transparent);
+  --ad-acc-soft: color-mix(in srgb, var(--ad-acc) 8%, transparent);
+  --ad-line: color-mix(in srgb, var(--ad-acc) 24%, var(--border));
+  --ad-glass: color-mix(in srgb, var(--panel) 90%, var(--bg));
+  --ad-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANCHORS / INLINE LINKS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* General inline links (chat messages, docs, notes, etc.) */
+a {
+  color: var(--ad-acc);
+  text-decoration: none;
+  text-shadow: 0 0 10px var(--ad-acc-s);
+  transition: color 0.18s, text-shadow 0.18s, background 0.18s;
+}
+a:hover {
+  color: color-mix(in srgb, var(--ad-acc) 80%, #fff);
+  text-shadow: 0 0 16px var(--ad-acc-a);
+  text-decoration: underline;
+  text-decoration-color: var(--ad-acc-a);
+  text-underline-offset: 3px;
+}
+a:focus-visible {
+  outline: 1px solid var(--ad-acc);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Chat message links */
+.msg a {
+  color: var(--ad-acc);
+  border-bottom: 1px solid var(--ad-acc-s);
+  text-shadow: 0 0 8px var(--ad-acc-s);
+}
+.msg a:hover {
+  border-bottom-color: var(--ad-acc);
+  background: var(--ad-acc-soft);
+  text-shadow: 0 0 14px var(--ad-acc-a);
+}
+
+/* Chat-link buttons (research sources, etc.) */
+a.chat-link {
+  color: var(--ad-acc);
+  font-family: var(--ad-mono);
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 6px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+a.chat-link:hover {
+  color: var(--fg);
+  background: var(--ad-acc-soft);
+  border-color: var(--ad-line);
+  box-shadow: 0 0 12px var(--ad-acc-s);
+  text-decoration: none;
+}
+
+/* Accent links (setup trigger, etc.) */
+.accent-link {
+  color: var(--ad-acc);
+  text-shadow: 0 0 10px var(--ad-acc-s);
+}
+.accent-link:hover {
+  text-shadow: 0 0 16px var(--ad-acc-a);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DROPDOWN / LIST ITEMS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Standard dropdown items (session actions, sort menus, etc.) */
+.dropdown-item {
+  border-bottom: 1px solid var(--ad-line) !important;
+  border-radius: 6px;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.dropdown-item:hover {
+  background: var(--ad-acc-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--ad-line);
+}
+.dropdown-item .menu-icon {
+  background: color-mix(in srgb, var(--ad-acc) 10%, transparent) !important;
+  color: var(--ad-acc);
+  box-shadow: 0 0 8px var(--ad-acc-s);
+}
+.dropdown-item:hover .menu-icon {
+  background: color-mix(in srgb, var(--ad-acc) 20%, transparent) !important;
+  box-shadow: 0 0 14px var(--ad-acc-a);
+}
+.dropdown-item .menu-text h4 {
+  font-family: var(--ad-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11.5px;
+}
+.dropdown-item .menu-text p {
+  color: color-mix(in srgb, var(--fg) 50%, transparent);
+}
+
+/* Compact dropdown items (context menus everywhere) */
+.dropdown-item-compact {
+  border-radius: 7px;
+  transition: background 0.12s, box-shadow 0.12s, color 0.12s;
+}
+.dropdown-item-compact:hover {
+  background: var(--ad-acc-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--ad-line);
+}
+.dropdown-item-compact .dropdown-icon {
+  color: var(--ad-acc);
+  opacity: 0.8;
+}
+.dropdown-item-compact:hover .dropdown-icon {
+  opacity: 1;
+  text-shadow: 0 0 8px var(--ad-acc-a);
+}
+.dropdown-item-compact .dropdown-shortcut {
+  font-family: var(--ad-mono);
+  letter-spacing: 0.04em;
+}
+
+/* Danger items keep their red but gain a glow */
+.dropdown-item-danger {
+  color: var(--red) !important;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--red) 40%, transparent);
+}
+.dropdown-item-danger:hover {
+  background: color-mix(in srgb, var(--red) 12%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 40%, transparent);
+}
+
+/* Export dropdown items (chat meta menu) */
+.export-dropdown-item {
+  border-radius: 6px;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.export-dropdown-item:hover {
+  background: var(--ad-acc-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--ad-line);
+}
+.export-dropdown-item .dropdown-icon {
+  color: var(--ad-acc);
+  opacity: 0.85;
+}
+.export-dropdown-item:hover .dropdown-icon {
+  opacity: 1;
+  text-shadow: 0 0 8px var(--ad-acc-a);
+}
+
+/* Model picker list items */
+.model-picker-list .model-switch-item {
+  border-radius: 7px;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.model-picker-list .model-switch-item:hover,
+.model-picker-list .model-switch-item.kb-active {
+  background: var(--ad-acc-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--ad-line);
+}
+.model-picker-list .model-switch-item .mp-model-name {
+  font-family: var(--ad-mono);
+  letter-spacing: 0.02em;
+}
+.model-picker-list .model-switch-item .mp-fav-dot.active {
+  color: var(--ad-acc);
+  text-shadow: 0 0 8px var(--ad-acc-a);
+}
+.model-picker-list .mp-provider-header:hover {
+  background: var(--ad-acc-soft) !important;
+}
+
+/* Sort dropdown options */
+.sort-option,
+.sort-dropdown-item {
+  border-radius: 6px;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.sort-option:hover,
+.sort-dropdown-item:hover {
+  background: var(--ad-acc-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--ad-line);
+}
+
+/* Overflow menu items (chat input) — already glass, add accent icon glow */
+.overflow-menu-item svg {
+  color: var(--ad-acc);
+  opacity: 0.85;
+}
+.overflow-menu-item:hover svg {
+  opacity: 1;
+  text-shadow: 0 0 8px var(--ad-acc-a);
+}
+
+/* Memory / skills / gallery / cookbook / email context menu items */
+.memory-item-dropdown .dropdown-item-compact,
+.gallery-detail-menu .dropdown-item-compact,
+.cookbook-task-dropdown .dropdown-item-compact,
+.email-more-menu .dropdown-item-compact,
+.ge-merge-menu .dropdown-item-compact,
+.ge-save-menu .dropdown-item-compact,
+.ge-resize-menu .dropdown-item-compact,
+.ge-image-menu .dropdown-item-compact {
+  border-radius: 7px;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.memory-item-dropdown .dropdown-item-compact:hover,
+.gallery-detail-menu .dropdown-item-compact:hover,
+.cookbook-task-dropdown .dropdown-item-compact:hover,
+.email-more-menu .dropdown-item-compact:hover,
+.ge-merge-menu .dropdown-item-compact:hover,
+.ge-save-menu .dropdown-item-compact:hover,
+.ge-resize-menu .dropdown-item-compact:hover,
+.ge-image-menu .dropdown-item-compact:hover {
+  background: var(--ad-acc-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--ad-line);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  a, .dropdown-item, .dropdown-item-compact, .export-dropdown-item,
+  .model-switch-item, .sort-option, .overflow-menu-item {
+    transition-duration: 0.001s !important;
+  }
+}
