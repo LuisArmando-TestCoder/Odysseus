@@ -201,7 +201,7 @@ void main() {
   col += c * ring(r, 0.705, 0.0025) * 0.35;
   float arc1 = step(fract((an + t * 0.035) * 6.0), 0.62);
   col += c * ring(r, 0.805, 0.0065) * arc1 * 0.9;
-  float arc2 = step(fract((an + t * 0.022) * 3.0), 0.33);
+  float arc2 = step(fract((an - t * 0.022) * 3.0), 0.33);
   col += c * ring(r, 0.875, 0.004) * arc2 * 0.65;
   float dash = step(fract((an + t * 0.07) * 48.0), 0.45);
   col += c * ring(r, 0.935, 0.003) * dash * 0.4;
