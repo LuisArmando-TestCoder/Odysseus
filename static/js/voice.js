@@ -201,18 +201,18 @@ void main() {
   col += c * ring(r, 0.705, 0.0025) * 0.35;
   float arc1 = step(fract((an + t * 0.035) * 6.0), 0.62);
   col += c * ring(r, 0.805, 0.0065) * arc1 * 0.9;
-  float arc2 = step(fract((an - t * 0.022) * 3.0), 0.33);
+  float arc2 = step(fract((an + t * 0.022) * 3.0), 0.33);
   col += c * ring(r, 0.875, 0.004) * arc2 * 0.65;
   float dash = step(fract((an + t * 0.07) * 48.0), 0.45);
   col += c * ring(r, 0.935, 0.003) * dash * 0.4;
 
-  // ── thinking: radar sweep + orbiting satellites ──
-  float sweep = fract(an - t * 0.33);
+  // ── thinking: radar sweep + orbiting satellites (clockwise) ──
+  float sweep = fract(an + t * 0.33);
   float band = step(0.40, r) * step(r, 0.90);
   col += c * u_think * exp(-sweep * 9.0) * band * 0.55;
   for (int k = 0; k < 3; k++) {
     float fk = float(k);
-    float ang = t * (1.2 + fk * 0.35) + fk * 2.094;
+    float ang = -t * (1.2 + fk * 0.35) + fk * 2.094;
     vec2 p = (0.80 + fk * 0.035) * vec2(cos(ang), sin(ang));
     col += mix(c, vec3(1.0), 0.6) * u_think * smoothstep(0.03, 0.0, length(uv - p));
   }
@@ -273,10 +273,14 @@ void main(){
                 fbm(uv*1.7 + q*1.3 + vec2(8.3,2.8) - t*0.12));
   float n = fbm(uv*1.7 + r*1.5);
 
-  float ang = atan(uv.y, uv.x)/TAU + 0.5;
-  float radl = length(uv);
+  // Orb centre in the same normalized space as uv, so the spotlight (vignette),
+  // radial spectrum and halo all share the orb's centre instead of the screen's.
+  vec2 orbUv = (2.0*u_orb - u_res) / min(u_res.x, u_res.y);
+  vec2 p = uv - orbUv;
+  float orbDist = length(p);
+  float ang = atan(p.y, p.x)/TAU + 0.5;
   float s = fft(abs(ang*2.0 - 1.0) * 0.85);
-  float impulse = s * exp(-radl*2.4) * (0.35 + 0.85*e);
+  float impulse = s * exp(-orbDist*2.4) * (0.35 + 0.85*e);
 
   float m = n + impulse;
   vec3 aur = palette(m*0.5 + t*0.04 + e*0.18);
@@ -289,7 +293,7 @@ void main(){
   vec2 g = frag/gs + vec2(t*0.03, t*0.03);
   vec2 gv = abs(fract(g - 0.5) - 0.5);
   float line = max(step(gv.x, 0.018), step(gv.y, 0.018));
-  float gridMask = smoothstep(1.1, 0.15, radl);
+  float gridMask = smoothstep(1.1, 0.15, orbDist);
   col += u_color * line * 0.04 * gridMask;
 
   // Scan lines
@@ -306,8 +310,8 @@ void main(){
   float halo = exp(-(d*d) / max(0.0001, 1.5*u_orbR*u_orbR));
   col += u_color * halo * (0.09 + 0.22*e);
 
-  // Vignette
-  col *= smoothstep(1.65, 0.25, radl);
+  // Vignette (spotlight) — centred on the orb, not the screen.
+  col *= smoothstep(1.65, 0.25, orbDist);
 
   gl_FragColor = vec4(col, 1.0);
 }
