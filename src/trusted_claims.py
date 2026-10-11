@@ -112,14 +112,15 @@ class TrustedClaimsManager:
     ) -> List[Dict]:
         """Load claims scoped to a specific chat (session_id).
 
-        The trusted system context is PER-CHAT, not global: a claim stated in
-        chat A ("my name is Alfred") must NOT leak into chat B. So injection
-        filters by session_id. A claim with session_id=None is unscoped and
-        only surfaces when no specific chat is being served.
+        The trusted system context is strictly PER-CHAT, never global: a claim
+        stated in chat A ("my name is Alfred") must NOT leak into chat B or any
+        other session. There is no unscoped/global tier — a claim without a
+        session_id is never surfaced. When no session_id is provided, nothing
+        is returned.
         """
-        entries = self.load(owner=owner)
         if session_id is None:
-            return [e for e in entries if e.get("session_id") is None]
+            return []
+        entries = self.load(owner=owner)
         return [e for e in entries if e.get("session_id") == session_id]
 
     def save(self, entries: List[Dict]):
@@ -180,11 +181,16 @@ class TrustedClaimsManager:
     ) -> Dict:
         """Add a new claim, or edit the existing claim with the same key.
 
-        Scoped by (owner, session_id): a claim stated in chat A edits chat A's
-        claim, never chat B's. Returns {"action": "add"|"edit", "claim": {...}}.
+        Strictly scoped by (owner, session_id): a claim stated in chat A edits
+        chat A's claim, never chat B's. There is no global tier — a claim
+        without a session_id is NOT stored (returns "none"), so it can never
+        leak across chats. Returns {"action": "add"|"edit"|"none", "claim": {...}}.
         """
         value = (value or "").strip()
         if not value:
+            return {"action": "none", "claim": None}
+        if session_id is None:
+            # No session context — refuse to store an unscoped/global claim.
             return {"action": "none", "claim": None}
 
         entries = self.load_all()

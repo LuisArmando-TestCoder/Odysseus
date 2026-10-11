@@ -46,8 +46,11 @@ def setup_trusted_claims_routes() -> APIRouter:
 
         key = (body.get("key") or "").strip().lower()
         value = (body.get("value") or "").strip()
+        session_id = (body.get("session_id") or "").strip() or None
         if not key or not value:
             raise HTTPException(400, "key and value are required")
+        if not session_id:
+            raise HTTPException(400, "session_id is required (trusted claims are per-chat)")
 
         mgr = get_trusted_claims_manager()
         res = mgr.upsert(
@@ -55,7 +58,7 @@ def setup_trusted_claims_routes() -> APIRouter:
             value=value,
             category=body.get("category") or "identity",
             source="manual",
-            session_id=body.get("session_id"),
+            session_id=session_id,
             owner=user,
         )
         return {"ok": True, "action": res.get("action"), "claim": res.get("claim")}
