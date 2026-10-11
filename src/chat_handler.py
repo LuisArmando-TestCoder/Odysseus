@@ -290,9 +290,17 @@ class ChatHandler:
             message
         )
         if is_memory_cmd and memory_text:
-            mem = self.memory_manager.load()
-            if not self.memory_manager.find_duplicates(memory_text, mem):
-                new_entry = self.memory_manager.add_entry(memory_text)
+            # Per-chat: dedup only against THIS chat's memories, and tag the new
+            # entry with the chat's session_id (+ owner) so it is only ever
+            # injected into this chat.
+            _sid = getattr(session, "id", None)
+            _owner = getattr(session, "owner", None)
+            chat_mem = self.memory_manager.load(owner=_owner, session_id=_sid) if _sid else []
+            if _sid and not self.memory_manager.find_duplicates(memory_text, chat_mem):
+                new_entry = self.memory_manager.add_entry(
+                    memory_text, owner=_owner, session_id=_sid,
+                )
+                mem = self.memory_manager.load_all()
                 mem.append(new_entry)
                 self.memory_manager.save(mem)
 

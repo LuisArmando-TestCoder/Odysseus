@@ -96,10 +96,24 @@ Answer ONLY with JSON:
   (ASSISTANT acknowledgements like "I'll check" do NOT count)
 """ + NOT_A_REQUEST + "\n" + IMPLICIT_ASK
 
+# Forger output contract: a PLAIN-TEXT envelope, not JSON. A long chat message
+# full of names, quotes, URLs and newlines routinely broke JSON escaping; the
+# parse then failed silently and the run was reported as a "decline" even
+# though the decider said send. With this envelope the message body is taken
+# verbatim — nothing inside it can break parsing.
+FORGE_DECLINE = "NO_MESSAGE"
+FORGE_FORMAT = (
+    "OUTPUT FORMAT (plain text, NOT JSON, no code fences):\n"
+    "TITLE: <3-6 word label>\n"
+    "MESSAGE:\n"
+    "<the chat message — any length, quotes/newlines/URLs allowed, written verbatim>\n"
+    f"To send nothing, output exactly one line: {FORGE_DECLINE}"
+)
+
 FORGER_META_RULE = (
     "If NEW USER SPEECH is only meta-commentary about this voice system or the app, feedback/notes for the "
     "developer or coding agent, musing, or the user reading a text aloud with no ask of their own, do NOT "
-    'invent a task — answer exactly {"title": "", "message": ""}.'
+    f"invent a task — output exactly {FORGE_DECLINE}."
 )
 
 FORGER_PROMPT = """You are the message forger of a voice→chat pipeline. A separate chat agent will execute
@@ -122,8 +136,7 @@ IDENTIFIERS: carry EVERY username, handle, name, email, URL or number the user l
 message — the chat agent cannot guess them and will otherwise stop and ask for exactly what you dropped.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
 Concise, no preamble, no mention of "voice" or "transcript".
-Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}
-""" + FORGER_META_RULE
+""" + FORGE_FORMAT + "\n" + FORGER_META_RULE
 
 # The voice assistant promised the user to do something ("I'll run a quick check
 # on Stroessner"). Turn that promise into a real chat request so the promise is
@@ -132,8 +145,7 @@ COMMITMENT_PROMPT = """You turn a promise made by the VOICE ASSISTANT into a req
 agent that will actually do the work (the chat agent cannot hear the call). Write ONE concise, self-contained
 message in the user's first-person voice ("Look up…", "Check…"), resolving names and details from context.
 If the promise is vague filler with no concrete subject ("I'll get on it", "let me think"), or it only repeats
-something already sent to the chat, answer exactly {"title": "", "message": ""}.
-Answer ONLY with JSON: {"title": "<3-6 word label>", "message": "<the chat message>"}"""
+something already sent to the chat, output exactly """ + FORGE_DECLINE + ".\n" + FORGE_FORMAT
 
 # Lateral extractor: when the answer to the user's question is ALREADY in the
 # chat thread (or voice memory), pull it out and hand it straight to the voice
@@ -182,6 +194,67 @@ def _parse_json(raw: str) -> Dict[str, Any]:
 def _looks_like_json(text: str) -> bool:
     """True for a bare/fenced JSON object, e.g. '{"title": "", "message": ""}'."""
     return bool(re.fullmatch(r'\s*(?:```\w*)?\s*\{.*\}\s*(?:```)?\s*', text or "", re.DOTALL))
+
+
+def _parse_forged(raw: str) -> Dict[str, Any]:
+    """Parse forger output into {"title", "message", "declined", "malformed"}.
+
+    Primary contract is the plain-text envelope (TITLE:/MESSAGE:/NO_MESSAGE).
+    Never raises, and never silently turns real content into a decline:
+      - envelope → message is everything after "MESSAGE:", verbatim;
+      - legacy JSON that parses → its title/message (empty message = decline);
+      - anything else non-empty → the whole text IS the message (marked
+        malformed so it's logged), instead of being dropped.
+    """
+    from src.text_helpers import strip_think
+    text = (raw or "").strip()
+    try:
+        text = strip_think(text, prose=False, prompt_echo=False).strip()
+    except Exception:
+        text = re.sub(r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>", "", text, flags=re.I).strip()
+    # Drop a wrapping code fence if the model added one anyway.
+    fence = re.fullmatch(r"```\w*\s*\n?([\s\S]*?)\n?```", text)
+    if fence:
+        text = fence.group(1).strip()
+
+    out = {"title": "", "message": "", "declined": False, "malformed": False}
+    if not text or re.fullmatch(rf"[`*\s]*{FORGE_DECLINE}[`*.\s]*", text, re.I):
+        out["declined"] = True
+        return out
+
+    # ① Plain-text envelope.
+    m = re.search(r"(?im)^\s*\**MESSAGE\**\s*:\s*", text)
+    if m:
+        body = text[m.end():].strip()
+        t = re.search(r"(?im)^\s*\**TITLE\**\s*:\s*(.+)$", text[:m.start()])
+        out["title"] = (t.group(1).strip().strip("*`\"'") if t else "")[:60]
+        if not body or re.fullmatch(rf"{FORGE_DECLINE}[.\s]*", body, re.I):
+            out["declined"] = True
+        else:
+            out["message"] = body
+        return out
+
+    # ② Legacy JSON (older prompt / model ignored the format).
+    if "{" in text:
+        data = _parse_json(text)
+        if data:
+            out["title"] = str(data.get("title") or "").strip()[:60]
+            out["message"] = str(data.get("message") or "").strip()
+            out["declined"] = not out["message"]
+            return out
+        # Broken JSON: salvage the "message" value instead of dropping it.
+        mm = re.search(r'"message"\s*:\s*"([\s\S]*?)"\s*(?:[,}]|$)', text)
+        if mm and mm.group(1).strip():
+            tt = re.search(r'"title"\s*:\s*"([^"]*)"', text)
+            out["title"] = (tt.group(1).strip() if tt else "")[:60]
+            out["message"] = mm.group(1).replace('\\"', '"').replace("\\n", "\n").strip()
+            out["malformed"] = True
+            return out
+
+    # ③ Free text with no envelope: the text itself is the message.
+    out["message"] = text
+    out["malformed"] = True
+    return out
 
 
 def _f(x, default=0.0) -> float:
@@ -385,12 +458,11 @@ async def _run_commitment(mem, owner, chat_session_id, commitment: str) -> Async
         try:
             from src.cost_ledger import cost_scope
             with cost_scope(source="voice-forge"):
-                raw = await _utility(owner, COMMITMENT_PROMPT, forger_input[:12000], 400)
-            data = _parse_json(raw)
-            message = (data.get("message") or "").strip()
-            title = (data.get("title") or "").strip()[:60]
-            if _looks_like_json(message):
-                message = ""
+                raw = await _utility(owner, COMMITMENT_PROMPT, forger_input[:12000], 1200)
+            forged = _parse_forged(raw)
+            message, title = forged["message"], forged["title"]
+            if forged["malformed"]:
+                logger.warning("voice commitment forger ignored the output format; using text as-is: %r", (raw or "")[:200])
         except Exception as e:
             logger.warning(f"voice commitment forger failed: {e}")
             yield _ev(type="stage", stage="forge", status="error", error=str(e)[:200])
@@ -529,23 +601,19 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False)
         try:
             from src.cost_ledger import cost_scope
             with cost_scope(source="voice-forge"):
-                raw = await _utility(owner, FORGER_PROMPT, forger_input[:14000], 500)
-            data = _parse_json(raw)
-            message = (data.get("message") or "").strip()
-            title = (data.get("title") or "").strip()[:60]
-            # Plain-text fallback ONLY when the reply had no JSON at all. A
-            # parsed {"message": ""} is a deliberate decline — and models often
-            # wrap it in ```json fences, which used to slip past a
-            # startswith("{") check and send the raw JSON to the chat.
-            if not message and not data and raw and '"message"' not in raw:
-                message = raw.strip().strip("`").strip()
+                raw = await _utility(owner, FORGER_PROMPT, forger_input[:14000], 1200)
+            # Plain-text envelope (see FORGE_FORMAT). _parse_forged never turns
+            # real content into a decline: only an explicit NO_MESSAGE (or an
+            # empty reply) declines; malformed output is salvaged and logged.
+            forged = _parse_forged(raw)
+            message, title = forged["message"], forged["title"]
+            if forged["malformed"]:
+                logger.warning("voice forger ignored the output format; using text as-is: %r", (raw or "")[:200])
         except Exception as e:
             logger.warning(f"voice forger failed: {e}")
             yield _ev(type="stage", stage="forge", status="error", error=str(e)[:200])
             yield _ev(type="done", send=False, reason="forger-error")
             return
-        if message and _looks_like_json(message):
-            message = ""   # never forward a JSON blob as the chat request
         if not message:
             # The forger declined (meta-commentary / reading aloud) — not an error.
             yield _ev(type="stage", stage="forge", status="idle", ms=int((time.time() - t0) * 1000))

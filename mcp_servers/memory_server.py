@@ -77,7 +77,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name != "manage_memory":
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
-    _ensure_init()
+    # Hard-disabled: this stdio server has no owner/chat-session context, so
+    # every action here would operate on the WHOLE memory store across all
+    # chats. Memory is strictly per-chat and served natively by the built-in
+    # `manage_memory` tool (src/ai_interaction.py:do_manage_memory).
+    return [TextContent(
+        type="text",
+        text="Error: the MCP memory server is disabled — memory is per-chat. "
+             "Use the built-in manage_memory tool instead.",
+    )]
+
+    _ensure_init()  # unreachable; legacy implementation kept below for reference
     if not _memory_manager:
         return [TextContent(type="text", text="Error: Memory manager not available")]
 

@@ -63,12 +63,17 @@ def _find_npx() -> str:
 # execution (src/tool_execution.py:_direct_fallback). Those trivial subprocess
 # wrappers are gone.
 #
-# image_gen / memory / rag / email still run as stdio MCP servers — each
-# carries hundreds of LOC of unique IMAP / HTTP / manager logic not worth
+# image_gen / rag / email still run as stdio MCP servers — each carries
+# hundreds of LOC of unique IMAP / HTTP / manager logic not worth
 # duplicating into the native path right now.
+#
+# memory is intentionally NOT registered: a stdio subprocess has no request
+# context (no owner, no chat session), so it could only ever read/write the
+# WHOLE memory store — a global side door around per-chat isolation. Memory
+# is served natively by src/ai_interaction.py:do_manage_memory, which is
+# scoped to the calling chat's session_id.
 _BUILTIN_SERVERS = {
     "image_gen":  ("mcp_servers/image_gen_server.py",  "Built-in: Image Generation"),
-    "memory":     ("mcp_servers/memory_server.py",     "Built-in: Memory"),
     "rag":        ("mcp_servers/rag_server.py",        "Built-in: RAG"),
     "email":      ("mcp_servers/email_server.py",      "Built-in: Email"),
 }

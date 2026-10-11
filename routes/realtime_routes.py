@@ -237,7 +237,12 @@ def setup_realtime_routes() -> APIRouter:
 
     # ── Advanced voice mode: multi-agent pipeline ──────────────────────────
 
-    def _voice_id(raw) -> str:
+    def _voice_id(raw, chat_session_id=None) -> str:
+        # Per-chat isolation: when the request is tied to a chat, the voice
+        # memory key IS that chat — a stale/shared client key ('global',
+        # 'default') can never merge two chats' voice memory.
+        if chat_session_id:
+            raw = f"chat-{chat_session_id}"
         vid = str(raw or "default").strip()[:80]
         return "".join(c for c in vid if c.isalnum() or c in "-_") or "default"
 
@@ -284,7 +289,7 @@ def setup_realtime_routes() -> APIRouter:
             try:
                 async for ev in run_pipeline(
                     owner=str(user),
-                    voice_id=_voice_id(body.get("voice_id")),
+                    voice_id=_voice_id(body.get("voice_id"), body.get("chat_session_id")),
                     turns=turns,
                     chat_session_id=(body.get("chat_session_id") or None),
                     force=bool(body.get("force")),
@@ -336,7 +341,7 @@ def setup_realtime_routes() -> APIRouter:
         from services.voice.memory import get_voice_memory
         from src.cost_ledger import set_cost_scope
         set_cost_scope(body.get("chat_session_id") or None, "voice-compress", str(user))
-        mem = get_voice_memory(str(user), _voice_id(body.get("voice_id")))
+        mem = get_voice_memory(str(user), _voice_id(body.get("voice_id"), body.get("chat_session_id")))
         added = mem.add_turns(clean)
         if added:
             mem.schedule_compaction()

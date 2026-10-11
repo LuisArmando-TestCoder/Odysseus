@@ -936,6 +936,11 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
     """
     if not _memory_manager:
         return {"error": "Memory manager not available"}
+    # Strict per-chat isolation: the agent may only see/modify memories that
+    # belong to the chat it is running in. No session → no memory access, so
+    # the tool can never become a back door into other chats' memories.
+    if not session_id:
+        return {"error": "Memory is per-chat; no active chat session for this call."}
 
     lines = content.strip().split("\n")
     if not lines:
@@ -945,7 +950,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
 
     if action == "list":
         category_filter = lines[1].strip().lower() if len(lines) > 1 and lines[1].strip() else None
-        memories = _memory_manager.load(owner=owner)
+        memories = _memory_manager.load(owner=owner, session_id=session_id)
         if category_filter:
             memories = [m for m in memories if m.get("category", "").lower() == category_filter]
         if not memories:
@@ -970,7 +975,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if not text:
             return {"error": "Memory text cannot be empty"}
 
-        entry = _memory_manager.add_entry(text, source="ai_agent", category=category, owner=owner)
+        entry = _memory_manager.add_entry(text, source="ai_agent", category=category, owner=owner,
+                                          session_id=session_id)
         memories = _memory_manager.load_all()
         memories.append(entry)
         _memory_manager.save(memories)
@@ -1002,8 +1008,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         found = False
         for m in memories:
             if m.get("id", "").startswith(memory_id):
-                # Verify ownership
-                if owner and m.get("owner") != owner:
+                # Verify ownership AND that the memory belongs to this chat
+                if (owner and m.get("owner") != owner) or m.get("session_id") != session_id:
                     return {"error": f"Memory '{memory_id}' not found"}
                 m["text"] = new_text
                 m["timestamp"] = int(time.time())
@@ -1035,8 +1041,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         delete_id = None
         for m in memories:
             if m.get("id", "").startswith(memory_id):
-                # Verify ownership
-                if owner and m.get("owner") != owner:
+                # Verify ownership AND that the memory belongs to this chat
+                if (owner and m.get("owner") != owner) or m.get("session_id") != session_id:
                     return {"error": f"Memory '{memory_id}' not found"}
                 full_id = m["id"]
                 delete_id = m["id"]
@@ -1060,7 +1066,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if len(lines) < 2:
             return {"error": "Search needs line 2: query"}
         query = lines[1].strip()
-        memories = _memory_manager.load(owner=owner)
+        memories = _memory_manager.load(owner=owner, session_id=session_id)
 
         if hasattr(_memory_manager, 'get_relevant_memories'):
             results = _memory_manager.get_relevant_memories(query, memories, threshold=0.05, max_items=20)

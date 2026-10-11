@@ -52,7 +52,9 @@ let _state = 'idle';
 let _callStart = 0, _timerInt = 0;
 
 // ── Pipeline / queue state ──────────────────────────────────────────────────
-let _voiceId = 'global';
+// Never a shared key: until _bindVoiceToSession() runs, use an ephemeral
+// per-page-load key so no chat can read another chat's voice memory.
+let _voiceId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let _pending = [];            // turns not yet sent to the pipeline
 let _pipeTimer = 0, _pipeBusy = false, _pipeRerun = false, _pipeAbort = null;
 let _queue = [];              // {id, title, message, intent, urgency, status}
