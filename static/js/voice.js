@@ -2559,7 +2559,6 @@ function _bind() {
 // The normal chat runs the code pipeline (static/js/codePipeline.js) and emits
 // window CustomEvents. The voice HUD mirrors them into a header badge + a
 // 3-stage strip so the same neural pipeline is visible in both surfaces.
-const _CODE_STAGES = ['decide', 'forge', 'execute'];
 function _bindCodePipelineEvents() {
   const strip = () => $('#vx-code-strip');
   const badge = () => $('.vx-code-badge');

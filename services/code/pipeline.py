@@ -40,8 +40,7 @@ logger = logging.getLogger(__name__)
 TARGET_SYSTEM = "system"    # run on the server (bash / python)
 TARGET_BROWSER = "browser"  # run in the user's browser (guarded JS)
 
-# Languages the forger may emit, mapped to how the executor runs them.
-LANG_SYSTEM = {"python", "bash", "sh", "shell", "py"}
+# Languages the forger may emit that must run in the user's browser.
 LANG_BROWSER = {"javascript", "js", "html"}
 
 DECIDER_PROMPT = """You are the decision maker of a code-execution pipeline. A user has made a request.
@@ -198,30 +197,21 @@ async def _execute_system(code: str, language: str) -> Dict[str, Any]:
     import os
 
     lang = (language or "").lower()
+    tmp_path = None
     if lang in ("bash", "sh", "shell"):
         argv = ["bash", "-c", code]
-    else:  # python
-        # Write to a temp file so multi-line code survives shell quoting.
-        fd, path = tempfile.mkstemp(suffix=".py", prefix="odysseus-code-")
+    else:  # python — write to a temp file so multi-line code survives quoting
+        fd, tmp_path = tempfile.mkstemp(suffix=".py", prefix="odysseus-code-")
         try:
             with os.fdopen(fd, "w") as fh:
                 fh.write(code)
-            argv = ["python3", path]
-            try:
-                result = await asyncio.to_thread(
-                    subprocess.run, argv, capture_output=True, text=True, timeout=120,
-                )
-            finally:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
         except Exception as e:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
             return {"output": f"Failed to write script: {e}", "exit_code": 1}
-        output = (result.stdout or "").strip()
-        if result.returncode != 0 and result.stderr:
-            output += "\nSTDERR: " + result.stderr.strip()
-        return {"output": output or "(no output)", "exit_code": result.returncode}
+        argv = ["python3", tmp_path]
 
     try:
         result = await asyncio.to_thread(
@@ -231,6 +221,13 @@ async def _execute_system(code: str, language: str) -> Dict[str, Any]:
         return {"output": "Execution timed out (120s)", "exit_code": 1}
     except Exception as e:
         return {"output": str(e), "exit_code": 1}
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     output = (result.stdout or "").strip()
     if result.returncode != 0 and result.stderr:
         output += "\nSTDERR: " + result.stderr.strip()
