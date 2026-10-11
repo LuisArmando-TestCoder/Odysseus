@@ -60,6 +60,7 @@ let _pipeTimer = 0, _pipeBusy = false, _pipeRerun = false, _pipeAbort = null;
 let _queue = [];              // {id, title, message, intent, urgency, status}
 let _awaiting = null;         // {id, sid, sawBusy, since}
 let _opts = { review: false, speak: true };
+let _errors = [];             // {at, text} — every error surfaced in the HUD
 
 // ── Chat mirror state ───────────────────────────────────────────────────────
 let _chatObs = null, _chatTickInt = 0, _chatRenderT = 0;
@@ -574,7 +575,15 @@ function _buildHUD() {
     <div class="vx-top-right">
       <span class="vx-cost" title="API cost of this chat so far (voice + pipeline + chat)" aria-label="API cost">$0</span>
       <span class="vx-timer" aria-label="Call duration">00:00</span>
+      <button class="vx-icon-btn vx-err-btn" data-act="errors" title="Errors" aria-label="Show errors" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span class="vx-err-count" hidden>0</span>
+      </button>
       <button class="vx-icon-btn" data-act="close" title="Close (Esc)" aria-label="Close voice mode">${ICON.close}</button>
+      <div class="vx-err-pane" id="vx-err-pane" hidden>
+        <div class="vx-err-pane-h"><span>Errors</span><button class="vx-err-clear" data-act="clear-errors" title="Clear all">clear</button></div>
+        <div class="vx-err-list" id="vx-err-list"></div>
+      </div>
     </div>
   </header>
 
@@ -734,6 +743,63 @@ function _systemLine(text, kind = 'info') {
   d.textContent = text;
   box.appendChild(d);
   _scrollTranscript();
+  // Every warning/error is also recorded in the error pane so nothing is lost
+  // in the fast-scrolling transcript.
+  if (kind === 'warn' || kind === 'error') _recordError(text);
+}
+
+// ── Error pane ──────────────────────────────────────────────────────────────
+// Every error/warning surfaced in the HUD is also collected here, with a
+// notification badge on the top bar and a dropdown pane listing them all.
+function _recordError(text) {
+  _errors.push({ at: Date.now(), text: String(text || '') });
+  if (_errors.length > 100) _errors.shift();
+  _renderErrors();
+}
+
+function _renderErrors() {
+  const btn = $('.vx-err-btn');
+  const count = $('.vx-err-count');
+  const list = $('#vx-err-list');
+  if (btn) btn.classList.toggle('has', _errors.length > 0);
+  if (count) {
+    count.hidden = _errors.length === 0;
+    count.textContent = _errors.length > 99 ? '99+' : String(_errors.length);
+  }
+  if (!list) return;
+  if (!_errors.length) {
+    list.innerHTML = '<div class="vx-err-empty">No errors.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (let i = _errors.length - 1; i >= 0; i--) {
+    const e = _errors[i];
+    const row = document.createElement('div');
+    row.className = 'vx-err-item';
+    const t = document.createElement('time');
+    t.textContent = new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const p = document.createElement('p');
+    p.textContent = e.text;
+    row.append(t, p);
+    frag.appendChild(row);
+  }
+  list.replaceChildren(frag);
+}
+
+function _toggleErrors(force) {
+  const pane = $('#vx-err-pane');
+  const btn = $('.vx-err-btn');
+  if (!pane) return;
+  const show = force !== undefined ? force : pane.hidden;
+  pane.hidden = !show;
+  if (btn) btn.setAttribute('aria-expanded', String(show));
+  if (show) _renderErrors();
+}
+
+function _clearErrors() {
+  _errors = [];
+  _renderErrors();
+  _toggleErrors(false);
 }
 
 function _join(prev, chunk) {
@@ -2443,6 +2509,8 @@ function _bind() {
     else if (act === 'mute') _toggleMute();
     else if (act === 'force') _forceSend();
     else if (act === 'reset-mem') _resetMemory();
+    else if (act === 'errors') _toggleErrors();
+    else if (act === 'clear-errors') _clearErrors();
     if (_audioEl && _audioEl.paused) _audioEl.play().catch(() => {});
   });
   $('#vx-queue').addEventListener('click', _onQueueClick);
