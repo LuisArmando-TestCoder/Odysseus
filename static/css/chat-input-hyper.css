@@ -1,0 +1,382 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Hypermodern Chat Composer — holographic HUD treatment
+   Inspired by the Advanced Voice Mode HUD (voice-mode.css). The accent is
+   theme-aware (--accent-primary / --red) so it adapts to light + dark themes,
+   but the treatment — glass panels, corner brackets, accent glow, mono labels,
+   breathing pulses — mirrors the voice HUD. Pure CSS: no JS changes required.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Token layer (scoped to the composer so it never leaks) ─────────────── */
+.chat-input-bar {
+  --ci-acc: var(--accent-primary, var(--red, #5c9ec7));
+  --ci-acc-a: color-mix(in srgb, var(--ci-acc) 38%, transparent);
+  --ci-acc-s: color-mix(in srgb, var(--ci-acc) 15%, transparent);
+  --ci-acc-soft: color-mix(in srgb, var(--ci-acc) 8%, transparent);
+  --ci-line: color-mix(in srgb, var(--ci-acc) 22%, var(--border));
+  --ci-glass: color-mix(in srgb, var(--panel) 82%, transparent);
+  --ci-glass-deep: color-mix(in srgb, var(--panel) 92%, var(--bg));
+  --ci-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --ci-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(120% 160% at 50% -20%, var(--ci-acc-s) 0%, transparent 55%),
+    linear-gradient(160deg, var(--ci-glass) 0%, var(--ci-glass-deep) 100%);
+  border: 1px solid var(--ci-line);
+  border-radius: 18px;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.28),
+    0 0 0 1px color-mix(in srgb, var(--ci-acc) 6%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+/* ── Animated gradient border (conic sweep) ─────────────────────────────── */
+@property --ci-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.chat-input-bar::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--ci-angle),
+    transparent 0%,
+    var(--ci-acc-a) 12%,
+    transparent 30%,
+    transparent 55%,
+    var(--ci-acc-s) 68%,
+    transparent 85%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: ci-border-sweep 7s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.55;
+}
+@keyframes ci-border-sweep {
+  to { --ci-angle: 360deg; }
+}
+
+/* ── HUD corner brackets ────────────────────────────────────────────────── */
+.chat-input-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 3;
+  background:
+    linear-gradient(var(--ci-acc), var(--ci-acc)) top left / 14px 1.5px,
+    linear-gradient(var(--ci-acc), var(--ci-acc)) top left / 1.5px 14px,
+    linear-gradient(var(--ci-acc), var(--ci-acc)) bottom right / 14px 1.5px,
+    linear-gradient(var(--ci-acc), var(--ci-acc)) bottom right / 1.5px 14px;
+  background-repeat: no-repeat;
+  opacity: 0.35;
+  transition: opacity 0.35s ease;
+}
+.chat-input-bar:focus-within::after {
+  opacity: 0.9;
+}
+
+/* ── Focus state: the whole composer lights up ──────────────────────────── */
+.chat-input-bar:focus-within {
+  border-color: var(--ci-acc-a);
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--ci-acc-a),
+    0 0 34px var(--ci-acc-s),
+    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+}
+
+/* ── Textarea ───────────────────────────────────────────────────────────── */
+.chat-input-bar textarea#message {
+  color: var(--fg);
+  caret-color: var(--ci-acc);
+  font-family: var(--ci-sans);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--ci-acc) 12%, transparent);
+}
+.chat-input-bar textarea#message::placeholder {
+  color: color-mix(in srgb, var(--fg) 32%, transparent);
+  letter-spacing: 0.01em;
+}
+.chat-input-bar textarea#message::selection {
+  background: var(--ci-acc-a);
+  color: var(--fg);
+}
+
+/* ── Ghost text overlay (slash/autocomplete suggestion) ─────────────────── */
+.chat-input-bar .ghost-text-overlay .ghost-suggestion {
+  color: color-mix(in srgb, var(--ci-acc) 45%, transparent);
+  text-shadow: 0 0 12px var(--ci-acc-s);
+}
+
+/* ── Icon buttons → glass chips ─────────────────────────────────────────── */
+.chat-input-bar .input-icon-btn {
+  color: color-mix(in srgb, var(--fg) 62%, transparent);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  opacity: 1;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.chat-input-bar .input-icon-btn:hover {
+  color: var(--fg);
+  background: var(--ci-acc-soft);
+  border-color: var(--ci-line);
+  box-shadow: 0 0 16px var(--ci-acc-s);
+  transform: translateY(-1px);
+}
+.chat-input-bar .input-icon-btn.active,
+.chat-input-bar .input-icon-btn.expanded {
+  color: var(--ci-acc);
+  background: var(--ci-acc-soft);
+  border-color: var(--ci-acc-a);
+  box-shadow: 0 0 18px var(--ci-acc-s), inset 0 0 8px var(--ci-acc-s);
+}
+.chat-input-bar .input-icon-btn.expanded { transition: none; }
+
+/* Tool indicators (RAG / Research / Group / Persona / Compare) — accent glow */
+.chat-input-bar .tool-indicator.active,
+.chat-input-bar #research-toggle-btn.active {
+  color: var(--ci-acc);
+  background: var(--ci-acc-soft);
+  border-color: var(--ci-acc-a);
+  box-shadow: 0 0 18px var(--ci-acc-s);
+}
+.chat-input-bar #research-toggle-btn.research-running {
+  color: var(--ci-acc);
+  animation: ci-research-pulse 2s ease-in-out infinite;
+}
+@keyframes ci-research-pulse {
+  0%, 100% { box-shadow: 0 0 10px var(--ci-acc-s); }
+  50%      { box-shadow: 0 0 26px var(--ci-acc-a); }
+}
+
+/* ── Overflow "+" button ────────────────────────────────────────────────── */
+.chat-input-bar .overflow-plus-btn {
+  color: color-mix(in srgb, var(--fg) 62%, transparent);
+}
+.chat-input-bar .overflow-plus-btn:hover {
+  color: var(--ci-acc);
+  background: var(--ci-acc-soft);
+  border-color: var(--ci-line);
+  box-shadow: 0 0 16px var(--ci-acc-s);
+}
+.chat-input-bar .plus-active-dot {
+  background: var(--ci-acc);
+  box-shadow: 0 0 8px var(--ci-acc);
+}
+
+/* ── Overflow menu → glass panel ────────────────────────────────────────── */
+.chat-input-bar .overflow-menu {
+  background: var(--ci-glass-deep);
+  border: 1px solid var(--ci-line);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--ci-acc-s);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+.chat-input-bar .overflow-menu-item {
+  color: color-mix(in srgb, var(--fg) 78%, transparent);
+  border-radius: 9px;
+  opacity: 1;
+}
+.chat-input-bar .overflow-menu-item:hover {
+  background: var(--ci-acc-soft);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--ci-line);
+}
+.chat-input-bar .overflow-menu-item svg {
+  color: var(--ci-acc);
+  opacity: 0.85;
+}
+.chat-input-bar .overflow-active-dot {
+  background: var(--ci-acc);
+  box-shadow: 0 0 8px var(--ci-acc);
+}
+
+/* ── Mode toggle (Agent / Chat) → glass segmented control ───────────────── */
+.chat-input-bar .mode-toggle {
+  border: 1px solid var(--ci-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.chat-input-bar .mode-toggle::before {
+  background: linear-gradient(160deg, var(--ci-acc-a), var(--ci-acc-s));
+  border-radius: 10px;
+  box-shadow: 0 0 14px var(--ci-acc-s), inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
+}
+.chat-input-bar .mode-toggle-btn {
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+  font-family: var(--ci-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chat-input-bar .mode-toggle-btn:not(.active):hover {
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+.chat-input-bar .mode-toggle-btn.active,
+.chat-input-bar .mode-toggle-btn.active:hover,
+.chat-input-bar .mode-toggle-btn.active:focus {
+  color: var(--fg) !important;
+  text-shadow: 0 0 10px var(--ci-acc-a);
+}
+
+/* ── Model picker → glass chip with mono label ──────────────────────────── */
+.chat-input-bar .model-picker-btn {
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+  font-family: var(--ci-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  height: 24px;
+  padding: 0 8px;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.chat-input-bar .model-picker-btn:hover {
+  color: var(--fg);
+  background: var(--ci-acc-soft);
+  border-color: var(--ci-line);
+  box-shadow: 0 0 14px var(--ci-acc-s);
+}
+.chat-input-bar .model-picker-btn svg {
+  color: var(--ci-acc);
+  opacity: 0.7;
+}
+.chat-input-bar .model-picker-menu {
+  background: var(--ci-glass-deep);
+  border: 1px solid var(--ci-line);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--ci-acc-s);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+.chat-input-bar .model-picker-menu input[type="text"] {
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  border: 1px solid var(--ci-line);
+  border-radius: 8px;
+}
+.chat-input-bar .model-picker-menu input[type="text"]:focus {
+  border-color: var(--ci-acc);
+  box-shadow: 0 0 0 3px var(--ci-acc-s);
+}
+.chat-input-bar .model-picker-action-btn {
+  border: 1px solid var(--ci-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: color-mix(in srgb, var(--fg) 66%, transparent);
+}
+.chat-input-bar .model-picker-action-btn:hover,
+.chat-input-bar .model-picker-action-btn:focus-visible {
+  border-color: var(--ci-acc);
+  color: var(--fg);
+  background: var(--ci-acc-soft);
+  box-shadow: 0 0 12px var(--ci-acc-s);
+}
+.chat-input-bar .model-picker-action-btn.primary {
+  color: var(--ci-acc);
+  background: var(--ci-acc-soft);
+}
+.chat-input-bar .model-picker-list .model-switch-item:hover,
+.chat-input-bar .model-picker-list .model-switch-item.kb-active {
+  background: var(--ci-acc-soft);
+}
+.chat-input-bar .model-picker-list .mp-fav-dot.active {
+  color: var(--ci-acc);
+}
+.chat-input-bar .model-picker-list .mp-provider-header:hover {
+  background: var(--ci-acc-soft);
+}
+
+/* ── Send button → glowing orb ──────────────────────────────────────────── */
+.chat-input-bar .send-btn {
+  background: linear-gradient(160deg, var(--ci-acc), color-mix(in srgb, var(--ci-acc) 70%, #000));
+  color: #fff;
+  border-radius: 10px;
+  box-shadow:
+    0 0 18px var(--ci-acc-a),
+    0 4px 14px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent);
+  transition: background 0.25s, box-shadow 0.25s, transform 0.2s, width 0.3s cubic-bezier(0.34, 1, 0.64, 1), border-radius 0.3s;
+}
+.chat-input-bar .send-btn:hover {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ci-acc) 88%, #fff), var(--ci-acc));
+  box-shadow:
+    0 0 30px var(--ci-acc-a),
+    0 6px 18px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 color-mix(in srgb, #fff 40%, transparent);
+  transform: translateY(-1px);
+}
+.chat-input-bar .send-btn:active {
+  transform: translateY(0) scale(0.96);
+}
+/* Idle / new-chat / mic states — glass with accent tint */
+.chat-input-bar .send-btn.mic-mode,
+.chat-input-bar .send-btn.newchat-mode {
+  background: var(--ci-acc-soft);
+  color: var(--ci-acc);
+  border: 1px solid var(--ci-acc-a);
+  box-shadow: 0 0 12px var(--ci-acc-s), inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+}
+.chat-input-bar .send-btn.mic-mode:hover,
+.chat-input-bar .send-btn.newchat-mode:hover {
+  background: var(--ci-acc-a);
+  color: #fff;
+  border-color: var(--ci-acc);
+  box-shadow: 0 0 22px var(--ci-acc-a);
+}
+.chat-input-bar .send-btn.recording {
+  background: linear-gradient(160deg, #ff4d6a, #d63031) !important;
+  box-shadow: 0 0 28px rgba(255, 77, 106, 0.55) !important;
+}
+.chat-input-bar .send-btn.send-pending {
+  animation: ci-send-pending 0.9s ease-in-out infinite;
+}
+@keyframes ci-send-pending {
+  0%, 100% { opacity: 0.55; box-shadow: 0 0 10px var(--ci-acc-s); }
+  50%      { opacity: 0.9;  box-shadow: 0 0 24px var(--ci-acc-a); }
+}
+
+/* ── Voice button ───────────────────────────────────────────────────────── */
+.chat-input-bar .voice-btn {
+  color: color-mix(in srgb, var(--fg) 62%, transparent);
+}
+.chat-input-bar .voice-btn:hover {
+  color: var(--ci-acc);
+  background: var(--ci-acc-soft);
+  border-color: var(--ci-line);
+  box-shadow: 0 0 16px var(--ci-acc-s);
+}
+
+/* ── Pinned tools bar ───────────────────────────────────────────────────── */
+.chat-input-bar #pinned-tools-bar:not(:empty) {
+  border-top: 1px solid var(--ci-line);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .chat-input-bar::before { animation: none; }
+  .chat-input-bar *,
+  .chat-input-bar *::before,
+  .chat-input-bar *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}
