@@ -96,17 +96,17 @@ Answer ONLY with JSON:
   (ASSISTANT acknowledgements like "I'll check" do NOT count)
 """ + NOT_A_REQUEST + "\n" + IMPLICIT_ASK
 
-# Forger output contract: a PLAIN-TEXT envelope, not JSON. A long chat message
-# full of names, quotes, URLs and newlines routinely broke JSON escaping; the
-# parse then failed silently and the run was reported as a "decline" even
-# though the decider said send. With this envelope the message body is taken
-# verbatim — nothing inside it can break parsing.
+# Forger output contract: a BARE message, not JSON and not a labelled envelope.
+# A long chat message full of names, quotes, URLs and newlines routinely broke
+# JSON escaping (and a TITLE:/MESSAGE: envelope still invited the model to add
+# stray prefixes that the parser had to strip). The message body is now the
+# ENTIRE output, verbatim — nothing inside it can break parsing, and there is
+# no prefix to malform.
 FORGE_DECLINE = "NO_MESSAGE"
 FORGE_FORMAT = (
-    "OUTPUT FORMAT (plain text, NOT JSON, no code fences):\n"
-    "TITLE: <3-6 word label>\n"
-    "MESSAGE:\n"
-    "<the chat message — any length, quotes/newlines/URLs allowed, written verbatim>\n"
+    "OUTPUT FORMAT (plain text, NOT JSON, no code fences, no labels, no prefixes):\n"
+    "Respond with ONLY the chat message itself — nothing else. Do NOT add a "
+    "\"TITLE:\" or \"MESSAGE:\" prefix, no markdown, no explanation, no preamble.\n"
     f"To send nothing, output exactly one line: {FORGE_DECLINE}"
 )
 
@@ -196,15 +196,25 @@ def _looks_like_json(text: str) -> bool:
     return bool(re.fullmatch(r'\s*(?:```\w*)?\s*\{.*\}\s*(?:```)?\s*', text or "", re.DOTALL))
 
 
+def _title_from_message(text: str) -> str:
+    """Derive a short title from a bare forged message (first few words)."""
+    words = re.sub(r"\s+", " ", (text or "")).strip().split()
+    if not words:
+        return ""
+    return " ".join(words[:6])[:60]
+
+
 def _parse_forged(raw: str) -> Dict[str, Any]:
     """Parse forger output into {"title", "message", "declined", "malformed"}.
 
-    Primary contract is the plain-text envelope (TITLE:/MESSAGE:/NO_MESSAGE).
-    Never raises, and never silently turns real content into a decline:
-      - envelope → message is everything after "MESSAGE:", verbatim;
+    Primary contract is a BARE message: the entire output IS the message,
+    verbatim. Never raises, and never silently turns real content into a
+    decline:
+      - bare text (the expected format) → the whole text IS the message;
+      - legacy TITLE:/MESSAGE: envelope → message is everything after
+        "MESSAGE:", verbatim (kept for older cached outputs);
       - legacy JSON that parses → its title/message (empty message = decline);
-      - anything else non-empty → the whole text IS the message (marked
-        malformed so it's logged), instead of being dropped.
+      - only an explicit NO_MESSAGE (or empty reply) declines.
     """
     from src.text_helpers import strip_think
     text = (raw or "").strip()
@@ -222,7 +232,8 @@ def _parse_forged(raw: str) -> Dict[str, Any]:
         out["declined"] = True
         return out
 
-    # ① Plain-text envelope.
+    # ① Legacy plain-text envelope (older prompt / cached output). Strip the
+    #    "MESSAGE:" prefix if present, but the bare message is the norm.
     m = re.search(r"(?im)^\s*\**MESSAGE\**\s*:\s*", text)
     if m:
         body = text[m.end():].strip()
@@ -251,9 +262,9 @@ def _parse_forged(raw: str) -> Dict[str, Any]:
             out["malformed"] = True
             return out
 
-    # ③ Free text with no envelope: the text itself is the message.
+    # ③ Bare message (the expected format): the whole text IS the message.
     out["message"] = text
-    out["malformed"] = True
+    out["title"] = _title_from_message(text)
     return out
 
 
