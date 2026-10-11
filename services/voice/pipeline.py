@@ -483,15 +483,82 @@ async def run_pipeline(
         mem.schedule_compaction()
 
 
+GUARD_FALLBACK_PROMPT = """You are the final guard of a voice→chat pipeline. A message was forged from a live
+voice conversation and is about to be sent to a chat agent. Judge whether it should go through.
+Answer ONLY with JSON:
+{"coherent": 0..1, "duplicate": 0..1, "faithful": 0..1}
+- coherent: probability the message is a clear, sensible, actionable request (not garbled, contradictory,
+  or nonsense that makes no sense at all)
+- duplicate: probability the message repeats something already in already_sent_to_chat or the recent chat thread
+- faithful: probability the message faithfully represents what the user actually asked (not invented or hallucinated)
+"""
+
+
+async def _guard(owner: str, message: str, context: Dict[str, Any], use_jev: bool) -> Dict[str, Any]:
+    """Validate a forged message before it reaches the chat. Returns a decision
+    dict with coherent / duplicate / faithful scores. This is the last sanity
+    check: it drops duplicates AND anything that doesn't make sense at all."""
+    if use_jev:
+        try:
+            ans = await jev_decide(context, {
+                "coherent": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the message a clear, sensible, actionable request the chat agent can act on? "
+                        "It must be coherent, specific, and free of nonsense, contradictions, garbled text, "
+                        "or instructions that make no sense at all."
+                    ),
+                    "criteria": {"true": "The message is coherent and actionable",
+                                 "false": "The message is garbled, contradictory, or nonsensical"},
+                },
+                "duplicate": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the message essentially the same as something already in already_sent_to_chat or "
+                        "the recent chat thread? A near-identical repeat is a duplicate."
+                    ),
+                    "criteria": {"true": "It repeats something already sent/asked",
+                                 "false": "It is new"},
+                },
+                "faithful": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does the message faithfully represent what the user actually asked in new_user_speech? "
+                        "It must not invent facts, names, or requests the user never made."
+                    ),
+                    "criteria": {"true": "It faithfully represents the user's request",
+                                 "false": "It invents or distorts what the user asked"},
+                },
+            })
+            return {
+                "engine": "jev",
+                "coherent": _f(ans["coherent"]["value"]),
+                "duplicate": _f(ans["duplicate"]["value"]),
+                "faithful": _f(ans["faithful"]["value"], 1.0),
+            }
+        except DecisionsUnavailable as e:
+            logger.info(f"voice guard: JEV unavailable → LLM fallback ({e})")
+
+    data = _parse_json(await _utility(owner, GUARD_FALLBACK_PROMPT,
+                                      json.dumps(context, ensure_ascii=False)[:9000], 100))
+    return {
+        "engine": "llm",
+        "coherent": _f(data.get("coherent")),
+        "duplicate": _f(data.get("duplicate")),
+        "faithful": _f(data.get("faithful"), 1.0),
+    }
+
+
 async def _forge_and_emit(
-    mem, owner, chat_session_id, prompt, forger_input, decision, fallback_text, source=None
+    mem, owner, chat_session_id, prompt, forger_input, decision, fallback_text, source=None, use_jev=True
 ) -> AsyncIterator[Dict[str, Any]]:
-    """Run the forger LLM and emit the forged message.
+    """Run the forger LLM, guard the result, and emit the forged message.
 
     The forge is a TRANSFORM, not a decision: the decider already said "send",
     so the forge's only job is to phrase the message. If it declines (empty /
-    NO_MESSAGE) or errors, fall back to ``fallback_text`` so the request still
-    reaches the chat instead of silently dying here.
+    NO_MESSAGE) or errors, fall back to ``fallback_text``. Then a GUARD agent
+    (JEV) reviews the message against the context and drops duplicates AND
+    anything that doesn't make sense at all before it reaches the chat.
     """
     t0 = time.time()
     yield _ev(type="stage", stage="forge", status="running")
@@ -510,11 +577,45 @@ async def _forge_and_emit(
         message = fallback_text
         title = _title_from_message(message)
         logger.warning("voice forger declined/errored after decider said send; using raw speech as the message")
+
+    # ④b GUARD — a JEV agent reviews the forged message against the context and
+    # drops duplicates AND anything that doesn't make sense at all (garbled,
+    # invented, contradictory). The forge is a transform; the guard is the last
+    # sanity check before the message reaches the chat.
+    yield _ev(type="stage", stage="guard", status="running")
+    spine = mem.spine()
+    chat_txt = chat_summary_spine(chat_session_id, owner)
+    guard_ctx = {
+        "speaker_legend": SPEAKER_LEGEND,
+        "message": message,
+        "new_user_speech": fallback_text,
+        "recent_context": mem.recent_turns(8),
+        "already_sent_to_chat": spine["recently_sent"],
+        "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),
+        "chat_thread_summary": chat_txt[:2000],
+    }
+    try:
+        from src.cost_ledger import cost_scope
+        with cost_scope(source="voice-guard"):
+            g = await _guard(owner, message, guard_ctx, use_jev)
+    except Exception as e:
+        logger.warning(f"voice guard failed: {e}")
+        g = {"engine": "error", "coherent": 1.0, "duplicate": 0.0, "faithful": 1.0}
+    gms = int((time.time() - t0) * 1000)
+    yield _ev(type="guard", guard=g, ms=gms)
+
+    # Deterministic duplicate guard (token similarity) still applies.
     dup = mem.is_duplicate(message)
-    if dup:
-        yield _ev(type="stage", stage="forge", status="idle", ms=int((time.time() - t0) * 1000))
-        yield _ev(type="done", send=False, reason="duplicate", duplicate_of=dup[:160])
+    if dup or g.get("duplicate", 0) >= 0.7:
+        yield _ev(type="stage", stage="guard", status="idle", ms=gms)
+        yield _ev(type="done", send=False, reason="duplicate", duplicate_of=(dup or "similar")[:160])
         return
+    if g.get("coherent", 1.0) < 0.5 or g.get("faithful", 1.0) < 0.4:
+        yield _ev(type="stage", stage="guard", status="idle", ms=gms)
+        yield _ev(type="done", send=False, reason="guard-rejected", guard=g)
+        return
+    yield _ev(type="stage", stage="guard", status="done", ms=gms)
+
     mem.record_sent(message, decision)
     yield _ev(type="stage", stage="forge", status="done", ms=int((time.time() - t0) * 1000))
     ev = _ev(type="forged", title=title or (decision.get("intent") or "Request").title(),
@@ -639,7 +740,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")
             )
             async for ev in _forge_and_emit(mem, owner, chat_session_id, FORGER_PROMPT,
-                                            forger_input, decision, new_text):
+                                            forger_input, decision, new_text, use_jev=use_jev):
                 yield ev
             return
 
@@ -657,7 +758,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 cdecision = {"engine": "commitment", "should_send": 1.0, "ready": 1.0, "already_sent": 0.0,
                              "intent": "research", "urgency": 1, "send": True}
                 async for ev in _forge_and_emit(mem, owner, chat_session_id, COMMITMENT_PROMPT,
-                                                cinput, cdecision, promise, source="commitment"):
+                                                cinput, cdecision, promise, source="commitment", use_jev=use_jev):
                     yield ev
                 return
 

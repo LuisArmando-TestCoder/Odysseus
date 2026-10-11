@@ -38,7 +38,7 @@ const STATE_LABELS = {
   muted:      ['MUTED', 'Press M to unmute'],
   error:      ['LINK FAILURE', 'Tap the core to retry'],
 };
-const STAGES = ['observe', 'compress', 'decide', 'forge'];
+const STAGES = ['observe', 'compress', 'decide', 'forge', 'guard'];
 const INTENT_LABELS = {
   task: 'Task', question: 'Question', research: 'Research',
   remember: 'Remember', followup: 'Follow-up', none: 'None',
@@ -546,6 +546,7 @@ const STAGE_META = {
   compress: ['Compress', 'Memory spine'],
   decide:   ['Decide',   'JEV decisions'],
   forge:    ['Forge',    'Chat message'],
+  guard:    ['Guard',    'Sanity check'],
 };
 
 function _gauge(key, label) {
@@ -1014,6 +1015,21 @@ function _renderDecision(d) {
   }
 }
 
+function _renderGuard(g) {
+  const node = $(`.vx-node[data-stage="guard"]`);
+  if (!node) return;
+  const small = node.querySelector('small');
+  if (!small) return;
+  const coh = Number(g.coherent);
+  const dup = Number(g.duplicate);
+  const fai = Number(g.faithful);
+  if (Number.isFinite(coh) && Number.isFinite(dup) && Number.isFinite(fai)) {
+    small.textContent = `coherent ${Math.round(coh * 100)}% · dup ${Math.round(dup * 100)}% · faithful ${Math.round(fai * 100)}%`;
+  } else {
+    small.textContent = g.engine === 'error' ? 'guard unavailable' : 'Sanity check';
+  }
+}
+
 function _renderMemory(m) {
   if (!m) return;
   // Keep the top compressed layer so a new GPT-Live session can be seeded with it.
@@ -1112,6 +1128,7 @@ function _onPipeEvent(ev) {
       break;
     }
     case 'stage': _stage(ev.stage, ev.status, ev); break;
+    case 'guard': _renderGuard(ev.guard || {}); break;
     case 'decision': _renderDecision(ev.decision || {}); break;
     case 'memory': _renderMemory(ev.memory); break;
     case 'forged': _enqueue(ev); break;
@@ -1132,6 +1149,7 @@ function _onPipeEvent(ev) {
       }
       if (ev.reason === 'error' && ev.error) _systemLine('Pipeline error — ' + ev.error, 'warn');
       else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
+      else if (ev.reason === 'guard-rejected') _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn');
       else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn');
       break;
   }
