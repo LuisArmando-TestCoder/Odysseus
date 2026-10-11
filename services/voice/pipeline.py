@@ -523,10 +523,12 @@ async def _guard(owner: str, message: str, context: Dict[str, Any], use_jev: boo
                 "faithful": {
                     "type": "noul",
                     "instructions": (
-                        "Does the message faithfully represent what the user actually asked in new_user_speech? "
-                        "It must not invent facts, names, or requests the user never made."
+                        "Does the message faithfully represent what the user actually asked in new_user_speech, "
+                        "resolved against live_transcript (the whole voice conversation)? References like 'the "
+                        "arpeggio', 'that file', 'it' must be resolved from the transcript, not invented. The "
+                        "message must not invent facts, names, or requests the user never made."
                     ),
-                    "criteria": {"true": "It faithfully represents the user's request",
+                    "criteria": {"true": "It faithfully represents the user's request (references resolved from the transcript)",
                                  "false": "It invents or distorts what the user asked"},
                 },
             })
@@ -589,6 +591,7 @@ async def _forge_and_emit(
         "speaker_legend": SPEAKER_LEGEND,
         "message": message,
         "new_user_speech": fallback_text,
+        "live_transcript": mem.transcript_text(60),
         "recent_context": mem.recent_turns(8),
         "already_sent_to_chat": spine["recently_sent"],
         "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),
@@ -670,6 +673,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 "speaker_legend": SPEAKER_LEGEND,
                 "new_user_speech": new_text,
                 "assistant_speech": assistant_text,
+                "live_transcript": mem.transcript_text(60),
                 "pasted_context": [str(t.get("text", ""))[:800] for t in notes],
                 "recent_context": mem.recent_turns(8),
                 "already_sent_to_chat": spine["recently_sent"],
@@ -734,6 +738,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
             forger_input = (
                 f"Intent: {decision.get('intent')} · urgency: {decision.get('urgency')}\n\n"
                 f"=== NEW USER SPEECH (the request) ===\n{new_text}\n\n"
+                f"=== Live transcript (the whole voice conversation) ===\n{mem.transcript_text(60)}\n\n"
                 f"=== Recent context ===\n{_fmt(mem.recent_turns(8))}\n\n"
                 f"=== Memory ===\n{mem.spine_text(include_live=False)[:4000] or '(none)'}\n\n"
                 f"=== Chat thread so far ===\n{chat_txt[:3000] or '(empty)'}\n\n"
@@ -751,6 +756,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
             if promise:
                 cinput = (
                     f"=== ASSISTANT PROMISE (turn into the request) ===\n{promise}\n\n"
+                    f"=== Live transcript (the whole voice conversation) ===\n{mem.transcript_text(60)}\n\n"
                     f"=== Recent context ===\n{_fmt(mem.recent_turns(10))}\n\n"
                     f"=== Chat thread so far ===\n{chat_txt[:3000] or '(empty)'}\n\n"
                     f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")

@@ -211,6 +211,14 @@ class VoiceMemory:
     def recent_turns(self, n: int = 8) -> List[Dict[str, Any]]:
         return [{"speaker": t["speaker"], "text": t["text"]} for t in self.live[-n:]]
 
+    def transcript_text(self, max_turns: int = 60) -> str:
+        """The full voice transcript (user + assistant), newest last, as text.
+        This is the conversation the pipeline agents need to resolve references
+        ("the arpeggio", "that file") and to judge faithfulness — the raw live
+        buffer is trimmed/compressed, but the transcript is never compressed."""
+        turns = self.transcript[-max_turns:]
+        return "\n".join(f"{t['speaker'].upper()}: {t['text']}" for t in turns)
+
     def consume(self):
         """Mark everything heard so far as evaluated — the same speech can
         never be forged into the chat twice."""
