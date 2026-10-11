@@ -103,9 +103,7 @@ const _knownEls = new WeakSet();   // chat bubbles already accounted for
 let _everWatched = false;
 
 // ── Proactivity: ALFRED's promises become real chat requests ──────────────
-let _lastForgeAt = 0;        // last time the pipeline forged a request (a promise right after is just an ack)
-let _pendingCommit = null;   // a promise waiting for the pipeline to be free
-let _lastCommitAt = 0;
+let _lastForgeAt = 0;        // last time the pipeline forged a request
 let _lastUserFinalAt = 0;    // last finished user turn (its forge may still be on the way)
 
 // ── Render (WebGL) ──────────────────────────────────────────────────────────
@@ -880,40 +878,17 @@ function _aiFinalize() {
     _pending.push({ speaker: 'AI', text });
     _lastAiSaid = text; _lastAiSaidAt = Date.now();
     try { localStorage.setItem('odysseus-voice-last-' + _voiceId, JSON.stringify({ t: text.slice(0, 400), at: _lastAiSaidAt })); } catch (e) { /* ignore */ }
-    _maybeCommit(text);
+    // The decider (JEV) judges whether this assistant turn is a concrete
+    // promise to act — no regex. Schedule the pipeline so it can decide.
+    _schedulePipeline(1100);
   }
   _aiLine = null; _aiText = '';
 }
 
 // ALFRED promising to do real work ("I'll run a quick check on Stroessner").
-// Before, that promise went nowhere — only the user's own speech could reach
-// the chat. Now a concrete promise is forged into a chat request.
-const _COMMIT_RE = /\b(?:i'?ll|i will|let me|i'?m going to|i'?m gonna|i shall|voy a|d[eé]jame|lo voy a|te lo voy a)\s+(?:\w+\s+){0,3}?(?:run|do|check|look(?:\s+up|\s+into)?|search|research|find|pull(?:\s+up)?|dig|verify|investigate|fetch|confirm|try|review|compile|put together|gather|track down|buscar|revisar|investigar|verificar|consultar|averiguar|confirmar)\b/i;
-// "I'll check" with no subject, or the generic "I'm on it" acks — not a task.
-const _COMMIT_VAGUE = /^(?:[^.!?]*\b(?:on it|onto it|in hand|right away|one moment|a moment|just a moment|un momento)\b[^.!?]*[.!?]?\s*)+$/i;
-
-function _maybeCommit(text) {
-  if (!_active || !_COMMIT_RE.test(text) || _COMMIT_VAGUE.test(text)) return;
-  const now = Date.now();
-  // A promise right after a forge/dispatch is just ALFRED acknowledging the
-  // request that is already on its way — not a new one.
-  if (now - _lastForgeAt < 25000 || now - _lastCommitAt < 15000) return;
-  if (_awaiting || _queue.some(q => ['queued', 'sending', 'sent', 'running'].includes(q.status))) return;
-  _lastCommitAt = now;
-  // The user just finished a turn: its own forge is likely seconds away and
-  // the promise is probably ALFRED acknowledging it. Let the user's pipeline
-  // run first; the promise only goes out if nothing was forged meanwhile.
-  if (_pipeBusy || now - _lastUserFinalAt < 8000 || _pending.some(t => t.speaker === 'You')) {
-    _pendingCommit = text;
-    setTimeout(() => {
-      if (_pendingCommit !== text || _pipeBusy) return;   // handled by the pipeline's finally
-      _pendingCommit = null;
-      if (_active && Date.now() - _lastForgeAt > 25000) _runPipeline(false, false, text);
-    }, 9000);
-    return;
-  }
-  _runPipeline(false, false, text);
-}
+// No regex here: the assistant's finished turn is sent to the pipeline, and
+// the DECIDER (JEV) judges whether it contains a concrete promise worth
+// forging into a chat request. The forge then phrases it with an LLM.
 
 function _userDelta(chunk) {
   if (!chunk) return;
@@ -1079,13 +1054,10 @@ function _renderMemory(m) {
   set('comp', `${m.compactions || 0} compactions`);
 }
 
-async function _runPipeline(force = false, settle = false, commitment = null) {
-  if (_pipeBusy) {
-    if (commitment) _pendingCommit = commitment; else _pipeRerun = true;
-    return;
-  }
+async function _runPipeline(force = false, settle = false) {
+  if (_pipeBusy) { _pipeRerun = true; return; }
   const turns = _pending.splice(0, _pending.length);
-  if (!turns.length && !force && !settle && !commitment) return;
+  if (!turns.length && !force && !settle) return;
   _pipeBusy = true;
   _thinkTarget = 1;
   _resetStages();
@@ -1098,8 +1070,7 @@ async function _runPipeline(force = false, settle = false, commitment = null) {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       signal: ctrl.signal,
-      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle,
-                             commitment: commitment || undefined }),
+      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle }),
     });
     if (!resp.ok || !resp.body) throw new Error(`pipeline HTTP ${resp.status}`);
     const reader = resp.body.getReader();
@@ -1129,11 +1100,6 @@ async function _runPipeline(force = false, settle = false, commitment = null) {
     _pipeAbort = null;
     _thinkTarget = 0;
     if (_pipeRerun) { _pipeRerun = false; _schedulePipeline(400); }
-    else if (_pendingCommit) {
-      const c = _pendingCommit; _pendingCommit = null;
-      // Only if nothing was forged meanwhile (then the promise was an ack).
-      if (Date.now() - _lastForgeAt > 25000) setTimeout(() => _runPipeline(false, false, c), 300);
-    }
   }
 }
 
@@ -2282,7 +2248,6 @@ function _bindVoiceToSession(sid) {
   _lastAiSaidAt = 0;
   _missed = [];
   _pending = [];
-  _pendingCommit = null;
   _sayQueue = [];
   _seenKeys.clear();
   _spokenKeys.clear();
@@ -2444,7 +2409,6 @@ async function stopVoice(keepError = false) {
   if (_userText) _userFinal(null);
   _dcSend({ type: 'session.close' });
   _sayQueue = [];
-  _pendingCommit = null;
   clearTimeout(_diagT);
   _active = false;
   _connecting = false;

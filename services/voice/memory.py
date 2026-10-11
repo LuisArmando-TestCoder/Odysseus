@@ -79,6 +79,7 @@ class VoiceMemory:
         self.compactions = 0
         self.seq = 0            # monotonically increasing turn sequence number
         self.forge_seq = 0      # user turns with seq <= forge_seq were already evaluated/acted on
+        self.commit_seq = 0     # assistant turns with seq <= commit_seq were already checked for promises
         self.created_at = time.time()
         self.updated_at = time.time()
         self._lock = asyncio.Lock()
@@ -104,6 +105,7 @@ class VoiceMemory:
         self.compactions = int(d.get("compactions") or 0)
         self.seq = int(d.get("seq") or 0)
         self.forge_seq = int(d.get("forge_seq") or 0)
+        self.commit_seq = int(d.get("commit_seq") or 0)
         self.created_at = float(d.get("created_at") or time.time())
         self.updated_at = float(d.get("updated_at") or time.time())
 
@@ -121,6 +123,7 @@ class VoiceMemory:
                 "compactions": self.compactions,
                 "seq": self.seq,
                 "forge_seq": self.forge_seq,
+                "commit_seq": self.commit_seq,
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
             })
@@ -130,7 +133,7 @@ class VoiceMemory:
     def reset(self):
         self.live, self.levels, self.sent, self.transcript = [], {}, [], []
         self.turns_total = self.compactions = 0
-        self.seq = self.forge_seq = 0
+        self.seq = self.forge_seq = self.commit_seq = 0
         self.updated_at = time.time()
         try:
             os.remove(self.path)
@@ -195,6 +198,15 @@ class VoiceMemory:
     def new_user_turns(self) -> List[Dict[str, Any]]:
         """User speech not yet evaluated by the decider."""
         return [t for t in self.live if t["speaker"] == "user" and t.get("seq", 0) > self.forge_seq]
+
+    def new_assistant_turns(self) -> List[Dict[str, Any]]:
+        """Assistant speech not yet checked for a concrete promise."""
+        return [t for t in self.live if t["speaker"] == "assistant" and t.get("seq", 0) > self.commit_seq]
+
+    def consume_commitments(self):
+        """Mark assistant speech as checked for promises."""
+        self.commit_seq = self.seq
+        self._save()
 
     def recent_turns(self, n: int = 8) -> List[Dict[str, Any]]:
         return [{"speaker": t["speaker"], "text": t["text"]} for t in self.live[-n:]]
