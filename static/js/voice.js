@@ -1269,6 +1269,7 @@ function _persistQueue() {
 }
 
 function _restoreQueue() {
+  _queue = [];
   try {
     const raw = localStorage.getItem('odysseus-voice-queue-' + _voiceId);
     if (!raw) return;
@@ -1291,6 +1292,29 @@ function _restoreQueue() {
     }
     _renderQueue();
   } catch (e) { /* ignore */ }
+}
+
+// Per-chat queue isolation: the forged-message queue is scoped to the chat it
+// belongs to, so a new chat never shows (or dispatches) another chat's tasks.
+function _saveQueueToStore() {
+  // In-flight items are now running in another chat — mark them 'background'
+  // so returning to this chat shows "Running in bg" instead of a stale
+  // "Executing" that implies the task is still being driven from here.
+  const snapshot = _queue.map(q =>
+    ['sending', 'sent', 'running'].includes(q.status) ? { ...q, status: 'background' } : q
+  );
+  _queueStore[_voiceId] = snapshot;
+  _persistQueue();
+}
+
+function _loadQueueFromStore(vid) {
+  const cached = _queueStore[vid];
+  if (cached) {
+    _queue = cached;
+    _renderQueue();
+    return;
+  }
+  _restoreQueue();   // reads localStorage for _voiceId (already set to vid)
 }
 
 function _statusLabel(s) {
@@ -2309,6 +2333,7 @@ function _handleEvent(evt) {
 // can be restored when the user returns to that chat — and a NEW chat starts
 // empty instead of inheriting the previous chat's conversation.
 const _transcriptStore = {};   // voiceId -> innerHTML of #vx-transcript
+const _queueStore = {};        // voiceId -> queue array (per-chat forged-message queue)
 
 function _saveTranscript(voiceId) {
   const box = $('#vx-transcript');
@@ -2354,9 +2379,10 @@ function _bindVoiceToSession(sid) {
     vid = _pendingVoiceId;
   }
   if (vid === _voiceId) return;
-  // Save the OLD chat's transcript trail before switching, so it can be
-  // restored when the user returns to that chat.
+  // Save the OLD chat's transcript trail + queue before switching, so they can
+  // be restored when the user returns to that chat.
   _saveTranscript(_voiceId);
+  _saveQueueToStore();
   _clearLiveTranscriptState();
   _voiceId = vid;
   _memPreview = '';
@@ -2369,8 +2395,11 @@ function _bindVoiceToSession(sid) {
   _seenKeys.clear();
   _spokenKeys.clear();
   _resetNarration();
-  // Restore the NEW chat's transcript trail (empty for a brand-new chat).
+  // The old chat's in-flight turn belongs to that chat, not this one.
+  _awaiting = null;
+  // Restore the NEW chat's transcript trail + queue (empty for a brand-new chat).
   _restoreTranscript(vid);
+  _loadQueueFromStore(vid);
 }
 
 // Restart the live GPT-Live session so its accumulated conversation context is
