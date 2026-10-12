@@ -268,6 +268,16 @@
   box-shadow: 0 0 6px var(--sc-acc-s);
 }
 
+/* ── Taxonomy (self-organizing tag tree) ────────────────────────────────── */
+.tax-folder { margin-left: 0; }
+.tax-folder .tax-subfolders { margin-left: 12px; }
+.tax-folder.drag-over {
+  outline: 2px dashed var(--sc-acc);
+  outline-offset: -2px;
+  background: var(--sc-acc-soft);
+}
+.session-item.tax-dragging { opacity: 0.4; }
+
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .sidebar::after { animation: none; }

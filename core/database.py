@@ -95,6 +95,11 @@ class Session(TimestampMixin, Base):
 
     # Organization
     folder = Column(String, nullable=True, default=None)
+    # Taxonomy breadcrumb — the source of truth for the folder tree. A JSON
+    # array of tags from broad → specific, e.g. ["Research", "AI Safety",
+    # "Alignment"]. Chats are TAGGED, never moved; the tree is rebuilt from
+    # these breadcrumbs.
+    tags = Column(Text, nullable=True, default=None)
     
     # Headers stored as JSON
     headers = Column(JSON, default=dict)
@@ -149,6 +154,7 @@ class Session(TimestampMixin, Base):
             'message_count': self.message_count,
             'is_important': self.is_important,
             'folder': self.folder,
+            'tags': self.tags,
             'total_input_tokens': self.total_input_tokens or 0,
             'total_output_tokens': self.total_output_tokens or 0,
             'crew_member_id': self.crew_member_id,
@@ -930,6 +936,24 @@ def _migrate_add_folder_column():
     except Exception as e:
         logging.getLogger(__name__).warning(f"Migration check for folder failed: {e}")
 
+def _migrate_add_tags_column():
+    """Add tags (taxonomy breadcrumb) column to sessions table if missing."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(sessions)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "tags" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN tags TEXT")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'tags' column to sessions")
+        conn.close()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Migration check for tags failed: {e}")
+
 def _migrate_add_token_columns():
     """Add cumulative token tracking columns to sessions table."""
     import sqlite3
@@ -1591,6 +1615,7 @@ def init_db():
     _migrate_add_document_archived_column()
     _migrate_add_last_message_at_column()
     _migrate_add_folder_column()
+    _migrate_add_tags_column()
     _migrate_add_token_columns()
     _migrate_add_mode_column()
     _migrate_add_multiuser_owner_columns()

@@ -1079,6 +1079,100 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             "unfiled_remaining": unfiled_remaining_after,
         }
 
+    # ── Taxonomy (self-organizing chat folders) ─────────────────────────────
+
+    @router.get("/taxonomy/tree")
+    def taxonomy_tree(request: Request):
+        """Return the persisted folder tree (cache) for the current user."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        from services.taxonomy import get_tree
+        return {"tree": get_tree(user)}
+
+    @router.post("/taxonomy/reconcile")
+    def taxonomy_reconcile(request: Request):
+        """Reconcile the cached tree against the breadcrumbs (source of truth).
+        Renders instantly from cache; only real differences are applied."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        from services.taxonomy import get_session_breadcrumbs, reconcile_tree
+        breadcrumbs = get_session_breadcrumbs(user)
+        tree = reconcile_tree(user, breadcrumbs)
+        return {"tree": tree, "changed": True}
+
+    @router.post("/taxonomy/place")
+    async def taxonomy_place(request: Request):
+        """Team A — place a chat into the tree (reactive, per-chat)."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        session_id = str(body.get("session_id") or "").strip()
+        title = str(body.get("title") or "").strip()
+        excerpt = str(body.get("excerpt") or "").strip()
+        if not session_id:
+            raise HTTPException(400, "session_id is required")
+        from services.taxonomy import place_chat, get_tree
+        breadcrumb = place_chat(user, session_id, title, excerpt)
+        return {"breadcrumb": breadcrumb, "tree": get_tree(user)}
+
+    @router.post("/taxonomy/segment")
+    async def taxonomy_segment(request: Request):
+        """Team B — segment an over-threshold level into sub-categories."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        path = body.get("path") or []
+        sessions = body.get("sessions") or []
+        if not isinstance(sessions, list):
+            raise HTTPException(400, "sessions must be a list")
+        from services.taxonomy import segment_level
+        groups = segment_level(user, list(path), sessions)
+        return {"groups": groups}
+
+    @router.post("/taxonomy/move")
+    async def taxonomy_move(request: Request):
+        """Move a chat to a new breadcrumb (drag-and-drop). Updates the chat's
+        breadcrumb (source of truth) and the tree cache."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        session_id = str(body.get("session_id") or "").strip()
+        tags = body.get("tags") or []
+        if not session_id:
+            raise HTTPException(400, "session_id is required")
+        if not isinstance(tags, list):
+            raise HTTPException(400, "tags must be a list")
+        from services.taxonomy import serialize_breadcrumb, get_tree, rebuild_tree, save_tree, get_session_breadcrumbs
+        # Persist the new breadcrumb (source of truth).
+        db = SessionLocal()
+        try:
+            row = db.query(DbSession).filter(DbSession.id == session_id, DbSession.owner == user).first()
+            if not row:
+                raise HTTPException(404, "Session not found")
+            row.tags = serialize_breadcrumb([str(t).strip() for t in tags if str(t).strip()])
+            db.commit()
+        finally:
+            db.close()
+        # Rebuild + save the tree cache.
+        breadcrumbs = get_session_breadcrumbs(user)
+        tree = rebuild_tree(user, breadcrumbs)
+        save_tree(user, tree)
+        return {"tree": tree}
+
     @router.get("/session/{session_id}/context_info")
     async def get_context_info(request: Request, session_id: str):
         """Get the real context length for a session's model from the endpoint."""

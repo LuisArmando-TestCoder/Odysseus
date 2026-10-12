@@ -815,10 +815,265 @@ export function renderSessionList() {
   _renderRAF = requestAnimationFrame(_renderSessionListImpl);
 }
 
+// ── Taxonomy (self-organizing tag tree) ────────────────────────────────────
+// The tree is a persisted cache; breadcrumbs on each session are the source of
+// truth. This renderer draws the tree recursively and lets the user drag a
+// chat onto a folder to move it (updating its breadcrumb). Dragging near the
+// top/bottom edge auto-scrolls, with speed growing exponentially past the
+// threshold.
+
+let _taxTree = null;          // cached tree from /api/taxonomy/tree
+let _taxTreeLoading = false;
+let _taxReconciled = false;   // guard: reconcile once per taxonomy session
+
+async function _loadTaxTree() {
+  if (_taxTreeLoading) return _taxTree;
+  if (_taxTree) return _taxTree;   // already loaded — don't re-fetch
+  _taxTreeLoading = true;
+  try {
+    const r = await fetch(`${API_BASE}/api/taxonomy/tree`, { credentials: 'same-origin' });
+    if (r.ok) _taxTree = (await r.json()).tree || { name: null, children: {} };
+    else _taxTree = { name: null, children: {} };
+  } catch (e) {
+    _taxTree = { name: null, children: {} };
+  } finally {
+    _taxTreeLoading = false;
+  }
+  return _taxTree;
+}
+
+// Exponential edge auto-scroll while dragging. Returns a cleanup function.
+function _taxEdgeAutoScroll(scrollEl) {
+  let raf = 0;
+  let lastY = 0;
+  const THRESHOLD = 60;   // px from the edge where scrolling begins
+  const BASE = 4;         // px/frame at the threshold
+  const GROWTH = 1.12;    // exponential factor per px past the threshold
+
+  function onMove(e) {
+    lastY = e.clientY;
+  }
+  function tick() {
+    raf = requestAnimationFrame(tick);
+    if (!scrollEl) return;
+    const rect = scrollEl.getBoundingClientRect();
+    const topDist = lastY - rect.top;
+    const botDist = rect.bottom - lastY;
+    let speed = 0;
+    if (topDist < THRESHOLD && topDist > -20) {
+      const over = THRESHOLD - topDist;
+      speed = -BASE * Math.pow(GROWTH, over);
+    } else if (botDist < THRESHOLD && botDist > -20) {
+      const over = THRESHOLD - botDist;
+      speed = BASE * Math.pow(GROWTH, over);
+    }
+    if (speed !== 0) scrollEl.scrollTop += speed;
+  }
+  document.addEventListener('mousemove', onMove, { passive: true });
+  raf = requestAnimationFrame(tick);
+  return () => {
+    cancelAnimationFrame(raf);
+    document.removeEventListener('mousemove', onMove);
+  };
+}
+
+function _renderTaxonomyList(list) {
+  // Render instantly from the cached tree, then reconcile in the background.
+  const tree = _taxTree || { name: null, children: {} };
+  const byId = new Map(sessions.map(s => [s.id, s]));
+
+  // Collect every session id already placed in the tree.
+  const placed = new Set();
+  (function walk(node) {
+    (node.sessions || []).forEach(sid => placed.add(sid));
+    Object.values(node.children || {}).forEach(walk);
+  })(tree);
+
+  const frag = document.createDocumentFragment();
+
+  // Recursive render that appends into a given container.
+  function renderInto(container, node, path) {
+    const children = node.children || {};
+    const names = Object.keys(children).sort();
+    for (const name of names) {
+      const child = children[name];
+      const childPath = path.concat(name);
+      const folderDiv = document.createElement('div');
+      folderDiv.className = 'session-folder tax-folder';
+      folderDiv.dataset.taxPath = JSON.stringify(childPath);
+
+      const header = document.createElement('div');
+      header.className = 'session-folder-header';
+      const toggle = document.createElement('span');
+      toggle.className = 'folder-toggle';
+      toggle.textContent = '\u25BC';
+      header.appendChild(toggle);
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'folder-name';
+      nameSpan.textContent = name;
+      header.appendChild(nameSpan);
+      const countSpan = document.createElement('span');
+      countSpan.className = 'folder-count';
+      countSpan.textContent = `(${(child.sessions || []).length})`;
+      header.appendChild(countSpan);
+      header.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const content = folderDiv.querySelector('.session-folder-content');
+        if (content) {
+          const hidden = content.style.display === 'none';
+          content.style.display = hidden ? '' : 'none';
+          toggle.textContent = hidden ? '\u25BC' : '\u25B6';
+        }
+      });
+      folderDiv.appendChild(header);
+
+      const content = document.createElement('div');
+      content.className = 'session-folder-content';
+      (child.sessions || []).forEach(sid => {
+        const s = byId.get(sid);
+        if (s) content.appendChild(createSessionItem(s));
+      });
+      folderDiv.appendChild(content);
+
+      // Recurse into sub-folders (nested).
+      renderInto(folderDiv, child, childPath);
+
+      container.appendChild(folderDiv);
+    }
+  }
+
+  renderInto(frag, tree, []);
+
+  // Unsorted (orphaned) sessions.
+  const orphaned = sessions.filter(s => !s.archived && !placed.has(s.id) && !_isIncognitoSession(s.id));
+  if (orphaned.length) {
+    const unsortedDiv = document.createElement('div');
+    unsortedDiv.className = 'session-folder unsorted-folder tax-folder';
+    unsortedDiv.dataset.taxPath = '[]';
+    const header = document.createElement('div');
+    header.className = 'session-folder-header';
+    const toggle = document.createElement('span');
+    toggle.className = 'folder-toggle';
+    toggle.textContent = '\u25BC';
+    header.appendChild(toggle);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'folder-name';
+    nameSpan.textContent = 'Unsorted';
+    header.appendChild(nameSpan);
+    const countSpan = document.createElement('span');
+    countSpan.className = 'folder-count';
+    countSpan.textContent = `(${orphaned.length})`;
+    header.appendChild(countSpan);
+    header.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const content = unsortedDiv.querySelector('.session-folder-content');
+      if (content) {
+        const hidden = content.style.display === 'none';
+        content.style.display = hidden ? '' : 'none';
+        toggle.textContent = hidden ? '\u25BC' : '\u25B6';
+      }
+    });
+    unsortedDiv.appendChild(header);
+    const content = document.createElement('div');
+    content.className = 'session-folder-content';
+    orphaned.forEach(s => content.appendChild(createSessionItem(s)));
+    unsortedDiv.appendChild(content);
+    frag.appendChild(unsortedDiv);
+  }
+
+  list.innerHTML = '';
+  list.appendChild(frag);
+  _postRenderSessionList(list);
+  _initTaxDragDrop(list);
+
+  // Load the tree (if not already cached) and re-render once it arrives, then
+  // reconcile in the background (breadcrumbs are the source of truth). The
+  // reconcile is guarded so it runs once per taxonomy session and only
+  // re-renders when the tree actually changed — avoiding a render loop.
+  if (!_taxTree) {
+    _loadTaxTree().then(() => renderSessionList());
+  }
+  if (!_taxReconciled) {
+    _taxReconciled = true;
+    _loadTaxTree().then(() => {
+      fetch(`${API_BASE}/api/taxonomy/reconcile`, { method: 'POST', credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.tree && JSON.stringify(d.tree) !== JSON.stringify(_taxTree)) {
+            _taxTree = d.tree;
+            renderSessionList();
+          }
+        })
+        .catch(() => {});
+    });
+  }
+}
+
+// Drag-and-drop: move a chat onto a folder to update its breadcrumb.
+function _initTaxDragDrop(list) {
+  let dragSid = null;
+  let cleanupScroll = null;
+
+  list.querySelectorAll('.session-item').forEach(item => {
+    item.setAttribute('draggable', 'true');
+    item.addEventListener('dragstart', (e) => {
+      dragSid = item.dataset.sessionId;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', dragSid); } catch (_) {}
+      item.classList.add('tax-dragging');
+      // Start edge auto-scroll on the sidebar's scroll container.
+      const scroller = list.closest('.sidebar-inner') || list;
+      cleanupScroll = _taxEdgeAutoScroll(scroller);
+    });
+    item.addEventListener('dragend', () => {
+      dragSid = null;
+      item.classList.remove('tax-dragging');
+      if (cleanupScroll) { cleanupScroll(); cleanupScroll = null; }
+      list.querySelectorAll('.tax-folder.drag-over').forEach(f => f.classList.remove('drag-over'));
+    });
+  });
+
+  list.querySelectorAll('.tax-folder').forEach(folder => {
+    folder.addEventListener('dragover', (e) => {
+      if (!dragSid) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      folder.classList.add('drag-over');
+    });
+    folder.addEventListener('dragleave', () => folder.classList.remove('drag-over'));
+    folder.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      folder.classList.remove('drag-over');
+      if (!dragSid) return;
+      let tags = [];
+      try { tags = JSON.parse(folder.dataset.taxPath || '[]'); } catch (_) {}
+      try {
+        await fetch(`${API_BASE}/api/taxonomy/move`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: dragSid, tags }),
+        });
+        // Update local session breadcrumb so the next render reflects it.
+        const s = sessions.find(x => x.id === dragSid);
+        if (s) s.tags = JSON.stringify(tags);
+        renderSessionList();
+      } catch (err) {
+        console.error('Taxonomy move failed:', err);
+      }
+    });
+  });
+}
+
 function _renderSessionListImpl() {
   _renderRAF = null;
   const list = uiModule.el('session-list');
   if (!list) return;
+
+  // ── Taxonomy mode: render the self-organizing tag tree. ──
+  if (_sortMode === 'taxonomy') {
+    _renderTaxonomyList(list);
+    return;
+  }
 
   // Get saved order from localStorage
   const savedOrder = Storage.get('session-order');
@@ -3126,6 +3381,8 @@ export function setSortMode(mode) {
   _sortMode = mode || null;
   if (mode) Storage.set('odysseus-session-sort', mode);
   else Storage.remove('odysseus-session-sort');
+  // Re-entering taxonomy mode re-arms the one-time reconcile.
+  if (mode !== 'taxonomy') _taxReconciled = false;
   renderSessionList();
 }
 
