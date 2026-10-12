@@ -48,12 +48,22 @@ let _agentSummaries = new Set();  // ids we've already asked an agent to refine
 const _CAP = 50;            // max DOM dots AND max log rows
 const _MAX_MEMORY = 5000;   // in-memory cap (persistence also caps at 5000)
 
-// ── Position: fixed radius, random angle (always on the circumference) ────
-function _randomPosition() {
-  const theta = Math.random() * Math.PI * 2;
-  // radius ~0.82 of the orb's half-size, so dots sit on the ring inside the
-  // outer instrument rings but clear of the core.
-  const r = 0.82;
+// ── Position: deterministic polar coordinates ─────────────────────────────
+// Two axes instead of x/y semantics:
+//   • rotation (angle)  — derived from the timestamp: one full revolution per
+//     minute. The second-within-the-minute maps to an angle, so dots form a
+//     clock-like spiral as the conversation grows. NOT random.
+//   • radius (distance) — "how far from the centre" = significance: more
+//     tokens/effort (messages) or more critical (errors) sit closer to centre.
+// Dots are STATIC: the position is a pure function of (ts, significance), so a
+// dot never moves once placed.
+const _R_MAX = 0.82;   // outer boundary (inside the instrument rings)
+const _R_MIN = 0.14;   // inner boundary (clear of the plasma core)
+function _polarPosition(ts, significance) {
+  const s = Math.max(0, Math.min(1, Number(significance) || 0.5));
+  const frac = ((Number(ts) || Date.now()) % 60000) / 60000;  // 0..1 within the minute
+  const theta = frac * Math.PI * 2;
+  const r = _R_MIN + (1 - s) * (_R_MAX - _R_MIN);
   return { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
 }
 
@@ -113,9 +123,12 @@ export function seedVectors(list) {
     const key = (v.ts || 0) + '|' + (v.type || '') + '|' + (v.label || '');
     if (seen.has(key)) continue;
     seen.add(key);
+    const ex = (v && v.extra) || {};
     _vectors.push({ id: v.id || _id(), type: v.type || 'message', ts: v.ts || Date.now(),
       label: v.label || '', x: Number(v.x) || 0, y: Number(v.y) || 0,
-      color: v.color || _meta(v.type).color });
+      color: v.color || _meta(v.type).color,
+      significance: (ex.significance != null) ? ex.significance : 0.5,
+      tokens: ex.tokens });
   }
   _vectors.sort((a, b) => (a.ts || 0) - (b.ts || 0));
   _vectors = _vectors.slice(-_MAX_MEMORY);
@@ -127,11 +140,13 @@ export function seedVectors(list) {
 export function addVector(type, label, opts = {}) {
   if (!_dotContainer) return;
   const meta = _meta(type);
-  const pos = (opts.x != null && opts.y != null) ? { x: opts.x, y: opts.y } : _randomPosition();
+  const significance = (opts.significance != null) ? opts.significance : 0.5;
+  const pos = (opts.x != null && opts.y != null) ? { x: opts.x, y: opts.y } : _polarPosition(opts.ts, significance);
   const v = {
     id: _id(), type, ts: opts.ts || Date.now(),
     label: label || meta.label, x: pos.x, y: pos.y,
     color: opts.color || meta.color,
+    significance, tokens: opts.tokens,
   };
   _vectors.push(v);
   if (_vectors.length > _MAX_MEMORY) _vectors.splice(0, _vectors.length - _MAX_MEMORY);
@@ -171,6 +186,7 @@ function _persist(v) {
       body: JSON.stringify({
         voice_id: _voiceId, chat_session_id: _sid,
         type: v.type, label: v.label, ts: v.ts, x: v.x, y: v.y, color: v.color,
+        extra: { significance: v.significance, tokens: v.tokens },
       }),
     }).catch(() => {});
   } catch (e) { /* best-effort */ }
@@ -263,6 +279,8 @@ function _showTooltip(v, el) {
   };
   _tooltip.appendChild(row('Type', `${_meta(v.type).label} (${v.type})`));
   _tooltip.appendChild(row('Time', _fmtTime(v.ts)));
+  if (v.tokens != null) _tooltip.appendChild(row('Tokens', String(v.tokens)));
+  _tooltip.appendChild(row('Weight', `${Math.round((v.significance ?? 0.5) * 100)}%`));
   _tooltip.appendChild(row('Pos', `${v.x.toFixed(2)}, ${v.y.toFixed(2)}`));
   const lab = document.createElement('div');
   lab.className = 'vx-vec-tt-label';

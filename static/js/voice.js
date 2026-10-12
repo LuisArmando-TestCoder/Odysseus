@@ -945,7 +945,7 @@ function _userFinal(full) {
   _pending.push({ speaker: 'You', text });   // the pipeline always gets the whole turn
   _userLine = null;
   _lastUserFinalAt = Date.now();
-  _vector('question', text.slice(0, 90));
+  _vector('question', text.slice(0, 90), { tokens: _estTokens(text) });
   _schedulePipeline(1100);
 }
 
@@ -1190,10 +1190,10 @@ function _onPipeEvent(ev) {
         clearTimeout(_settleTimer);
         _settleTimer = setTimeout(() => _runPipeline(false, true), 2500);
       }
-      if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90)); }
+      if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90), { criticality: 1 }); }
       else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
-      else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message'); }
-      else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide'); }
+      else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 }); }
+      else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide', { criticality: 0.8 }); }
       break;
   }
 }
@@ -1250,8 +1250,32 @@ function _enqueue(ev) {
 // Sync a task to the server-side voice memory so in-progress + queued tasks
 // survive a server restart and can be summarized on restore.
 // Emit one conversation vector (radar dot). Cheap + non-blocking by design.
-function _vector(type, label) {
-  try { vectors.addVector(type, label); } catch (e) { /* ignore */ }
+//
+// This is the single centralized point where every pipeline/chat event becomes
+// a dot. It computes the two polar coordinates:
+//   • significance → radius   (closer to centre = more tokens/effort/criticality)
+//   • ts → angle              (one full revolution per minute; deterministic)
+// The position itself is derived inside voice_vectors from (ts, significance).
+function _vector(type, label, opts = {}) {
+  // Compute significance from whatever evidence the event carries:
+  //  - explicit `tokens` (effort/quota consumed at creation)
+  //  - explicit `criticality` for errors (0..1)
+  //  - otherwise: length of the text, normalised into 0..1.
+  let significance;
+  if (typeof opts.significance === 'number') {
+    significance = opts.significance;
+  } else if (type === 'guard_error' || type === 'system_error') {
+    significance = Math.max(0, Math.min(1, Number(opts.criticality) || 0.7));
+  } else if (typeof opts.tokens === 'number' && opts.tokens > 0) {
+    // ~1024 tokens ≈ max weight (a substantial, expensive message).
+    significance = Math.min(1, Math.sqrt(opts.tokens / 1024));
+  } else {
+    const len = String(label || '').length;
+    significance = Math.min(1, Math.sqrt(len / 600));
+  }
+  try {
+    vectors.addVector(type, label, { ts: opts.ts, significance, tokens: opts.tokens });
+  } catch (e) { /* ignore */ }
 }
 
 // Detect conversation-vector types in a settled chat message (see
@@ -1261,15 +1285,21 @@ function _detectChatVectors(el, isAi, text) {
   const hasThinking = !!(el.querySelector('.think, .thinking, .thinking-section, .live-think-inner'));
   const hasCode = /```|`{1,3}[\s\S]+`{1,3}/.test(text) || !!el.querySelector('pre, code');
   const hasSources = !!el.querySelector('.sources-box') || /\bsearch|citing|sources?\b/i.test(text.slice(0, 400));
+  const tokens = _estTokens(text);
   if (!isAi) {
     // Direct chat message (sent by the user in the chat, not voiced to Alfred).
     if (_voiceInjectedTexts.has(text.trim())) return;
-    _vector('direct_message', text.slice(0, 90));
+    _vector('direct_message', text.slice(0, 90), { tokens });
     return;
   }
-  if (hasThinking) _vector('thinking', 'Thought through a reasoning step');
-  if (hasCode) _vector('code', 'Produced or executed code');
-  if (hasSources) _vector('search', 'Performed a search');
+  if (hasThinking) _vector('thinking', 'Thought through a reasoning step', { tokens });
+  if (hasCode) _vector('code', 'Produced or executed code', { tokens });
+  if (hasSources) _vector('search', 'Performed a search', { tokens });
+}
+
+// Rough token estimate (~4 chars/token) — good enough to weight significance.
+function _estTokens(text) {
+  return Math.max(1, Math.round((String(text || '').length) / 4));
 }
 
 function _buildLegend() {
@@ -1616,7 +1646,7 @@ function _dispatchTick(manual = false) {
     batch.forEach(q => _setItem(q, 'sent'));
     _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
     _voiceInjectedTexts.add(text.trim());
-    _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`));
+    _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`), { tokens: _estTokens(text) });
     _systemLine(batch.length === 1 ? `Sent to chat → “${batch[0].title}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
     // Tell GPT-Live (quietly) that real work just started, so it can reassure
     // the user with accurate status instead of guessing while the chat runs.
