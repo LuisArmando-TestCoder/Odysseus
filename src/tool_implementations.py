@@ -1536,6 +1536,7 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
         # Secrets/credentials the agent must NOT write — kept read-only (masked)
         # so API keys never flow through chat. User sets these in the panel.
         _SECRET_KEYS = {
+            "langsearch_api_key",
             "brave_api_key", "google_pse_key", "google_pse_cx",
             "tavily_api_key", "serper_api_key", "app_public_url",
         }

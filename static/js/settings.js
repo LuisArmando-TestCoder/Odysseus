@@ -1054,6 +1054,7 @@ async function initSttSettings() {
    ═══════════════════════════════════════════ */
 
 var _searchProviderHints = {
+  langsearch: 'Free Web Search API for AI agents. Get your key at langsearch.com/dashboard',
   searxng: 'Self-hosted SearXNG instance. Leave URL empty to use the SEARXNG_INSTANCE env var.',
   duckduckgo: 'Free search — no API key required. Works out of the box.',
   brave: 'Get your API key from brave.com/search/api',
@@ -1062,13 +1063,13 @@ var _searchProviderHints = {
   serper: 'Google results via API. 2,500 free queries at serper.dev',
   disabled: 'Web search and deep research tools will be unavailable.',
 };
-var _searchNeedsKey = { brave: 1, google_pse: 1, tavily: 1, serper: 1 };
+var _searchNeedsKey = { langsearch: 1, brave: 1, google_pse: 1, tavily: 1, serper: 1 };
 var _searchLabels = {
-  searxng: 'SearXNG', duckduckgo: 'DuckDuckGo', brave: 'Brave Search',
+  langsearch: 'LangSearch', searxng: 'SearXNG', duckduckgo: 'DuckDuckGo', brave: 'Brave Search',
   google_pse: 'Google PSE', tavily: 'Tavily', serper: 'Serper', disabled: 'Disabled',
 };
 var _searchKeyFields = {
-  brave: 'brave_api_key', google_pse: 'google_pse_key',
+  langsearch: 'langsearch_api_key', brave: 'brave_api_key', google_pse: 'google_pse_key',
   tavily: 'tavily_api_key', serper: 'serper_api_key',
 };
 
@@ -1099,7 +1100,8 @@ async function initSearchSettings() {
     keyRow.style.display = _searchNeedsKey[prov] ? 'flex' : 'none';
     cxRow.style.display = prov === 'google_pse' ? 'flex' : 'none';
     hint.textContent = _searchProviderHints[prov] || '';
-    if (prov === 'brave') keyInput.placeholder = 'Brave API key';
+    if (prov === 'langsearch') keyInput.placeholder = 'LangSearch API key';
+    else if (prov === 'brave') keyInput.placeholder = 'Brave API key';
     else if (prov === 'google_pse') keyInput.placeholder = 'Google API key';
     else if (prov === 'tavily') keyInput.placeholder = 'Tavily API key';
     else if (prov === 'serper') keyInput.placeholder = 'Serper API key';
@@ -1386,6 +1388,7 @@ async function initSearchSettings() {
 
 // SVG logos for each search provider (16×16 viewBox normalised to 24×24).
 var _SEARCH_PROVIDER_LOGOS = {
+  langsearch: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 4a1 1 0 0 0-1 1c0 .2.05.38.13.54C18.5 7.5 15.1 9 11.5 9H4.5a2 2 0 0 0-2 2v0a2 2 0 0 0 2 2H8a2 2 0 0 0 2 2l-1-1v-1l-1-1 4-1a11 11 0 0 1 8.4 1.2c.34-.14.72-.2 1.1-.2a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1 1 1 0 0 1-1-1v-.5l-.5.25A12.9 12.9 0 0 0 20 20a1 1 0 1 1-1 1l-1.1-3.4A12.5 12.5 0 0 1 6.5 15H5l-1 2a1 1 0 1 1-1-1l.6-1.2 1.2-2.4.7-1.4A10 10 0 0 1 14 6.5 15 15 0 0 0 21 4z"/></svg>',
   searxng:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0-2a8 8 0 1 1-4.93 14.32l-3.4 3.4a1 1 0 1 1-1.4-1.4l3.4-3.4A8 8 0 0 1 10 2zM13 8.5L11.5 10 13 11.5l-1 1L10.5 11 9 12.5l-1-1L9.5 10 8 8.5l1-1L10.5 9 12 7.5z"/></svg>',
   duckduckgo:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.5 5.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zm5 0a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM12 13c-1.5 0-3.6.8-3.6 2.5C8.4 17.2 10.4 18 12 18s3.6-.8 3.6-2.5C15.6 13.8 13.5 13 12 13z"/></svg>',
   brave:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4l-1.5 1L15 3l-3 .5L9 3 6.5 5 5 4 3 7l1.5 2L4 12l3 5 4 3 1 1 1-1 4-3 3-5-.5-3L21 7l-2-3zM12 17l-2.5-2 .5-3-2-1.5 2-1.5L11 7l3-1 3 1-.5 2 2 1.5-2 1.5.5 3L14.5 17 12 17z"/></svg>',

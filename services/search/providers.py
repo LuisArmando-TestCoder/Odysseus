@@ -28,6 +28,7 @@ _BROWSER_UA = (
 
 # Provider registry — maps setting value to (label, needs_key, needs_url)
 PROVIDER_INFO = {
+    "langsearch": ("LangSearch",      True,  False),
     "searxng":  ("SearXNG",           False, True),
     "brave":    ("Brave Search",      True,  False),
     "duckduckgo": ("DuckDuckGo",      False, False),
@@ -62,6 +63,7 @@ def _get_provider_key(provider: str) -> str:
     """Return the API key for a specific provider, with legacy fallback."""
     settings = _get_search_settings()
     key_map = {
+        "langsearch": "langsearch_api_key",
         "brave": "brave_api_key",
         "google_pse": "google_pse_key",
         "tavily": "tavily_api_key",
@@ -77,6 +79,7 @@ def _get_provider_key(provider: str) -> str:
     if legacy:
         return legacy
     env_map = {
+        "langsearch": "LANGSEARCH_API_KEY",
         "brave": "DATA_BRAVE_API_KEY",
         "google_pse": "GOOGLE_API_KEY",
         "tavily": "TAVILY_API_KEY",
@@ -117,6 +120,10 @@ def _get_safesearch_level() -> str:
 def _safesearch_for(provider: str) -> Optional[str]:
     """Translate the canonical SafeSearch level into provider-specific values."""
     level = _get_safesearch_level()
+    if provider == "langsearch":
+        # LangSearch has no per-request SafeSearch knob; filtering is handled
+        # at the provider's index time, so no parameter is sent.
+        return None
     if provider == "searxng":
         return {"strict": "2", "moderate": "1", "off": "0"}[level]
     if provider == "brave":
@@ -526,6 +533,77 @@ def google_pse_search(query: str, count: int = 10, time_filter: Optional[str] = 
         })
 
     logger.info(f"Google PSE returned {len(results)} results")
+    return results
+
+
+# ── LangSearch ──
+
+def langsearch_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Search using the LangSearch Web Search API.
+
+    Requires a LangSearch API key via the `langsearch_api_key` setting or the
+    `LANGSEARCH_API_KEY` env var. Returns a list of {title, url, snippet, age}.
+    """
+    api_key = _get_provider_key("langsearch") or os.environ.get("LANGSEARCH_API_KEY", "")
+    if not api_key:
+        logger.warning("LangSearch: no API key configured")
+        return []
+
+    payload = {
+        "query": query,
+        "count": min(max(count, 1), 50),
+        "contents": {"text": False},
+        "freshness": "noLimit",
+    }
+    if time_filter:
+        time_map = {
+            "day": "oneDay",
+            "week": "oneWeek",
+            "month": "oneMonth",
+            "year": "oneYear",
+        }
+        if time_filter in time_map:
+            payload["freshness"] = time_map[time_filter]
+
+    try:
+        response = httpx.post(
+            "https://api.langsearch.com/v1/web-search",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code == 429:
+            raise RateLimitError("LangSearch rate limit hit")
+        response.raise_for_status()
+        data = response.json()
+    except httpx.RequestError as e:
+        error_logger.error(f"LangSearch search failed: {e}")
+        return []
+    except RateLimitError as e:
+        error_logger.error(str(e))
+        return []
+
+    try:
+        pages = data.get("data", {}).get("webPages", {}).get("value", [])
+    except (AttributeError, TypeError):
+        pages = []
+
+    results = []
+    for item in pages[:count]:
+        url = item.get("url", "")
+        if not url:
+            continue
+        results.append({
+            "title": item.get("name", "") or item.get("title", ""),
+            "url": url,
+            "snippet": item.get("snippet", "") or item.get("text", ""),
+            "age": item.get("datePublished", "") or "",
+        })
+
+    logger.info(f"LangSearch returned {len(results)} results")
     return results
 
 

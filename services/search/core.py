@@ -23,6 +23,7 @@ from .cache import (
 from .query import _cache_duration_for_query
 from .ranking import rank_search_results
 from .providers import (
+    langsearch_search,
     searxng_search_api,
     brave_search,
     duckduckgo_search,
@@ -71,7 +72,9 @@ def update_search_config(api_key: str = None, **kwargs):
 
 def _call_provider(provider_name: str, query: str, count: int, time_filter: str = None) -> List[dict]:
     """Call a search provider by name. Returns list of results or empty list."""
-    if provider_name == "searxng":
+    if provider_name == "langsearch":
+        return langsearch_search(query, count, time_filter)
+    elif provider_name == "searxng":
         return searxng_search_api(query, count, time_filter=time_filter)
     elif provider_name == "brave":
         return brave_search(query, count, time_filter)
@@ -93,18 +96,22 @@ _FALLBACK_ORDER = ["duckduckgo"]
 
 
 def _build_provider_chain(primary: str) -> List[str]:
-    """Build ordered list: Brave first (when its key is configured), then the
-    primary provider, then configured/default fallbacks.
+    """Build ordered list: LangSearch first (when its key is configured), then
+    Brave (when its key is configured), then the primary provider, then
+    configured/default fallbacks.
 
-    Brave is preferred over every other provider — it returns clean, ranked
-    results and is the user's explicit choice for chat searches. When no Brave
-    key is present it is simply skipped and the chain behaves as before.
+    LangSearch is preferred over every other provider — it returns clean,
+    ranked, source-backed results and is the user's explicit choice for chat
+    searches. When its key is absent it is simply skipped and the chain behaves
+    as before.
     """
     chain: List[str] = []
     settings = _get_search_settings()
+    if _get_provider_key("langsearch"):
+        chain.append("langsearch")
     if _get_provider_key("brave"):
         chain.append("brave")
-    if primary and primary != "brave" and primary not in chain and primary != "disabled":
+    if primary and primary not in ("langsearch", "brave") and primary not in chain and primary != "disabled":
         chain.append(primary)
     user_chain = settings.get("search_fallback_chain") or []
     if isinstance(user_chain, str):
