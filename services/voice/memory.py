@@ -75,6 +75,7 @@ class VoiceMemory:
         self.levels: Dict[int, List[str]] = {}        # level -> summaries (chronological)
         self.sent: List[Dict[str, Any]] = []          # messages forged into the chat
         self.transcript: List[Dict[str, Any]] = []    # full raw voice turns (user + assistant), never compressed
+        self.tasks: List[Dict[str, Any]] = []         # tasks dispatched to the chat (in-progress + queued), for restore
         self.turns_total = 0
         self.compactions = 0
         self.seq = 0            # monotonically increasing turn sequence number
@@ -101,6 +102,7 @@ class VoiceMemory:
         self.levels = {int(k): v for k, v in (d.get("levels") or {}).items() if isinstance(v, list)}
         self.sent = d.get("sent") or []
         self.transcript = d.get("transcript") or []
+        self.tasks = d.get("tasks") or []
         self.turns_total = int(d.get("turns_total") or 0)
         self.compactions = int(d.get("compactions") or 0)
         self.seq = int(d.get("seq") or 0)
@@ -119,6 +121,7 @@ class VoiceMemory:
                 "levels": {str(k): v for k, v in self.levels.items()},
                 "sent": self.sent[-_MAX_SENT_HISTORY:],
                 "transcript": self.transcript,
+                "tasks": self.tasks[-_MAX_SENT_HISTORY:],
                 "turns_total": self.turns_total,
                 "compactions": self.compactions,
                 "seq": self.seq,
@@ -131,7 +134,7 @@ class VoiceMemory:
             logger.warning(f"voice memory save failed: {e}")
 
     def reset(self):
-        self.live, self.levels, self.sent, self.transcript = [], {}, [], []
+        self.live, self.levels, self.sent, self.transcript, self.tasks = [], {}, [], [], []
         self.turns_total = self.compactions = 0
         self.seq = self.forge_seq = self.commit_seq = 0
         self.updated_at = time.time()
@@ -215,9 +218,21 @@ class VoiceMemory:
         """The full voice transcript (user + assistant), newest last, as text.
         This is the conversation the pipeline agents need to resolve references
         ("the arpeggio", "that file") and to judge faithfulness — the raw live
-        buffer is trimmed/compressed, but the transcript is never compressed."""
+        buffer is trimmed/compressed, but the transcript is never compressed.
+        Each turn carries its timestamp so agents can reason about ordering and
+        recency."""
         turns = self.transcript[-max_turns:]
-        return "\n".join(f"{t['speaker'].upper()}: {t['text']}" for t in turns)
+        lines = []
+        for t in turns:
+            ts = t.get("ts")
+            stamp = ""
+            if ts:
+                try:
+                    stamp = time.strftime("[%H:%M:%S] ", time.localtime(float(ts)))
+                except (TypeError, ValueError, OSError):
+                    stamp = ""
+            lines.append(f"{stamp}{t['speaker'].upper()}: {t['text']}")
+        return "\n".join(lines)
 
     def consume(self):
         """Mark everything heard so far as evaluated — the same speech can
@@ -257,6 +272,39 @@ class VoiceMemory:
                           "intent": (decision or {}).get("intent")})
         self.sent = self.sent[-_MAX_SENT_HISTORY:]
         self._save()
+
+    # ── Task tracking (in-progress + queued tasks survive a restart) ──
+
+    def record_task(self, task_id: str, title: str, message: str, status: str = "queued"):
+        """Record a task dispatched to the chat. Status: queued | running |
+        interrupted | done. Kept so a server restart can restore what was in
+        flight and summarize it."""
+        self.tasks = [t for t in self.tasks if t.get("id") != task_id]
+        self.tasks.append({
+            "id": task_id, "title": title, "message": message,
+            "status": status, "ts": time.time(),
+        })
+        self.tasks = self.tasks[-_MAX_SENT_HISTORY:]
+        self._save()
+
+    def update_task(self, task_id: str, status: str):
+        for t in self.tasks:
+            if t.get("id") == task_id:
+                t["status"] = status
+                t["ts"] = time.time()
+                self._save()
+                return
+
+    def tasks_summary(self) -> str:
+        """A short summary of in-progress / queued tasks, for re-seeding the
+        voice assistant after a restart so it can report what was running."""
+        active = [t for t in self.tasks if t.get("status") in ("queued", "running")]
+        if not active:
+            return ""
+        lines = []
+        for t in active[-6:]:
+            lines.append(f"- [{t.get('status')}] {t.get('title')}: {t.get('message', '')[:200]}")
+        return "Tasks that were in progress when the session was interrupted:\n" + "\n".join(lines)
 
     # ── Compression agent ──
 

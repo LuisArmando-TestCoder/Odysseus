@@ -369,7 +369,8 @@ def setup_realtime_routes() -> APIRouter:
             raise HTTPException(401, "Authentication required")
         from services.voice.memory import get_voice_memory
         mem = get_voice_memory(str(user), _voice_id(voice_id))
-        return {"stats": mem.stats(), "spine": mem.spine(), "transcript": mem.transcript}
+        return {"stats": mem.stats(), "spine": mem.spine(), "transcript": mem.transcript,
+                "tasks": mem.tasks, "tasks_summary": mem.tasks_summary()}
 
     @router.post("/memory/ingest")
     async def voice_memory_ingest(request: Request):
@@ -401,6 +402,30 @@ def setup_realtime_routes() -> APIRouter:
         if added:
             mem.schedule_compaction()
         return {"ok": True, "added": added, "stats": mem.stats()}
+
+    @router.post("/task")
+    async def voice_task(request: Request):
+        """Record or update a task dispatched to the chat, so in-progress and
+        queued tasks survive a server restart and can be summarized on restore."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        task_id = str(body.get("task_id") or "").strip()[:80]
+        if not task_id:
+            raise HTTPException(400, "task_id is required")
+        from services.voice.memory import get_voice_memory
+        mem = get_voice_memory(str(user), _voice_id(body.get("voice_id"), body.get("chat_session_id")))
+        status = str(body.get("status") or "queued").strip()[:20]
+        if body.get("title") or body.get("message"):
+            mem.record_task(task_id, str(body.get("title") or "")[:120],
+                            str(body.get("message") or "")[:4000], status)
+        else:
+            mem.update_task(task_id, status)
+        return {"ok": True, "tasks": mem.tasks, "tasks_summary": mem.tasks_summary()}
 
     @router.post("/memory/reset")
     async def voice_memory_reset(request: Request):

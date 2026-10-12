@@ -89,7 +89,7 @@ Judge ONLY new_user_speech; the rest is context.
 Answer ONLY with JSON:
 {"should_send": 0..1, "ready": 0..1, "already_sent": 0..1,
  "intent": "task|question|research|remember|followup|none", "urgency": 0|1|2,
- "commitment": 0..1}
+ "commitment": 0..1, "stop_talking": 0..1, "interrupt": 0..1}
 - should_send: probability the user wants something done, looked up, answered or remembered — implicit and
   indirect requests count ("I want to see…", "bring me…", "what time is it")
 - ready: probability the user has finished expressing it (not mid-sentence / still thinking)
@@ -98,6 +98,11 @@ Answer ONLY with JSON:
 - commitment: probability the ASSISTANT's recent speech contains a concrete promise to do real work
   (look up, check, search, research, find, verify, open, run, create, send, ask the chat) that should be
   forwarded to the chat agent. Vague filler ("I'm on it", "let me think") or mere acknowledgement is 0.
+- stop_talking: probability the user wants the ASSISTANT to stop speaking right now — judge the intent
+  holistically (a desire for silence, to pause, to wait, to halt the current speech), not by any fixed
+  list of words.
+- interrupt: probability the user wants to INTERRUPT the task currently running in the chat and supersede
+  it with a new request.
 """ + NOT_A_REQUEST + "\n" + IMPLICIT_ASK
 
 # Forger output contract: a BARE message, not JSON and not a labelled envelope.
@@ -398,6 +403,29 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                     "criteria": {"true": "The assistant promised concrete work that should be forwarded to the chat agent",
                                  "false": "No concrete promise / vague filler / mere acknowledgement"},
                 },
+                "stop_talking": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does the user want the ASSISTANT to stop speaking right now? Judge the user's intent "
+                        "holistically — any expression of a desire for silence, to be left alone, to pause, to "
+                        "wait, or to halt the current speech, whether stated directly or implied by tone, brevity "
+                        "or frustration. If the user is signalling that they want the assistant to be quiet, this "
+                        "is true, even mid-sentence."
+                    ),
+                    "criteria": {"true": "The user wants the assistant to stop speaking now",
+                                 "false": "The user is not asking the assistant to stop speaking"},
+                },
+                "interrupt": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does the user want to INTERRUPT the task currently running in the chat and supersede it "
+                        "with a new request? Judge the user's intent: are they signalling that the current work "
+                        "should stop and be replaced? If the user is asking to stop, cancel, or replace the "
+                        "in-progress task, this is true."
+                    ),
+                    "criteria": {"true": "The user wants to interrupt the in-progress task",
+                                 "false": "The user is not asking to interrupt the current task"},
+                },
                 "urgency": {
                     "type": "score",
                     "instructions": "How urgent is it for the user?",
@@ -413,6 +441,8 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "intent_confidence": ans["intent"].get("confidence"),
                 "answerable": _f(ans["answerable"]["value"]),
                 "commitment": _f(ans["commitment"]["value"]),
+                "stop_talking": _f(ans["stop_talking"]["value"]),
+                "interrupt": _f(ans["interrupt"]["value"]),
                 "urgency": ans["urgency"]["value"],
             }
         except DecisionsUnavailable as e:
@@ -428,6 +458,8 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
         "intent": data.get("intent") or "none",
         "answerable": _f(data.get("answerable")),
         "commitment": _f(data.get("commitment")),
+        "stop_talking": _f(data.get("stop_talking")),
+        "interrupt": _f(data.get("interrupt")),
         "urgency": data.get("urgency", 0),
     }
 
@@ -718,6 +750,18 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         ms = int((time.time() - t0) * 1000)
         yield _ev(type="decision", decision=decision, ms=ms)
         yield _ev(type="stage", stage="decide", status="done" if (send or decision.get("commitment", 0) >= 0.7) else "idle", ms=ms, engine=decision.get("engine"))
+
+        # ③c STOP-TALKING — the user wants the voice assistant to be quiet now.
+        # Inferred by JEV (no regex, no hardcoded phrase list). The frontend
+        # injects a stop instruction into GPT-Live's context.
+        if decision.get("stop_talking", 0) >= 0.7:
+            yield _ev(type="stop_talking", score=decision.get("stop_talking"))
+
+        # ③d INTERRUPT — the user wants to stop the in-progress chat task and
+        # supersede it. Inferred by JEV. The frontend releases the running task
+        # and lets the new request through.
+        if decision.get("interrupt", 0) >= 0.7:
+            yield _ev(type="interrupt", score=decision.get("interrupt"))
 
         # ③b LATERAL EXTRACTOR — the answer is already in the chat/memory, so
         # hand it straight to the voice assistant instead of re-asking the chat.

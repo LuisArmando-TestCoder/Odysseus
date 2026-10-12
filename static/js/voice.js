@@ -94,6 +94,7 @@ let _userLine = null, _userText = '', _userFinalizeT = 0;
 let _userBase = 0;           // chars of the current user turn already shown in earlier (split) lines
 let _userTurnOpen = false;   // a user turn is accumulating (survives line splits)
 let _memPreview = '';        // top layer of the compressed voice memory (seeded into GPT-Live)
+let _lastTasksSummary = '';  // summary of in-progress tasks (re-seeded on reconnect)
 let _seedTries = 0;          // retries while waiting for the link to be fully active
 let _notes = [];             // text the user typed/pasted as context (re-seeded on reconnect)
 let _lastAiSaid = '';        // ALFRED's last real line — a reconnect resumes in that state
@@ -1015,6 +1016,37 @@ function _renderDecision(d) {
   }
 }
 
+// The decider (JEV) inferred the user wants the voice assistant to be quiet
+// now. Inject a stop instruction into GPT-Live's context — no regex, no
+// hardcoded phrase list; the agent itself decided the user wants silence.
+function _stopTalking() {
+  if (!_active || !_injectOK) return;
+  _brief('[Instruction — the user just signalled they want you to stop speaking now. '
+    + 'Stop immediately, mid-sentence if needed, and stay silent until the user speaks to you again. '
+    + 'Do not finish your sentence, do not recap, do not ask for confirmation.]', false);
+  _systemLine('Stopping — the user asked for silence.', 'info');
+}
+
+// The decider (JEV) inferred the user wants to interrupt the in-progress chat
+// task and supersede it. Release the running task (stop the chat stream) so the
+// new request can go through.
+async function _interruptTask() {
+  const sid = _currentSid();
+  // Release the in-flight queue item(s) so the new request isn't blocked.
+  if (_awaiting) {
+    const group = _queue.filter(q => (_awaiting.ids || [_awaiting.id]).includes(q.id));
+    group.forEach(q => _setItem(q, 'interrupted', 'Interrupted by a new request.'));
+    _awaiting = null;
+  }
+  // Stop the detached chat run server-side.
+  if (sid) {
+    try {
+      await fetch(_api(`/api/chat/stop/${encodeURIComponent(sid)}`), { method: 'POST', credentials: 'same-origin' });
+    } catch (e) { /* best-effort */ }
+  }
+  _systemLine('Interrupting the running task — the new request takes over.', 'warn');
+}
+
 function _renderGuard(g) {
   const node = $(`.vx-node[data-stage="guard"]`);
   if (!node) return;
@@ -1130,6 +1162,8 @@ function _onPipeEvent(ev) {
     case 'stage': _stage(ev.stage, ev.status, ev); break;
     case 'guard': _renderGuard(ev.guard || {}); break;
     case 'decision': _renderDecision(ev.decision || {}); break;
+    case 'stop_talking': _stopTalking(); break;
+    case 'interrupt': _interruptTask(); break;
     case 'memory': _renderMemory(ev.memory); break;
     case 'forged': _enqueue(ev); break;
     case 'answer_from_context':
@@ -1196,10 +1230,67 @@ function _enqueue(ev) {
   };
   _queue.push(item);
   _renderQueue();
+  _persistQueue();
+  _syncTask(item);
   _systemLine(ev.source === 'commitment'
     ? `Following through on ${_assistantName}'s promise → “${ev.title || 'request'}”`
     : `Forged → “${item.title}”`, 'forge');
   _ensureDispatcher();
+}
+
+// Sync a task to the server-side voice memory so in-progress + queued tasks
+// survive a server restart and can be summarized on restore.
+function _syncTask(item) {
+  if (!item || !item.id) return;
+  try {
+    fetch(_api('/api/realtime/task'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        voice_id: _voiceId,
+        chat_session_id: _currentSid(),
+        task_id: item.id,
+        title: item.title,
+        message: item.message,
+        status: item.status,
+      }),
+    }).catch(() => {});
+  } catch (e) { /* best-effort */ }
+}
+
+// Persist the queue (in-progress + queued tasks) so a page reload or server
+// restart can restore what was running. localStorage survives reloads; the
+// server-side voice memory survives restarts.
+function _persistQueue() {
+  try {
+    const live = _queue.filter(q => ['review', 'queued', 'sending', 'sent', 'running', 'background'].includes(q.status));
+    localStorage.setItem('odysseus-voice-queue-' + _voiceId, JSON.stringify(live));
+  } catch (e) { /* ignore */ }
+}
+
+function _restoreQueue() {
+  try {
+    const raw = localStorage.getItem('odysseus-voice-queue-' + _voiceId);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!Array.isArray(saved)) return;
+    for (const s of saved) {
+      if (!s || !s.message) continue;
+      // Anything that was mid-flight is now just queued again (the chat may
+      // have kept running server-side; the dispatcher will reconcile).
+      const status = ['sending', 'sent', 'running', 'background'].includes(s.status) ? 'queued' : (s.status || 'queued');
+      _queue.push({
+        created: s.created || Date.now(),
+        id: s.id || ('q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+        title: s.title || 'Request',
+        message: s.message,
+        intent: s.intent || 'task',
+        urgency: s.urgency,
+        status,
+      });
+    }
+    _renderQueue();
+  } catch (e) { /* ignore */ }
 }
 
 function _statusLabel(s) {
@@ -1319,7 +1410,7 @@ function _onQueueClick(e) {
     _setItem(item, 'answered');
     _dispatchTick(true);
   }
-  else if (act === 'drop') { _queue = _queue.filter(q => q !== item); _renderQueue(); }
+  else if (act === 'drop') { _queue = _queue.filter(q => q !== item); _renderQueue(); _persistQueue(); }
   else if (act === 'edit') {
     // Halt the queue at this exact task while it's being edited. The textarea
     // is rendered by _renderQueue (so it survives re-renders); finishing the
@@ -1353,6 +1444,8 @@ function _setItem(item, status, note) {
   if (item.status === status && note === undefined) return;
   item.status = status;
   _renderQueue();
+  _persistQueue();
+  _syncTask(item);
   if (_LINGER[status]) {
     setTimeout(() => {
       if (item.status !== status) return;
@@ -1538,6 +1631,12 @@ function _seedChatContext() {
     'use it when the user refers to earlier topics. Do NOT read it out, summarise it or resume it now — ' +
     'it is background, already told to the user.]';
   if (_memPreview) _brief(HEAD + '\nVoice memory summary:\n' + _memPreview.slice(0, 1200), false);
+  // Re-seed the in-progress / queued tasks so the voice can report what was
+  // running when the session was interrupted (server restart / reconnect).
+  _refreshMemory().then(() => {
+    const summary = _lastTasksSummary;
+    if (summary) _brief('[Context — tasks that were in progress when the session was interrupted]\n' + summary.slice(0, 1200), false);
+  });
   // Newest turns, within a budget, back in chronological order.
   const lines = [];
   let budget = 3200;
@@ -2485,6 +2584,7 @@ async function _refreshMemory() {
       const d = await r.json();
       _renderMemory(d.stats);
       _renderTranscript(d.transcript);
+      _lastTasksSummary = d.tasks_summary || '';
     }
   } catch (e) { /* ignore */ }
 }
@@ -2607,6 +2707,7 @@ export function openVoiceMode({ autostart = true } = {}) {
   _setState(_active ? 'listening' : 'idle');
   _refreshStatus();
   _refreshMemory();
+  _restoreQueue();
   _renderQueue();
   _startChatWatch();
   if (autostart && !_active) startVoice();
