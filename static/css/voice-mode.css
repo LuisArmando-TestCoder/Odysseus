@@ -32,47 +32,83 @@ html:not(.vx-open) #mobile-menu-btn {
   transition: opacity .42s cubic-bezier(.2,.8,.2,1), transform .42s cubic-bezier(.2,.8,.2,1);
 }
 
-/* ── Dedicated Advanced Voice Mode launcher (floating orb) ──────────────── */
+/* ── Advanced Voice Mode launcher — deeply ingrained in the chat composer ──
+   A first-class, always-visible pill button that lives inside the chat input
+   bar (right side, before the Agent/Chat toggle). It reads as a "game-like"
+   affordance: glass body, accent glow, radar orb + rotating dashed ring, and a
+   mono "VOICE" label. Theme-aware via the composer's --ci-* tokens (falls back
+   to --accent-primary / --red). */
 .voice-mode-fab {
-  position: fixed;
-  right: 22px;
-  bottom: 22px;
-  z-index: 9990;
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  border: 1px solid rgba(140, 200, 255, .25);
-  background: radial-gradient(circle at 35% 30%, rgba(20, 40, 64, .9), rgba(6, 14, 26, .92));
-  color: #9cd2f2;
-  display: grid;
-  place-items: center;
+  --vf-acc: var(--ci-acc, var(--accent-primary, var(--red, #5c9ec7)));
+  --vf-acc-a: color-mix(in srgb, var(--vf-acc) 38%, transparent);
+  --vf-acc-s: color-mix(in srgb, var(--vf-acc) 15%, transparent);
+  --vf-acc-soft: color-mix(in srgb, var(--vf-acc) 8%, transparent);
+  --vf-line: color-mix(in srgb, var(--vf-acc) 22%, var(--border, #333));
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--vf-line);
+  background:
+    radial-gradient(120% 160% at 30% -20%, var(--vf-acc-s) 0%, transparent 60%),
+    linear-gradient(160deg, color-mix(in srgb, var(--panel, #1a1d24) 82%, transparent), color-mix(in srgb, var(--panel, #1a1d24) 92%, var(--bg, #0e0e10)));
+  color: var(--vf-acc);
   cursor: pointer;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, .45), 0 0 0 1px rgba(140, 200, 255, .08) inset;
-  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, .28),
+    0 0 0 1px color-mix(in srgb, var(--vf-acc) 6%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s, color .25s;
   -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
 }
 .voice-mode-fab:hover {
-  transform: translateY(-2px) scale(1.04);
-  border-color: rgba(140, 200, 255, .5);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 22px rgba(140, 200, 255, .25);
+  transform: translateY(-1px);
+  border-color: var(--vf-acc-a);
+  color: color-mix(in srgb, var(--vf-acc) 80%, #fff);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, .34),
+    0 0 20px var(--vf-acc-s),
+    inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
 }
-.voice-mode-fab:active { transform: scale(0.96); }
+.voice-mode-fab:active { transform: translateY(0) scale(0.97); }
+.voice-mode-fab:focus-visible {
+  outline: 2px solid var(--vf-acc);
+  outline-offset: 2px;
+}
 .voice-mode-fab .vx-fab-orb {
-  width: 30px;
-  height: 30px;
+  width: 18px;
+  height: 18px;
   position: relative;
   z-index: 1;
+  flex: none;
+  filter: drop-shadow(0 0 5px var(--vf-acc-a));
+}
+.voice-mode-fab .voice-mode-label {
+  font-family: var(--ci-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  line-height: 1;
 }
 .voice-mode-fab .vx-fab-ring {
   position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1px dashed rgba(140, 200, 255, .35);
-  animation: vx-fab-spin 12s linear infinite;
+  inset: 3px;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--vf-acc) 30%, transparent);
+  animation: vx-fab-spin 16s linear infinite;
+  pointer-events: none;
 }
 @keyframes vx-fab-spin { to { transform: rotate(360deg); } }
 /* Hide the launcher while the voice HUD is open (it's covered anyway). */
-html.vx-open .voice-mode-fab { opacity: 0; pointer-events: none; transform: scale(0.8); }
+html.vx-open .voice-mode-fab { opacity: 0; pointer-events: none; transform: scale(0.9); }
 /* While the HUD covers the screen, the app underneath (chat streaming, agent
    tool bubbles with their tickers, markdown re-renders) is invisible but was
    still being laid out and painted every frame — the frame-rate drop seen when
@@ -715,4 +751,6 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 
 @media (prefers-reduced-motion: reduce) {
   .vx, .vx *, .vx *::before, .vx *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+  .voice-mode-fab .vx-fab-ring { animation: none !important; }
+  .voice-mode-fab { transition-duration: .001s !important; }
 }
