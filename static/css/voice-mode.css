@@ -35,9 +35,9 @@ html:not(.vx-open) #mobile-menu-btn {
 /* ── Advanced Voice Mode launcher — deeply ingrained in the chat composer ──
    A first-class, always-visible pill button that lives inside the chat input
    bar (right side, before the Agent/Chat toggle). It reads as a "game-like"
-   affordance: glass body, accent glow, radar orb + rotating dashed ring, and a
-   mono "VOICE" label. Theme-aware via the composer's --ci-* tokens (falls back
-   to --accent-primary / --red). */
+   affordance: glass body, animated conic gradient border, accent glow, radar
+   orb + rotating dashed ring, and a mono "VOICE" label. Theme-aware via the
+   composer's --ci-* tokens (falls back to --accent-primary / --red). */
 .voice-mode-fab {
   --vf-acc: var(--ci-acc, var(--accent-primary, var(--red, #5c9ec7)));
   --vf-acc-a: color-mix(in srgb, var(--vf-acc) 38%, transparent);
@@ -46,6 +46,7 @@ html:not(.vx-open) #mobile-menu-btn {
   --vf-line: color-mix(in srgb, var(--vf-acc) 22%, var(--border, #333));
 
   position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -67,7 +68,41 @@ html:not(.vx-open) #mobile-menu-btn {
   transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s, color .25s;
   -webkit-tap-highlight-color: transparent;
   white-space: nowrap;
+  animation: vf-enter .5s cubic-bezier(.2,.8,.2,1) both;
 }
+
+/* Animated conic gradient border — the signature "game-like" light sweep. */
+@property --vf-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.voice-mode-fab::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--vf-angle),
+    transparent 0%,
+    var(--vf-acc-a) 14%,
+    transparent 32%,
+    transparent 58%,
+    var(--vf-acc-s) 72%,
+    transparent 88%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: vf-border-sweep 6s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+  opacity: .6;
+}
+@keyframes vf-border-sweep { to { --vf-angle: 360deg; } }
+
 .voice-mode-fab:hover {
   transform: translateY(-1px);
   border-color: var(--vf-acc-a);
@@ -77,6 +112,7 @@ html:not(.vx-open) #mobile-menu-btn {
     0 0 20px var(--vf-acc-s),
     inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
 }
+.voice-mode-fab:hover::before { opacity: 1; }
 .voice-mode-fab:active { transform: translateY(0) scale(0.97); }
 .voice-mode-fab:focus-visible {
   outline: 2px solid var(--vf-acc);
@@ -89,6 +125,11 @@ html:not(.vx-open) #mobile-menu-btn {
   z-index: 1;
   flex: none;
   filter: drop-shadow(0 0 5px var(--vf-acc-a));
+  animation: vf-orb-breathe 2.8s ease-in-out infinite;
+}
+@keyframes vf-orb-breathe {
+  0%, 100% { filter: drop-shadow(0 0 4px var(--vf-acc-a)); }
+  50%      { filter: drop-shadow(0 0 9px var(--vf-acc-a)); }
 }
 .voice-mode-fab .voice-mode-label {
   font-family: var(--ci-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
@@ -107,6 +148,9 @@ html:not(.vx-open) #mobile-menu-btn {
   pointer-events: none;
 }
 @keyframes vx-fab-spin { to { transform: rotate(360deg); } }
+@keyframes vf-enter {
+  from { opacity: 0; transform: translateY(6px) scale(.96); }
+}
 /* Hide the launcher while the voice HUD is open (it's covered anyway). */
 html.vx-open .voice-mode-fab { opacity: 0; pointer-events: none; transform: scale(0.9); }
 /* While the HUD covers the screen, the app underneath (chat streaming, agent
@@ -751,6 +795,29 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 
 @media (prefers-reduced-motion: reduce) {
   .vx, .vx *, .vx *::before, .vx *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+  .voice-mode-fab,
+  .voice-mode-fab::before,
+  .voice-mode-fab .vx-fab-orb,
   .voice-mode-fab .vx-fab-ring { animation: none !important; }
   .voice-mode-fab { transition-duration: .001s !important; }
+}
+
+/* Reduced transparency: swap the glass blur for a solid panel so contrast
+   stays stable (the "reduce transparency" OS setting). */
+@media (prefers-reduced-transparency: reduce) {
+  .voice-mode-fab {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: linear-gradient(160deg, var(--panel, #1a1d24), color-mix(in srgb, var(--panel, #1a1d24) 92%, var(--bg, #0e0e10)));
+  }
+}
+
+/* Increased contrast: bump the accent and label so the launcher stays legible. */
+@media (prefers-contrast: more) {
+  .voice-mode-fab {
+    --vf-acc: var(--ci-acc, var(--accent-primary, var(--red, #5c9ec7)));
+    color: #fff;
+    border-color: var(--vf-acc);
+  }
+  .voice-mode-fab .voice-mode-label { color: #fff; }
 }
