@@ -2763,8 +2763,8 @@ export function initVoice() {
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }
   document.body.addEventListener('click', (e) => {
-    // Composer mic → full-screen voice mode.
-    if (e.target.closest('#voice-btn')) {
+    // Dedicated floating launcher → full-screen voice mode.
+    if (e.target.closest('#voice-mode-fab')) {
       e.preventDefault();
       openVoiceMode({ autostart: true });
     }

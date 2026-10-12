@@ -7,6 +7,72 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 html.vx-open, html.vx-open body { overflow: hidden; }
+
+/* ── Morph transition: the app fades/scales out as the voice HUD comes in ──
+   The app shell (sidebar + chat) is given a gentle scale-down + fade so the
+   voice HUD "morphs" in over it instead of a hard cut. The HUD itself already
+   animates opacity/scale on .vx.open. */
+html.vx-open #sidebar,
+html.vx-open #chat-container,
+html.vx-open .icon-rail,
+html.vx-open .hamburger-btn,
+html.vx-open #mobile-menu-btn {
+  opacity: 0;
+  transform: scale(0.985);
+  transition: opacity .42s cubic-bezier(.2,.8,.2,1), transform .42s cubic-bezier(.2,.8,.2,1);
+  pointer-events: none;
+}
+html:not(.vx-open) #sidebar,
+html:not(.vx-open) #chat-container,
+html:not(.vx-open) .icon-rail,
+html:not(.vx-open) .hamburger-btn,
+html:not(.vx-open) #mobile-menu-btn {
+  opacity: 1;
+  transform: none;
+  transition: opacity .42s cubic-bezier(.2,.8,.2,1), transform .42s cubic-bezier(.2,.8,.2,1);
+}
+
+/* ── Dedicated Advanced Voice Mode launcher (floating orb) ──────────────── */
+.voice-mode-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 9990;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid rgba(140, 200, 255, .25);
+  background: radial-gradient(circle at 35% 30%, rgba(20, 40, 64, .9), rgba(6, 14, 26, .92));
+  color: #9cd2f2;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .45), 0 0 0 1px rgba(140, 200, 255, .08) inset;
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s;
+  -webkit-tap-highlight-color: transparent;
+}
+.voice-mode-fab:hover {
+  transform: translateY(-2px) scale(1.04);
+  border-color: rgba(140, 200, 255, .5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 22px rgba(140, 200, 255, .25);
+}
+.voice-mode-fab:active { transform: scale(0.96); }
+.voice-mode-fab .vx-fab-orb {
+  width: 30px;
+  height: 30px;
+  position: relative;
+  z-index: 1;
+}
+.voice-mode-fab .vx-fab-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px dashed rgba(140, 200, 255, .35);
+  animation: vx-fab-spin 12s linear infinite;
+}
+@keyframes vx-fab-spin { to { transform: rotate(360deg); } }
+/* Hide the launcher while the voice HUD is open (it's covered anyway). */
+html.vx-open .voice-mode-fab { opacity: 0; pointer-events: none; transform: scale(0.8); }
 /* While the HUD covers the screen, the app underneath (chat streaming, agent
    tool bubbles with their tickers, markdown re-renders) is invisible but was
    still being laid out and painted every frame — the frame-rate drop seen when

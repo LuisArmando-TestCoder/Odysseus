@@ -1102,10 +1102,6 @@
           </button>
         </div>
         <div class="chat-input-right">
-          <!-- Voice conversation button -->
-          <button type="button" class="input-icon-btn voice-btn" id="voice-btn" title="Voice conversation" aria-label="Voice conversation">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-          </button>
           <!-- Agent / Chat mode toggle -->
           <div class="mode-toggle">
             <button type="button" class="mode-toggle-btn active" id="mode-agent-btn" aria-pressed="true">Agent</button>
@@ -1208,6 +1204,18 @@
 
   </main>
   <button id="scroll-bottom-btn" class="scroll-nav-btn" title="Scroll to bottom">▼</button>
+  <!-- Dedicated Advanced Voice Mode launcher — a distinct, floating orb in the
+       bottom-right corner, separate from the chat input's mic. Clicking it
+       morphs the app out and the voice HUD in (no flicker). -->
+  <button type="button" id="voice-mode-fab" class="voice-mode-fab" title="Advanced Voice Mode" aria-label="Open Advanced Voice Mode">
+    <svg class="vx-fab-orb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9" opacity="0.35"/>
+      <circle cx="12" cy="12" r="5.5" opacity="0.6"/>
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" opacity="0.7"/>
+      <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="vx-fab-ring"></span>
+  </button>
   <script nonce="{{CSP_NONCE}}">
   (function(){
     const container = document.getElementById('chat-history');
