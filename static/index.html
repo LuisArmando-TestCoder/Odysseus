@@ -1104,17 +1104,6 @@
           </button>
         </div>
         <div class="chat-input-right">
-          <!-- Advanced Voice Mode — deeply ingrained, always-visible launcher -->
-          <button type="button" id="voice-mode-fab" class="voice-mode-fab" title="Advanced Voice Mode" aria-label="Open Advanced Voice Mode">
-            <svg class="vx-fab-orb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="9" opacity="0.35"/>
-              <circle cx="12" cy="12" r="5.5" opacity="0.6"/>
-              <path d="M12 3v3M12 18v3M3 12h3M18 12h3" opacity="0.7"/>
-              <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
-            </svg>
-            <span class="voice-mode-label">Voice</span>
-            <span class="vx-fab-ring"></span>
-          </button>
           <!-- Agent / Chat mode toggle -->
           <div class="mode-toggle">
             <button type="button" class="mode-toggle-btn active" id="mode-agent-btn" aria-pressed="true">Agent</button>
@@ -1217,6 +1206,19 @@
 
   </main>
   <button id="scroll-bottom-btn" class="scroll-nav-btn" title="Scroll to bottom">▼</button>
+  <!-- Advanced Voice Mode launcher — a floating, cinematic orb anchored to the
+       chat area (above the composer, right side). It lives outside the chat
+       container as a first-class "action layer" element: glass, glow, motion. -->
+  <button type="button" id="voice-mode-fab" class="voice-mode-fab" title="Advanced Voice Mode" aria-label="Open Advanced Voice Mode">
+    <svg class="vx-fab-orb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9" opacity="0.35"/>
+      <circle cx="12" cy="12" r="5.5" opacity="0.6"/>
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" opacity="0.7"/>
+      <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="voice-mode-label">Voice</span>
+    <span class="vx-fab-ring"></span>
+  </button>
   <script nonce="{{CSP_NONCE}}">
   (function(){
     const container = document.getElementById('chat-history');
