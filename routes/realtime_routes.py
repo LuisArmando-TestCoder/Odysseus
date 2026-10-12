@@ -370,7 +370,34 @@ def setup_realtime_routes() -> APIRouter:
         from services.voice.memory import get_voice_memory
         mem = get_voice_memory(str(user), _voice_id(voice_id))
         return {"stats": mem.stats(), "spine": mem.spine(), "transcript": mem.transcript,
-                "tasks": mem.tasks, "tasks_summary": mem.tasks_summary()}
+                "tasks": mem.tasks, "tasks_summary": mem.tasks_summary(),
+                "vectors": mem.vectors}
+
+    @router.post("/vector")
+    async def voice_vector(request: Request):
+        """Append one conversation vector (radar dot) for this chat. The body
+        carries {chat_session_id, type, label, ts, x, y, color}. Cheap and
+        non-blocking on the frontend — the HUD already knows the position and
+        renders instantly; this only persists it for later retrieval."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        from services.voice.memory import get_voice_memory
+        mem = get_voice_memory(str(user), _voice_id(body.get("voice_id"), body.get("chat_session_id")))
+        vec = mem.add_vector(
+            vtype=str(body.get("type") or "message")[:32],
+            label=str(body.get("label") or "")[:240],
+            ts=float(body.get("ts") or 0),
+            x=float(body.get("x") or 0),
+            y=float(body.get("y") or 0),
+            color=str(body.get("color") or "")[:32],
+            extra=body.get("extra") or {},
+        )
+        return {"ok": True, "vector": vec}
 
     @router.post("/memory/ingest")
     async def voice_memory_ingest(request: Request):

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _MAX_SENT_HISTORY = 30
 _MAX_LIVE_TURNS = 400  # safety valve if compression is failing
 _MAX_TRANSCRIPT_TURNS = 2000  # full raw voice transcript (user + assistant), never compressed
+_MAX_VECTORS = 5000  # conversation-vector cap in persistence (the HUD shows far fewer)
 
 
 def _memory_dir() -> str:
@@ -76,6 +77,7 @@ class VoiceMemory:
         self.sent: List[Dict[str, Any]] = []          # messages forged into the chat
         self.transcript: List[Dict[str, Any]] = []    # full raw voice turns (user + assistant), never compressed
         self.tasks: List[Dict[str, Any]] = []         # tasks dispatched to the chat (in-progress + queued), for restore
+        self.vectors: List[Dict[str, Any]] = []       # conversation vectors (radar dots) for density viz
         self.turns_total = 0
         self.compactions = 0
         self.seq = 0            # monotonically increasing turn sequence number
@@ -103,6 +105,7 @@ class VoiceMemory:
         self.sent = d.get("sent") or []
         self.transcript = d.get("transcript") or []
         self.tasks = d.get("tasks") or []
+        self.vectors = d.get("vectors") or []
         self.turns_total = int(d.get("turns_total") or 0)
         self.compactions = int(d.get("compactions") or 0)
         self.seq = int(d.get("seq") or 0)
@@ -122,6 +125,7 @@ class VoiceMemory:
                 "sent": self.sent[-_MAX_SENT_HISTORY:],
                 "transcript": self.transcript,
                 "tasks": self.tasks[-_MAX_SENT_HISTORY:],
+                "vectors": self.vectors[-_MAX_VECTORS:],
                 "turns_total": self.turns_total,
                 "compactions": self.compactions,
                 "seq": self.seq,
@@ -134,7 +138,7 @@ class VoiceMemory:
             logger.warning(f"voice memory save failed: {e}")
 
     def reset(self):
-        self.live, self.levels, self.sent, self.transcript, self.tasks = [], {}, [], [], []
+        self.live, self.levels, self.sent, self.transcript, self.tasks, self.vectors = [], {}, [], [], [], []
         self.turns_total = self.compactions = 0
         self.seq = self.forge_seq = self.commit_seq = 0
         self.updated_at = time.time()
@@ -294,6 +298,25 @@ class VoiceMemory:
                 t["ts"] = time.time()
                 self._save()
                 return
+
+    def add_vector(self, vtype: str, label: str, ts: float, x: float, y: float,
+                   color: str = "", extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Append one conversation vector (a radar dot) for this chat. Pure,
+        cheap persistence — the frontend batches these and never blocks on it."""
+        import uuid
+        vec = {
+            "id": uuid.uuid4().hex[:12],
+            "type": str(vtype)[:32],
+            "ts": float(ts) or time.time(),
+            "label": str(label)[:240],
+            "x": float(x), "y": float(y),
+            "color": str(color)[:32],
+            "extra": extra or {},
+        }
+        self.vectors.append(vec)
+        self.vectors = self.vectors[-_MAX_VECTORS:]
+        self._save()
+        return vec
 
     def tasks_summary(self) -> str:
         """A short summary of in-progress / queued tasks, for re-seeding the

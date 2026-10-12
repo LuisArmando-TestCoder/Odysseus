@@ -18,6 +18,8 @@
 //   queue ─► dispatched to the chat only when nothing is executing
 //            └─► when the chat answers, GPT-Live speaks a short summary back.
 
+import * as vectors from './voice_vectors.js';
+
 const BANDS = 64;
 const STATE_COLORS = {
   idle:       [0.36, 0.62, 0.78],
@@ -58,6 +60,7 @@ let _voiceId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).
 let _pending = [];            // turns not yet sent to the pipeline
 let _pipeTimer = 0, _pipeBusy = false, _pipeRerun = false, _pipeAbort = null;
 let _queue = [];              // {id, title, message, intent, urgency, status}
+const _voiceInjectedTexts = new Set();   // user-bubble texts dispatched by voice (not "direct")
 let _awaiting = null;         // {id, sid, sawBusy, since}
 let _opts = { review: false, speak: true };
 let _errors = [];             // {at, text} — every error surfaced in the HUD
@@ -618,10 +621,15 @@ function _buildHUD() {
     <section class="vx-center">
       <div class="vx-orb-wrap">
         <canvas id="vx-canvas" aria-hidden="true"></canvas>
+        <div class="vx-vec-field" id="vx-vec-field" aria-hidden="true"></div>
+        <div class="vx-vec-tooltip" id="vx-vec-tooltip"></div>
         <button class="vx-orb-hit" data-act="core" aria-label="Connect or disconnect"></button>
         <div class="vx-orb-label"><div class="vx-state">STANDBY</div><div class="vx-state-sub">Tap the core or press Space to connect</div></div>
       </div>
       <div class="vx-caption" id="vx-caption" aria-live="polite"></div>
+      <div class="vx-vec-legend" id="vx-vec-legend"></div>
+      <button class="vx-vec-log-btn" id="vx-vec-log-btn" type="button">Event log</button>
+      <div class="vx-vec-log-panel" id="vx-vec-log-panel"></div>
     </section>
 
     <section class="vx-panel vx-right" aria-label="Neural pipeline">
@@ -937,6 +945,7 @@ function _userFinal(full) {
   _pending.push({ speaker: 'You', text });   // the pipeline always gets the whole turn
   _userLine = null;
   _lastUserFinalAt = Date.now();
+  _vector('question', text.slice(0, 90));
   _schedulePipeline(1100);
 }
 
@@ -1181,10 +1190,10 @@ function _onPipeEvent(ev) {
         clearTimeout(_settleTimer);
         _settleTimer = setTimeout(() => _runPipeline(false, true), 2500);
       }
-      if (ev.reason === 'error' && ev.error) _systemLine('Pipeline error — ' + ev.error, 'warn');
+      if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90)); }
       else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
-      else if (ev.reason === 'guard-rejected') _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn');
-      else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn');
+      else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message'); }
+      else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide'); }
       break;
   }
 }
@@ -1240,6 +1249,52 @@ function _enqueue(ev) {
 
 // Sync a task to the server-side voice memory so in-progress + queued tasks
 // survive a server restart and can be summarized on restore.
+// Emit one conversation vector (radar dot). Cheap + non-blocking by design.
+function _vector(type, label) {
+  try { vectors.addVector(type, label); } catch (e) { /* ignore */ }
+}
+
+// Detect conversation-vector types in a settled chat message (see
+// voice_vectors.js). Called once per finished turn: user → question/direct
+// (voice vs. direct typed), AI → thinking / code / search.
+function _detectChatVectors(el, isAi, text) {
+  const hasThinking = !!(el.querySelector('.think, .thinking, .thinking-section, .live-think-inner'));
+  const hasCode = /```|`{1,3}[\s\S]+`{1,3}/.test(text) || !!el.querySelector('pre, code');
+  const hasSources = !!el.querySelector('.sources-box') || /\bsearch|citing|sources?\b/i.test(text.slice(0, 400));
+  if (!isAi) {
+    // Direct chat message (sent by the user in the chat, not voiced to Alfred).
+    if (_voiceInjectedTexts.has(text.trim())) return;
+    _vector('direct_message', text.slice(0, 90));
+    return;
+  }
+  if (hasThinking) _vector('thinking', 'Thought through a reasoning step');
+  if (hasCode) _vector('code', 'Produced or executed code');
+  if (hasSources) _vector('search', 'Performed a search');
+}
+
+function _buildLegend() {
+  const el = document.getElementById('vx-vec-legend');
+  if (!el) return;
+  const frag = document.createDocumentFragment();
+  for (const [type, meta] of Object.entries({
+    question: { color: 'rgb(127, 220, 255)',  label: 'Question' },
+    voice_inject: { color: 'rgb(201, 178, 255)', label: 'Voice → chat' },
+    thinking: { color: 'rgb(180, 190, 210)', label: 'Thinking' },
+    code: { color: 'rgb(125, 255, 208)', label: 'Code' },
+    search: { color: 'rgb(255, 210, 127)', label: 'Search' },
+    direct_message: { color: 'rgb(159, 208, 255)', label: 'Direct' },
+    guard_error: { color: 'rgb(255, 150, 70)', label: 'Guard' },
+    system_error: { color: 'rgb(255, 107, 127)', label: 'Error' },
+  })) {
+    const s = document.createElement('span');
+    const i = document.createElement('i'); i.style.background = meta.color;
+    i.style.color = meta.color;
+    s.append(i, document.createTextNode(meta.label));
+    frag.appendChild(s);
+  }
+  el.replaceChildren(frag);
+}
+
 function _syncTask(item) {
   if (!item || !item.id) return;
   try {
@@ -1560,6 +1615,8 @@ function _dispatchTick(manual = false) {
   if (_sendToChat(text)) {
     batch.forEach(q => _setItem(q, 'sent'));
     _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
+    _voiceInjectedTexts.add(text.trim());
+    _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`));
     _systemLine(batch.length === 1 ? `Sent to chat → “${batch[0].title}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
     // Tell GPT-Live (quietly) that real work just started, so it can reassure
     // the user with accurate status instead of guessing while the chat runs.
@@ -1932,6 +1989,7 @@ async function _ingestChat(busy) {
     if (text !== st.text) { st.text = text; st.stable = 0; continue; }
     if (++st.stable < 3) continue;          // 3 × 700ms unchanged
     st.done = true;
+    _detectChatVectors(el, isAi, text);
     const role = isAi ? 'chat_ai' : 'chat_user';
     const k = _key(role, text);
     if (_seenKeys.has(k)) continue;
@@ -2400,6 +2458,7 @@ function _bindVoiceToSession(sid) {
   // Restore the NEW chat's transcript trail + queue (empty for a brand-new chat).
   _restoreTranscript(vid);
   _loadQueueFromStore(vid);
+  vectors.setSession(vid, vid);
 }
 
 // Restart the live GPT-Live session so its accumulated conversation context is
@@ -2584,6 +2643,28 @@ function _forceSend() {
 // Rebuild the live transcript from the persisted voice memory (user + assistant
 // turns). Only runs on a fresh load — never wipes a live conversation in
 // progress, so reconnecting mid-call keeps the streaming lines intact.
+// Point the vector module at the on-screen field/tooltip/log and build the
+// legend. Called on open (idempotent). The field's size equals the orb wrap,
+// so normalised ring positions map directly onto the orb.
+function _initVectors() {
+  const field = document.getElementById('vx-vec-field');
+  const tooltip = document.getElementById('vx-vec-tooltip');
+  const logWrap = document.getElementById('vx-vec-log-panel');
+  const logBtn = document.getElementById('vx-vec-log-btn');
+  if (!field) return;
+  vectors.initVectors({
+    sid: _currentSid(),
+    voiceId: _voiceId,
+    container: field,
+    logContainer: logWrap,
+    tooltip,
+  });
+  _buildLegend();
+  if (logBtn) {
+    logBtn.onclick = () => { vectors.toggleLog(); logBtn.classList.toggle('on', logWrap.classList.contains('open')); };
+  }
+}
+
 function _renderTranscript(turns) {
   const box = $('#vx-transcript');
   if (!box) return;
@@ -2614,6 +2695,7 @@ async function _refreshMemory() {
       _renderMemory(d.stats);
       _renderTranscript(d.transcript);
       _lastTasksSummary = d.tasks_summary || '';
+      if (Array.isArray(d.vectors)) vectors.seedVectors(d.vectors);
     }
   } catch (e) { /* ignore */ }
 }
@@ -2738,6 +2820,7 @@ export function openVoiceMode({ autostart = true } = {}) {
   _refreshMemory();
   _restoreQueue();
   _renderQueue();
+  _initVectors();
   _startChatWatch();
   if (autostart && !_active) startVoice();
 }
