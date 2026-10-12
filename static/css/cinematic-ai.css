@@ -1,0 +1,554 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Cinematic AI Interface — Sora / Astra / Claude Opus 5.5 language
+   ───────────────────────────────────────────────────────────────────────────
+   Replaces the "Star Citizen HUD" treatment (angled panels, corner brackets,
+   scan-lines, harsh neon) with the cinematic-AI grammar:
+
+     • Dark, immersive canvas where content is the light source
+     • Glassmorphism + soft aurora gradient depth (no hard edges)
+     • Motion as a first-class element (expo-out easing, staggered reveals)
+     • Big, expressive typography + generous whitespace
+     • Ambient "generative" textures (slow aurora drift, soft grain)
+     • Warm, diffused glow — not harsh neon
+
+   Three-layer containment system (the discipline that makes it readable):
+     A. Shell (sidebar chrome)  — quiet, low-drama, recedes
+     B. Canvas (chat / welcome) — the hero, owns the contrast budget
+     C. Action layer (composer) — floating glass, contextual
+
+   Theme-aware (--accent-primary / --red) and fully accessibility-gated:
+   prefers-reduced-motion, prefers-reduced-transparency, prefers-contrast.
+   Pure CSS — no JS changes required. Loaded AFTER the *-hyper.css files so
+   it cleanly overrides the HUD treatment.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   0. TOKEN LAYER — one accent light source, budgeted glow, shared easing
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Accent — the single light source. Warm by default (Claude's terracotta
+     warmth), theme-aware so custom themes re-tint the whole interface. */
+  --cin-acc: var(--accent-primary, var(--red, #e06c75));
+  --cin-acc-warm: color-mix(in srgb, var(--cin-acc) 72%, #f0a86c);
+  --cin-acc-cool: color-mix(in srgb, var(--cin-acc) 60%, #7aa2ff);
+
+  /* Glow budget — one shared property so intensity scales globally. */
+  --cin-glow-a: color-mix(in srgb, var(--cin-acc) 34%, transparent);
+  --cin-glow-s: color-mix(in srgb, var(--cin-acc) 16%, transparent);
+  --cin-glow-soft: color-mix(in srgb, var(--cin-acc) 7%, transparent);
+
+  /* Aurora palette — gem-tone washes that drift behind the canvas. */
+  --cin-aurora-1: color-mix(in srgb, var(--cin-acc) 26%, transparent);
+  --cin-aurora-2: color-mix(in srgb, var(--cin-acc-cool) 20%, transparent);
+  --cin-aurora-3: color-mix(in srgb, var(--cin-acc-warm) 18%, transparent);
+
+  /* Glass surfaces — translucent, layered depth. */
+  --cin-glass: color-mix(in srgb, var(--panel) 72%, transparent);
+  --cin-glass-deep: color-mix(in srgb, var(--panel) 88%, var(--bg));
+  --cin-line: color-mix(in srgb, var(--cin-acc) 18%, var(--border));
+
+  /* Typography — expressive display + neutral UI. */
+  --cin-display: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cin-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Motion — the "expensive" expo-out easing. */
+  --cin-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --cin-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. AMBIENT CANVAS — aurora drift + soft grain behind everything
+   ═══════════════════════════════════════════════════════════════════════════ */
+.chat-container {
+  position: relative;
+  isolation: isolate;
+  /* The canvas is the light source: a near-black base with a slow aurora
+     wash that breathes in the background. */
+  background:
+    radial-gradient(120% 90% at 18% -10%, var(--cin-aurora-1) 0%, transparent 55%),
+    radial-gradient(100% 80% at 88% 8%, var(--cin-aurora-2) 0%, transparent 50%),
+    radial-gradient(90% 70% at 50% 110%, var(--cin-aurora-3) 0%, transparent 55%),
+    var(--bg);
+}
+
+/* Ambient aurora drift — slow, 24s loop, barely perceptible. */
+.chat-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 30% 20%, var(--cin-aurora-1) 0%, transparent 70%),
+    radial-gradient(50% 45% at 75% 30%, var(--cin-aurora-2) 0%, transparent 70%),
+    radial-gradient(55% 50% at 50% 80%, var(--cin-aurora-3) 0%, transparent 70%);
+  filter: blur(60px);
+  opacity: 0.55;
+  animation: cin-aurora-drift 24s ease-in-out infinite alternate;
+}
+@keyframes cin-aurora-drift {
+  0%   { transform: translate3d(-2%, -1%, 0) scale(1); }
+  50%  { transform: translate3d(2%, 1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(-1%, 2%, 0) scale(1.02); }
+}
+
+/* Soft film grain — the "generative texture" that keeps the eye engaged. */
+.chat-container::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. SHELL — the sidebar, quiet and receding
+   ═══════════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  /* Strip the HUD: no corner brackets, no scan-lines, no flicker. */
+  background:
+    radial-gradient(140% 60% at 50% -10%, var(--cin-aurora-1) 0%, transparent 60%),
+    linear-gradient(180deg, var(--cin-glass) 0%, var(--cin-glass-deep) 100%) !important;
+  border-right: 1px solid var(--cin-line) !important;
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--cin-acc) 6%, transparent),
+    0 0 60px color-mix(in srgb, var(--cin-acc) 5%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+}
+/* Remove the HUD corner brackets + flicker pseudo-elements. */
+.sidebar::before,
+.sidebar::after {
+  display: none !important;
+}
+
+/* Brand — expressive, warm, softly glowing. */
+.sidebar .sidebar-brand-title {
+  font-family: var(--cin-display);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--fg);
+  text-shadow: 0 0 24px var(--cin-glow-s);
+}
+
+/* Section headers — quiet mono micro-labels, softened. */
+.sidebar .section-title {
+  font-family: var(--cin-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--fg) 48%, transparent);
+}
+.sidebar .section-header-flex {
+  border-bottom: 1px solid color-mix(in srgb, var(--cin-acc) 10%, transparent);
+}
+
+/* List items — soft glass rows, warm diffused hover. */
+.sidebar .list-item {
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+  transition: color 0.25s var(--cin-ease), background 0.25s var(--cin-ease),
+              border-color 0.25s var(--cin-ease), box-shadow 0.25s var(--cin-ease),
+              transform 0.25s var(--cin-ease);
+}
+.sidebar .list-item:hover {
+  color: var(--fg);
+  background: var(--cin-glow-soft);
+  border-color: var(--cin-line);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cin-acc) 8%, transparent),
+              0 4px 20px color-mix(in srgb, var(--cin-acc) 8%, transparent);
+  transform: translateX(2px);
+}
+/* Active row — warm glow, no harsh left notch. */
+.sidebar .list-item.active-session,
+.sidebar .session-item.active {
+  color: var(--fg);
+  background: linear-gradient(90deg, var(--cin-glow-s), transparent 85%);
+  border-color: var(--cin-glow-a);
+  box-shadow: 0 0 24px var(--cin-glow-s), inset 0 0 0 1px var(--cin-glow-s);
+}
+/* Remove the HUD left accent notch. */
+.sidebar .list-item.active-session::before,
+.sidebar .session-item.active::before {
+  display: none !important;
+}
+
+/* Session meta — softened mono micro-labels. */
+.sidebar .session-cost,
+.sidebar .session-meta {
+  color: color-mix(in srgb, var(--cin-acc) 50%, transparent);
+}
+
+/* Dropdowns — glass panels. */
+.sidebar .dropdown,
+.sidebar #session-actions-dropdown {
+  background: var(--cin-glass-deep);
+  border: 1px solid var(--cin-line);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--cin-glow-s);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+}
+
+/* User bar — quiet footer. */
+.sidebar .sidebar-user-bar {
+  border-top: 1px solid var(--cin-line);
+  background: color-mix(in srgb, var(--cin-acc) 4%, transparent);
+}
+.sidebar .user-bar-avatar {
+  border: 1px solid var(--cin-glow-a);
+  box-shadow: 0 0 12px var(--cin-glow-s);
+}
+
+/* Icon rail — quiet vertical strip. */
+.icon-rail {
+  background: linear-gradient(180deg, var(--cin-glass) 0%, var(--cin-glass-deep) 100%);
+  border-right: 1px solid var(--cin-line);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--cin-acc) 6%, transparent);
+}
+.icon-rail .icon-rail-btn {
+  border-radius: 8px;
+  transition: color 0.25s var(--cin-ease), background 0.25s var(--cin-ease),
+              box-shadow 0.25s var(--cin-ease), transform 0.25s var(--cin-ease);
+}
+.icon-rail .icon-rail-btn:hover {
+  background: var(--cin-glow-soft);
+  box-shadow: 0 0 16px var(--cin-glow-s);
+  transform: translateY(-1px);
+}
+.icon-rail .icon-rail-btn.active {
+  color: var(--cin-acc);
+  background: var(--cin-glow-soft);
+  border-color: var(--cin-glow-a);
+  box-shadow: 0 0 18px var(--cin-glow-s);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. CANVAS — the welcome screen, the hero moment
+   ═══════════════════════════════════════════════════════════════════════════ */
+#welcome-screen {
+  text-align: center;
+}
+
+/* Big, expressive display type with a warm gradient wash. */
+#welcome-screen .welcome-name {
+  font-family: var(--cin-display);
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  background: linear-gradient(
+    120deg,
+    var(--fg) 0%,
+    color-mix(in srgb, var(--fg) 78%, var(--cin-acc-warm)) 45%,
+    color-mix(in srgb, var(--fg) 70%, var(--cin-acc)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 40px var(--cin-glow-s);
+  margin-bottom: 0.5rem;
+}
+#welcome-screen .welcome-boat {
+  width: 1.6em;
+  height: 1.6em;
+  vertical-align: -0.2em;
+  margin-right: 0.15em;
+  color: var(--cin-acc);
+  filter: drop-shadow(0 0 14px var(--cin-glow-a));
+}
+
+/* Subtitle — quiet, generous spacing. */
+#welcome-screen .welcome-sub {
+  font-family: var(--cin-display);
+  font-size: 1rem;
+  color: color-mix(in srgb, var(--fg) 62%, transparent);
+  letter-spacing: 0.01em;
+  margin-bottom: 0.75rem;
+}
+
+/* Tip — faint mono micro-copy. */
+#welcome-screen .welcome-tip {
+  font-family: var(--cin-mono);
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--fg) 40%, transparent);
+  letter-spacing: 0.02em;
+}
+
+/* Incognito toggle — soft glass chip. */
+.incognito-btn {
+  font-family: var(--cin-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  border: 1px solid var(--cin-line);
+  border-radius: 999px;
+  background: var(--cin-glass);
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: color 0.25s var(--cin-ease), background 0.25s var(--cin-ease),
+              border-color 0.25s var(--cin-ease), box-shadow 0.25s var(--cin-ease);
+}
+.incognito-btn:hover {
+  color: var(--fg);
+  border-color: var(--cin-glow-a);
+  box-shadow: 0 0 18px var(--cin-glow-s);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. CANVAS — chat messages, warm paper-like glass spaces
+   ═══════════════════════════════════════════════════════════════════════════ */
+.msg {
+  border-radius: 16px !important;
+  animation: cin-msg-in 0.5s var(--cin-ease) both;
+}
+@keyframes cin-msg-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* User bubble — warm accent-tinted glass, right-aligned. */
+.msg-user {
+  background:
+    linear-gradient(160deg, var(--cin-glow-s) 0%, transparent 60%),
+    var(--user-bubble-bg, color-mix(in srgb, var(--fg) 7%, var(--bg))) !important;
+  border: 1px solid var(--cin-line) !important;
+  border-radius: 20px 20px 6px 20px !important;
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.28),
+    0 0 0 1px var(--cin-glow-s),
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+/* AI bubble — glass panel, left-aligned. */
+.msg-ai {
+  background:
+    linear-gradient(160deg, var(--cin-glow-soft) 0%, transparent 50%),
+    var(--ai-bubble-bg, var(--panel)) !important;
+  border: 1px solid var(--cin-line) !important;
+  border-radius: 20px 20px 20px 6px !important;
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+/* Role labels — softened, warm. */
+.msg .role {
+  font-family: var(--cin-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--fg) 52%, transparent);
+}
+.msg .role::before {
+  width: 6px;
+  height: 6px;
+  background: var(--cin-acc) !important;
+  box-shadow: 0 0 10px var(--cin-glow-a);
+}
+.msg-user .role {
+  color: var(--cin-acc);
+  text-shadow: 0 0 12px var(--cin-glow-s);
+}
+
+/* Action buttons — soft glass chips, warm hover. */
+.footer-copy-btn,
+.regen-btn,
+.fork-btn,
+.msg-action-btn,
+.msg-delete-btn,
+.msg-more-btn {
+  border-radius: 8px;
+  transition: color 0.2s var(--cin-ease), background 0.2s var(--cin-ease),
+              border-color 0.2s var(--cin-ease), box-shadow 0.2s var(--cin-ease);
+}
+.footer-copy-btn:hover,
+.regen-btn:hover,
+.fork-btn:hover,
+.msg-action-btn:hover {
+  color: var(--cin-acc);
+  background: var(--cin-glow-soft);
+  border-color: var(--cin-line);
+  box-shadow: 0 0 14px var(--cin-glow-s);
+}
+
+/* Code blocks — soft glass. */
+.msg pre {
+  background: color-mix(in srgb, var(--bg) 70%, transparent) !important;
+  border: 1px solid var(--cin-line) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 3%, transparent);
+}
+.msg :not(pre) > code {
+  background: var(--cin-glow-soft);
+  border: 1px solid color-mix(in srgb, var(--cin-acc) 18%, transparent);
+  border-radius: 5px;
+  color: var(--cin-acc);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. ACTION LAYER — the composer, floating glass
+   ═══════════════════════════════════════════════════════════════════════════ */
+.chat-input-bar {
+  background:
+    radial-gradient(120% 160% at 50% -20%, var(--cin-glow-s) 0%, transparent 55%),
+    linear-gradient(160deg, var(--cin-glass) 0%, var(--cin-glass-deep) 100%);
+  border: 1px solid var(--cin-line);
+  border-radius: 20px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.3),
+    0 0 0 1px color-mix(in srgb, var(--cin-acc) 5%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  transition: border-color 0.4s var(--cin-ease), box-shadow 0.4s var(--cin-ease);
+}
+
+/* Remove the HUD corner brackets + conic border sweep. */
+.chat-input-bar::before,
+.chat-input-bar::after {
+  display: none !important;
+}
+
+/* Focus — the whole composer warms up. */
+.chat-input-bar:focus-within {
+  border-color: var(--cin-glow-a);
+  box-shadow:
+    0 20px 70px rgba(0, 0, 0, 0.34),
+    0 0 0 1px var(--cin-glow-a),
+    0 0 40px var(--cin-glow-s),
+    inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent);
+}
+
+/* Textarea — expressive, warm caret. */
+.chat-input-bar textarea#message {
+  font-family: var(--cin-display);
+  caret-color: var(--cin-acc);
+  text-shadow: 0 0 20px color-mix(in srgb, var(--cin-acc) 10%, transparent);
+}
+
+/* Icon buttons — soft glass chips. */
+.chat-input-bar .input-icon-btn {
+  border-radius: 10px;
+  transition: color 0.25s var(--cin-ease), background 0.25s var(--cin-ease),
+              border-color 0.25s var(--cin-ease), box-shadow 0.25s var(--cin-ease),
+              transform 0.25s var(--cin-ease);
+}
+.chat-input-bar .input-icon-btn:hover {
+  background: var(--cin-glow-soft);
+  border-color: var(--cin-line);
+  box-shadow: 0 0 18px var(--cin-glow-s);
+  transform: translateY(-1px);
+}
+.chat-input-bar .input-icon-btn.active,
+.chat-input-bar .input-icon-btn.expanded {
+  color: var(--cin-acc);
+  background: var(--cin-glow-soft);
+  border-color: var(--cin-glow-a);
+  box-shadow: 0 0 20px var(--cin-glow-s);
+}
+
+/* Send button — warm glowing orb. */
+.chat-input-bar .send-btn {
+  background: linear-gradient(160deg, var(--cin-acc), color-mix(in srgb, var(--cin-acc) 70%, #000));
+  color: #fff;
+  border-radius: 12px;
+  box-shadow:
+    0 0 22px var(--cin-glow-a),
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
+  transition: background 0.3s var(--cin-ease), box-shadow 0.3s var(--cin-ease),
+              transform 0.25s var(--cin-ease-spring);
+}
+.chat-input-bar .send-btn:hover {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--cin-acc) 88%, #fff), var(--cin-acc));
+  box-shadow:
+    0 0 36px var(--cin-glow-a),
+    0 6px 20px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 color-mix(in srgb, #fff 38%, transparent);
+  transform: translateY(-1px);
+}
+
+/* Mode toggle — soft glass segmented control. */
+.chat-input-bar .mode-toggle {
+  border: 1px solid var(--cin-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.chat-input-bar .mode-toggle::before {
+  background: linear-gradient(160deg, var(--cin-glow-a), var(--cin-glow-s));
+  border-radius: 10px;
+  box-shadow: 0 0 16px var(--cin-glow-s);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. SAFETY HARNESS — the accessibility gates that make the spectacle allowed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Reduced motion — kill all ambient drift, entrances, and springs. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-container::before,
+  .chat-container::after {
+    animation: none !important;
+  }
+  .msg {
+    animation: none !important;
+  }
+  .chat-container *,
+  .chat-container *::before,
+  .chat-container *::after,
+  .sidebar *,
+  .sidebar *::before,
+  .sidebar *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}
+
+/* Reduced transparency — swap glass for solid panels, keep contrast stable. */
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar,
+  .chat-input-bar,
+  .sidebar .dropdown,
+  .sidebar #session-actions-dropdown,
+  .incognito-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--panel) !important;
+  }
+  .chat-container::before {
+    opacity: 0.25;
+  }
+}
+
+/* Increased contrast — bump dimmed copy back up. */
+@media (prefers-contrast: more) {
+  .sidebar .section-title,
+  .sidebar .list-item,
+  #welcome-screen .welcome-sub,
+  #welcome-screen .welcome-tip,
+  .msg .role,
+  .msg .timestamp {
+    color: var(--fg) !important;
+  }
+  #welcome-screen .welcome-name {
+    color: var(--fg) !important;
+    -webkit-text-fill-color: var(--fg) !important;
+  }
+}
+
+/* Fallback — browsers without backdrop-filter still get solid panels. */
+@supports not (backdrop-filter: blur(1px)) {
+  .sidebar,
+  .chat-input-bar {
+    background: var(--panel) !important;
+  }
+}
