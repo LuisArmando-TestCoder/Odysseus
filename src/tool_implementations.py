@@ -4053,6 +4053,36 @@ async def do_sherlock_osint(content: str, owner: Optional[str] = None) -> Dict:
     return {"output": "\n".join(lines) or "(no results)", "found": result.get("found", []), "exit_code": 0}
 
 
+async def do_osint_framework(content: str, owner: Optional[str] = None) -> Dict:
+    """Navigate the OSINT Framework tree one level at a time.
+
+    Args (JSON):
+      {"path": ["Username", "Username Search Engines"]}   # descend to a level
+      {"path": []}                                        # root level
+
+    Returns the CURRENT level only (cheap, non-blocking): for a folder, the
+    list of child options; for a url leaf, the full tool details. The agent
+    descends recursively until it reaches a leaf, then uses the returned
+    url/description however it likes.
+    """
+    from src.osint_framework import get_level, format_level
+
+    try:
+        args = _parse_tool_args(content)
+    except ValueError:
+        return {"error": "Invalid JSON arguments", "exit_code": 1}
+
+    path = args.get("path", [])
+    view = get_level(path)
+    if view.get("error"):
+        return {"error": view["error"], "exit_code": 1}
+
+    return {
+        "output": format_level(path),
+        "exit_code": 0,
+    }
+
+
 async def do_vault_search(content: str, owner: Optional[str] = None) -> Dict:
     """Search the vault by keyword. Returns matching item names + URLs, NO passwords."""
     try:

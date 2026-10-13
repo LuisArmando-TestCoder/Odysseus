@@ -904,6 +904,20 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "osint_framework",
+            "description": "Navigate the OSINT Framework tree (a large catalog of OSINT tools organized as folders) ONE LEVEL at a time. Pass a `path` (list of folder names from the root) to see the options at that level; descend recursively by appending a chosen option's name to the path until you reach a url leaf, which returns the full tool details (url, description, input, output, opsec). Use when the user wants to browse or find OSINT tools for a specific purpose (e.g. 'what tools exist for username search'). Start with an empty path [] to see the top level.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "array", "items": {"type": "string"}, "description": "List of folder names from the root to the current level, e.g. ['Username', 'Username Search Engines']. Empty [] = root level."},
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_contact",
             "description": "Create, update, delete, or list the user's CardDAV contacts. Use to save a new contact ('save Jonathan's email jon@x.com'), update an existing one ('change Maria's number'), or remove one. For update/delete you need the contact's uid — call action='list' first to find it. Writes go through the same dedupe + validation as the Contacts UI.",
             "parameters": {

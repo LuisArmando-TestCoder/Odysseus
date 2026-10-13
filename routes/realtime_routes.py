@@ -84,6 +84,10 @@ VOICE_CONTRACT = (
     "video, redirect the page, or run a command in their browser, do NOT say you can't open tabs or redirect "
     "the browser — forward it to the chat agent, which can run JavaScript in the user's browser. Acknowledge "
     "briefly and let the chat agent do it; report the result when it comes back."
+    "OSINT: the chat agent can browse the OSINT Framework — a catalog of open-source-intelligence tools "
+    "(username search, email lookup, domain recon, etc.) — and find the right tool for a purpose. When the "
+    "user asks 'what OSINT tools exist for X' or 'find me a tool to look up a username/email/domain', forward "
+    "it to the chat agent (it navigates the framework and reports the matching tool + its URL)."
 )
 
 

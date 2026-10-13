@@ -706,7 +706,7 @@ async def execute_tool_block(
         do_edit_image, do_trigger_research, do_manage_research, do_resolve_contact,
         do_manage_contact,
         do_vault_search, do_vault_get, do_vault_unlock,
-        do_app_api, do_sherlock_osint,
+        do_app_api, do_sherlock_osint, do_osint_framework,
     )
 
     tool = block.tool_type
@@ -929,6 +929,9 @@ async def execute_tool_block(
     elif tool == "sherlock_osint":
         desc = "sherlock_osint"
         result = await do_sherlock_osint(content, owner=owner)
+    elif tool == "osint_framework":
+        desc = "osint_framework"
+        result = await do_osint_framework(content, owner=owner)
     elif tool.startswith("mcp__"):
         # MCP tool dispatch
         mcp = get_mcp_manager()
