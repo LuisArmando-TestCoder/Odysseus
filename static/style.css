@@ -8734,8 +8734,14 @@ body.hide-thinking .thinking-section { display: none !important; }
   color: var(--fg);
   border: 1px solid var(--border);
 }
+/* Tool-call command snippets are VISIBLE by default so the user can always
+   see exactly what tool ran and with what arguments — previously this was
+   `display:none` and only revealed on click, which made the model's narration
+   ("I'll invoke the tool") appear to produce nothing. The verbose tool OUTPUT
+   stays collapsed in its own <details> below, so this only surfaces the one-line
+   command, not a wall of text. */
 .agent-thread-content {
-  display: none;
+  display: block;
   padding: 4px 0 2px 0;
   overflow-x: auto;
   overflow-y: hidden;

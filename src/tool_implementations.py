@@ -4046,8 +4046,38 @@ async def do_sherlock_osint(content: str, owner: Optional[str] = None) -> Dict:
         if f.get("error"):
             lines.append(f"{f['username']}: error — {f['error']}")
         elif hits:
-            lines.append(f"{f['username']}: found on {len(hits)} site(s)")
-            lines.extend(f"  {h}" for h in hits)
+            # Sites are now dicts {site,url,status,...} when verification ran;
+            # tolerate the legacy string form (verify=False) for back-compat.
+            buckets = {"verified": [], "unverified": [], "unchecked": []}
+            for h in hits:
+                if isinstance(h, str):
+                    buckets["unchecked"].append(h)
+                else:
+                    buckets.get(h.get("status", "unchecked"), "unchecked").append(h)
+
+            verified_n = len(buckets["verified"])
+            fake_n = len(buckets["unverified"])
+            total = len(hits)
+            if total:
+                summary = f"{f['username']}: {verified_n} confirmed, {fake_n} false positives"
+                if buckets["unchecked"]:
+                    summary += f", {len(buckets['unchecked'])} unverifiable"
+                lines.append(summary)
+            else:
+                lines.append(f"{f['username']}: no hits")
+
+            for h in buckets["verified"]:
+                lines.append(f"  ✓ {h['site'] if isinstance(h, dict) else h} — {h['url'] if isinstance(h, dict) else ''}".rstrip())
+            for h in buckets["unverified"]:
+                if isinstance(h, dict):
+                    lines.append(f"  ✗ {h['site']} — {h['url']} (no matching account in page text)")
+                else:
+                    lines.append(f"  ✗ {h} (no matching account)")
+            for h in buckets["unchecked"]:
+                if isinstance(h, dict):
+                    lines.append(f"  ? {h['site']} — {h['url']} (could not verify)")
+                else:
+                    lines.append(f"  ? {h} (could not verify)")
         else:
             lines.append(f"{f['username']}: no hits")
     return {"output": "\n".join(lines) or "(no results)", "found": result.get("found", []), "exit_code": 0}
