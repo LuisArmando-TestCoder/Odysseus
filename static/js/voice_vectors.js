@@ -48,6 +48,31 @@ let _agentSummaries = new Set();  // ids we've already asked an agent to refine
 const _CAP = 50;            // max DOM dots AND max log rows
 const _MAX_MEMORY = 5000;   // in-memory cap (persistence also caps at 5000)
 
+// ── Radar sweep reveal ─────────────────────────────────────────────────────
+// The GLSL FRAG shader draws a radar sweep at `sweep = fract(an + t * 0.33)`
+// where `an` is the angle normalised 0..1 (0 at the top, increasing clockwise)
+// and `t` is the shader's u_time (seconds since the HUD's _t0). Each dot's
+// angle is derived from its timestamp the same way the shader's `an` is
+// derived from screen position: `theta = (ts % 60000) / 60000` (one full
+// revolution per minute). We reveal a dot the moment the sweep's current
+// angle passes the dot's angle, then fade its fill to a permanent border.
+//
+// The sweep angle advances at 0.33 turns/second, so it completes a full
+// revolution every ~3.03s. A dot is "hit" when the sweep's accumulated
+// rotation (t * 0.33) wraps to the dot's fixed angle. We compute the number
+// of whole revolutions the sweep has made and use a mod to find the current
+// sweep angle, then compare against each dot's angle with a small tolerance.
+const _SWEEP_SPEED = 0.33;   // turns per second — MUST match the GLSL `t * 0.33`
+const _REVEAL_HOLD_MS = 1000; // how long a dot stays filled before fading to border
+let _timeSource = null;      // () => seconds, shared with the shader's u_time
+let _revealRaf = 0;          // rAF id for the reveal loop
+let _lastSweepAngle = -1;    // last computed sweep angle (0..1), for edge detection
+let _revealRunning = false;
+
+// Map of dot id → { el, v, revealedAt } for dots currently in the "filled"
+// state, so we can fade them to border after _REVEAL_HOLD_MS.
+const _revealed = new Map();
+
 // ── Position: deterministic polar coordinates ─────────────────────────────
 // Two axes instead of x/y semantics:
 //   • rotation (angle)  — derived from the timestamp: one full revolution per
@@ -98,6 +123,112 @@ function _flush() {
   for (const id of removes) _unmountDot(id);
   _syncLog();
   if (_addQueue.length || _removeQueue.length) _schedule();
+}
+
+// ── Radar sweep reveal (non-blocking) ─────────────────────────────────────
+// Share the shader's clock so the reveal uses the exact same time base as the
+// GLSL `u_time` (and therefore the same sweep position). Called by voice.js
+// once the HUD is up.
+export function setTimeSource(fn) {
+  _timeSource = typeof fn === 'function' ? fn : null;
+  _startReveal();
+}
+
+// The sweep's bright edge in the shader sits where `fract(an + t * 0.33) = 0`,
+// i.e. at `an = fract(-t * 0.33)`. The shader's `an` is offset from the dot's
+// own `frac` space by +0.5 (a dot at frac=0 sits at screen-right, which is
+// an=0.5), so we convert the edge into frac space with `- 0.5`. The result is
+// the sweep edge position in the SAME 0..1 space as `_dotAngle`, so a dot is
+// "hit" exactly when the edge reaches its angle. The edge moves in the
+// DECREASING direction (clockwise on screen), matching the shader.
+function _sweepAngle() {
+  if (!_timeSource) return -1;
+  const t = _timeSource();
+  return ((-t * _SWEEP_SPEED - 0.5) % 1 + 1) % 1;   // 0..1, wraps cleanly
+}
+
+// A dot's fixed angle (0..1) from its timestamp — the same `frac` used by
+// `_polarPosition` (0 = screen-right, 0.25 = top, 0.5 = left, 0.75 = bottom).
+function _dotAngle(v) {
+  return (((Number(v.ts) || Date.now()) % 60000) / 60000 + 1) % 1;
+}
+
+function _startReveal() {
+  if (_revealRunning) return;
+  _revealRunning = true;
+  _lastSweepAngle = _sweepAngle();
+  const tick = () => {
+    if (!_revealRunning) return;
+    _tickReveal();
+    _revealRaf = requestAnimationFrame(tick);
+  };
+  _revealRaf = requestAnimationFrame(tick);
+}
+
+function _stopReveal() {
+  _revealRunning = false;
+  if (_revealRaf) { cancelAnimationFrame(_revealRaf); _revealRaf = 0; }
+  _lastSweepAngle = -1;
+}
+
+function _tickReveal() {
+  if (!_dotContainer) return;
+  const angle = _sweepAngle();
+  if (angle < 0) return;
+
+  // Detect the sweep edge crossing each dot's angle. The edge moves in the
+  // DECREASING direction (clockwise on screen), so a dot is "hit" when the
+  // edge's angle passes the dot's angle going downward within this frame. We
+  // compare against the previous frame's angle to catch the wrap (e.g.
+  // 0.02 → 0.98 crossing a dot at 0.0).
+  const prev = _lastSweepAngle;
+  _lastSweepAngle = angle;
+
+  for (const el of _dotEls) {
+    const v = _vectors.find(x => x.id === el.dataset.id);
+    if (!v) continue;
+    const dotA = _dotAngle(v);
+    // Already revealed (or already faded to border) — skip.
+    if (el.classList.contains('revealed') || el.classList.contains('revealed-done')) continue;
+
+    let hit = false;
+    if (prev >= 0) {
+      if (prev >= angle) {
+        // Normal advance (decreasing): dot angle lies in [angle, prev).
+        hit = dotA >= angle && dotA < prev;
+      } else {
+        // Wrapped around 0: dot angle lies in [angle, 1) or [0, prev).
+        hit = dotA >= angle || dotA < prev;
+      }
+    } else {
+      // First frame — reveal any dot the edge is already past.
+      hit = dotA >= angle;
+    }
+
+    if (hit) _revealDot(el, v);
+  }
+
+  // Fade any dots whose hold time has elapsed (non-blocking, no transition).
+  const now = Date.now();
+  for (const [id, rec] of _revealed) {
+    if (now - rec.revealedAt >= _REVEAL_HOLD_MS) {
+      _revealed.delete(id);
+      _fadeToBorder(rec.el);
+    }
+  }
+}
+
+// Fill the dot with its background colour (the "reveal" moment).
+function _revealDot(el, v) {
+  el.classList.add('revealed');
+  _revealed.set(v.id, { el, v, revealedAt: Date.now() });
+}
+
+// After the hold, drop the fill with NO transition — leaving only the
+// permanent 1px border. Marked `revealed-done` so the sweep never re-fills it.
+function _fadeToBorder(el) {
+  el.classList.remove('revealed');
+  el.classList.add('revealed-done');
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
@@ -161,6 +292,7 @@ export function clearVectors() {
   _addQueue = [];
   _removeQueue = _dotEls.map(d => d.id);
   _dotEls = [];
+  _revealed.clear();
   if (_dotContainer) _dotContainer.replaceChildren();
   if (_logContainer) _logContainer.replaceChildren(_emptyLogRow());
   _agentSummaries.clear();
@@ -336,6 +468,6 @@ function _syncLog() {
 let _logDirty = false;
 
 export default {
-  initVectors, setSession, seedVectors, addVector, clearVectors,
+  initVectors, setSession, setTimeSource, seedVectors, addVector, clearVectors,
   showVectors, hideVectors, toggleLog, layoutVectors,
 };

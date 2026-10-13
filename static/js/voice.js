@@ -120,7 +120,7 @@ let _col = STATE_COLORS.idle.slice();
 let _lvl = 0, _out = 0, _think = 0, _thinkTarget = 0;
 let _scale = 1, _scaleAt = 0, _lastFrameAt = 0;
 let _bgCanvas = null, _bgGl = null, _bgProg = null, _bgTex = null, _bgU = {};
-let _orbRect = null, _orbResizeBound = false;
+let _orbRect = null, _orbResizeBound = false, _measureAt = 0;
 const _reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 let _root = null;
@@ -208,16 +208,10 @@ void main() {
   float dash = step(fract((an + t * 0.07) * 48.0), 0.45);
   col += c * ring(r, 0.935, 0.003) * dash * 0.4;
 
-  // ── thinking: radar sweep + orbiting satellites (clockwise) ──
+  // ── thinking: radar sweep (clockwise) ──
   float sweep = fract(an + t * 0.33);
   float band = step(0.40, r) * step(r, 0.90);
   col += c * u_think * exp(-sweep * 9.0) * band * 0.55;
-  for (int k = 0; k < 3; k++) {
-    float fk = float(k);
-    float ang = -t * (1.2 + fk * 0.35) + fk * 2.094;
-    vec2 p = (0.80 + fk * 0.035) * vec2(cos(ang), sin(ang));
-    col += mix(c, vec3(1.0), 0.6) * u_think * smoothstep(0.03, 0.0, length(uv - p));
-  }
 
   col += c * exp(-abs(r - 0.8) * 11.0) * 0.06 * (1.0 + e);
   col *= smoothstep(1.02, 0.95, r);
@@ -470,6 +464,13 @@ function _loop() {
   // scale (and thus the pixel count) until it recovers.
   const dt = now - _lastFrameAt;
   _lastFrameAt = now;
+  // Keep the orb's viewport centre fresh so the projection light (BG_FRAG
+  // u_orb) tracks it even when the layout shifts without a resize event
+  // (e.g. the open transition, a panel resize, or a font/zoom change).
+  if (now - _measureAt > 1000) {
+    _measureAt = now;
+    _measureOrb();
+  }
   if (now - _scaleAt > 2000) {
     if (dt > 26) _scale = Math.max(0.5, _scale - 0.1);
     else if (dt < 14 && _scale < 1) _scale = Math.min(1, _scale + 0.05);
@@ -2689,6 +2690,9 @@ function _initVectors() {
     logContainer: logWrap,
     tooltip,
   });
+  // Share the shader's clock with the vector engine so the radar-sweep
+  // reveal uses the exact same time base as the GLSL sweep (u_time).
+  vectors.setTimeSource(() => _reducedMotion ? 0 : (performance.now() - _t0) / 1000);
   _buildLegend();
   if (logBtn) {
     logBtn.onclick = () => { vectors.toggleLog(); logBtn.classList.toggle('on', logWrap.classList.contains('open')); };

@@ -453,11 +453,27 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 }
 .vx-vec {
   position: absolute; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--vc, #9fb2c4);
+  /* Permanent 1px border — always visible, never toggles. The fill is
+     transparent by default and only appears while the radar sweep passes. */
+  background: transparent;
+  border: 1px solid var(--vc, #9fb2c4);
   box-shadow: 0 0 6px var(--vc, #9fb2c4);
   pointer-events: auto;
   cursor: pointer;
+  /* No transition on background/border — the fill appears and disappears
+     instantly (non-blocking, no fade). Only the hover scale/glow animates. */
   transition: transform .18s ease, box-shadow .18s ease;
+}
+/* The radar sweep has just passed this dot — fill it with its colour. */
+.vx-vec.revealed {
+  background: var(--vc, #9fb2c4);
+  box-shadow: 0 0 10px var(--vc, #9fb2c4), 0 0 0 2px var(--vc, #9fb2c4);
+}
+/* After the hold, the fill drops with no transition — only the 1px border
+   remains to mark where the dot still is. */
+.vx-vec.revealed-done {
+  background: transparent;
+  box-shadow: 0 0 6px var(--vc, #9fb2c4);
 }
 .vx-vec:hover {
   transform: scale(1.7);
