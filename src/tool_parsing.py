@@ -54,7 +54,18 @@ _TOOL_CODE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Pattern 5: DeepSeek DSML markup leaking into content. When deepseek
+# Pattern 5: ```json fenced blocks carrying an {"action": "<tool>", ...}
+# payload. Some models (deepseek-chat) emit tool calls as a ```json block
+# with an `action` (or `tool`/`name`) key instead of a ```<tool> fence or a
+# native function call. Without this, the block is treated as inert prose and
+# the model hallucinates the tool's result. We parse it into a ToolBlock so
+# the real tool executes.
+_JSON_ACTION_BLOCK_RE = re.compile(
+    r"```json\s*\n([\s\S]*?)```",
+    re.IGNORECASE,
+)
+
+# Pattern 6: DeepSeek DSML markup leaking into content. When deepseek
 # models can't emit structured tool_calls (e.g. we sent no tool schemas
 # that round, or the API didn't parse them), they fall back to raw
 # markup using fullwidth-pipe delimiters:
@@ -178,6 +189,9 @@ _TOOL_NAME_MAP = {
     "notes": "manage_notes",
     "todo": "manage_notes",
     "todos": "manage_notes",
+    "osint_framework": "osint_framework",
+    "osint": "osint_framework",
+    "osint_framework_navigate": "osint_framework",
 }
 
 
@@ -274,6 +288,44 @@ def _parse_xml_invoke(inv_match) -> Optional[ToolBlock]:
     # Local import to avoid a circular import at module load.
     from src.tool_schemas import function_call_to_tool_block
     return function_call_to_tool_block(tool_name, json.dumps(params))
+
+
+def _parse_json_action_block(raw: str) -> Optional[ToolBlock]:
+    """Parse a ```json block carrying an {"action": "<tool>", ...} payload.
+
+    Some models (deepseek-chat) emit tool calls as a ```json fence with an
+    `action` (or `tool`/`name`) key instead of a ```<tool> fence or a native
+    function call. We map the action name through the same alias table and
+    hand the remaining keys to the canonical converter so the full tool set
+    and correct per-tool content format apply.
+    """
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    # Find the tool name: `action`, `tool`, `name`, or `function`.
+    tool_name = None
+    for key in ("action", "tool", "name", "function"):
+        val = payload.get(key)
+        if isinstance(val, str) and val.strip():
+            tool_name = val.strip().lower().replace("-", "_")
+            break
+    if not tool_name:
+        return None
+
+    mapped = _TOOL_NAME_MAP.get(tool_name) or (tool_name if tool_name in TOOL_TAGS else None)
+    if not mapped:
+        return None
+
+    # Build the args dict, dropping the action/tool/name/function key so the
+    # converter sees only the real arguments (e.g. {"path": [...]}).
+    args = {k: v for k, v in payload.items() if k not in ("action", "tool", "name", "function")}
+
+    from src.tool_schemas import function_call_to_tool_block
+    return function_call_to_tool_block(mapped, json.dumps(args))
 
 
 def _parse_tool_code_block(raw: str) -> Optional[ToolBlock]:
@@ -397,6 +449,16 @@ def parse_tool_blocks(text: str) -> List[ToolBlock]:
             if block:
                 blocks.append(block)
 
+    # Pattern 5: ```json blocks carrying an {"action": "<tool>", ...} payload.
+    # Only consulted when nothing else matched, and only when the JSON has an
+    # `action`/`tool`/`name` key that maps to a known tool — so a ```json
+    # block that's just data (e.g. a code sample) is left alone.
+    if not blocks:
+        for m in _JSON_ACTION_BLOCK_RE.finditer(text):
+            block = _parse_json_action_block(m.group(1))
+            if block:
+                blocks.append(block)
+
     return blocks
 
 
@@ -409,6 +471,12 @@ def strip_tool_blocks(text: str) -> str:
     cleaned = _TOOL_CALL_RE.sub('', cleaned)
     cleaned = _XML_TOOL_CALL_RE.sub('', cleaned)
     cleaned = _TOOL_CODE_RE.sub('', cleaned)
+    # Strip ```json blocks that carry an {"action": "<tool>", ...} payload —
+    # they're tool calls, not content, so they must not leak to the user.
+    cleaned = _JSON_ACTION_BLOCK_RE.sub(
+        lambda m: '' if _parse_json_action_block(m.group(1)) else m.group(0),
+        cleaned,
+    )
     # Strip bare <invoke> blocks not wrapped in <tool_call>
     cleaned = re.sub(r'<invoke\s+name=["\'].*?</invoke>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
