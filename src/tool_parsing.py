@@ -290,14 +290,65 @@ def _parse_xml_invoke(inv_match) -> Optional[ToolBlock]:
     return function_call_to_tool_block(tool_name, json.dumps(params))
 
 
-def _parse_json_action_block(raw: str) -> Optional[ToolBlock]:
-    """Parse a ```json block carrying an {"action": "<tool>", ...} payload.
+def _extract_json_objects(text: str) -> List[str]:
+    """Extract every balanced JSON object literal from text.
 
-    Some models (deepseek-chat) emit tool calls as a ```json fence with an
-    `action` (or `tool`/`name`) key instead of a ```<tool> fence or a native
-    function call. We map the action name through the same alias table and
-    hand the remaining keys to the canonical converter so the full tool set
-    and correct per-tool content format apply.
+    Models emit tool calls in several wrappers: a ```json fence, a bare
+    `json` keyword followed by the object, or a raw JSON object with no
+    fence at all. This returns each balanced `{...}` literal (fenced or
+    bare) so the caller can test it for an action/tool/name key. Brace
+    matching respects string literals and nesting, so a JSON object that
+    contains a nested object/array is returned whole.
+    """
+    candidates: List[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        j = i
+        while j < n:
+            c = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            else:
+                if c == '"':
+                    in_str = True
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(text[i:j + 1])
+                        i = j + 1
+                        break
+            j += 1
+        else:
+            # Unbalanced — skip this opening brace and keep scanning.
+            i += 1
+            continue
+        continue
+    return candidates
+
+
+def _parse_json_action_block(raw: str) -> Optional[ToolBlock]:
+    """Parse a JSON object carrying an {"action": "<tool>", ...} payload.
+
+    Some models (deepseek-chat) emit tool calls as a JSON object with an
+    `action` (or `tool`/`name`) key — inside a ```json fence, after a bare
+    `json` keyword, or as a raw object — instead of a ```<tool> fence or a
+    native function call. We map the action name through the same alias table
+    and hand the remaining keys to the canonical converter so the full tool
+    set and correct per-tool content format apply.
     """
     try:
         payload = json.loads(raw)
@@ -449,13 +500,14 @@ def parse_tool_blocks(text: str) -> List[ToolBlock]:
             if block:
                 blocks.append(block)
 
-    # Pattern 5: ```json blocks carrying an {"action": "<tool>", ...} payload.
-    # Only consulted when nothing else matched, and only when the JSON has an
-    # `action`/`tool`/`name` key that maps to a known tool — so a ```json
-    # block that's just data (e.g. a code sample) is left alone.
+    # Pattern 5: JSON objects carrying an {"action": "<tool>", ...} payload —
+    # whether fenced (```json), after a bare `json` keyword, or raw. Only
+    # consulted when nothing else matched, and only when the JSON has an
+    # `action`/`tool`/`name` key that maps to a known tool — so a JSON object
+    # that's just data (e.g. a code sample) is left alone.
     if not blocks:
-        for m in _JSON_ACTION_BLOCK_RE.finditer(text):
-            block = _parse_json_action_block(m.group(1))
+        for raw in _extract_json_objects(text):
+            block = _parse_json_action_block(raw)
             if block:
                 blocks.append(block)
 
@@ -471,12 +523,20 @@ def strip_tool_blocks(text: str) -> str:
     cleaned = _TOOL_CALL_RE.sub('', cleaned)
     cleaned = _XML_TOOL_CALL_RE.sub('', cleaned)
     cleaned = _TOOL_CODE_RE.sub('', cleaned)
-    # Strip ```json blocks that carry an {"action": "<tool>", ...} payload —
+    # Strip JSON objects that carry an {"action": "<tool>", ...} payload —
     # they're tool calls, not content, so they must not leak to the user.
+    # Handles ```json fences (whole fence) and bare objects (just the object,
+    # plus a preceding bare `json` keyword line).
     cleaned = _JSON_ACTION_BLOCK_RE.sub(
         lambda m: '' if _parse_json_action_block(m.group(1)) else m.group(0),
         cleaned,
     )
+    for raw in _extract_json_objects(cleaned):
+        if _parse_json_action_block(raw):
+            cleaned = cleaned.replace(raw, "")
+    # Remove a now-orphaned bare `json` keyword line left behind by a bare
+    # object tool call (e.g. "json\n\n{...}").
+    cleaned = re.sub(r'(?im)^\s*json\s*$', '', cleaned)
     # Strip bare <invoke> blocks not wrapped in <tool_call>
     cleaned = re.sub(r'<invoke\s+name=["\'].*?</invoke>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
