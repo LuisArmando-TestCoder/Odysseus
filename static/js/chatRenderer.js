@@ -396,6 +396,81 @@ const DSML_STRAY_RE = /<\s*\/?\s*[｜|]+\s*DSML\s*[｜|]+[^>]*>/gi;
 // Self-narration about tool results (model echoing stdout/exit_code)
 const TOOL_NARRATION_RE = /(?:The (?:result|output) shows?:?\s*)?-?\s*(?:stdout|stderr|exit_code):\s*.+/gi;
 
+// JSON tool-call forms (deepseek-chat): the model emits tool invocations as a
+// ```json fenced block, after a bare `json` keyword, or as a raw JSON object
+// with an `action`/`tool`/`name`/`function` key — instead of a native function
+// call or the fenced ```<tool> convention. Mirror src/tool_parsing.py
+// strip_tool_blocks so this raw JSON never leaks into the visible chat text
+// (it is executed by the backend and surfaced as a proper tool-thread node).
+const JSON_FENCE_RE = /```json\s*\n([\s\S]*?)```/gi;
+// Only `action` and `tool` are treated as tool-call signals here. `name` and
+// `function` are deliberately EXCLUDED: a plain data object like
+// {"id": 42, "name": "foo"} must never be misclassified as a tool call and
+// stripped from a legitimate answer. (The backend's parser is safe because it
+// validates the extracted name against a real-tool whitelist; the frontend
+// strip path keeps this conservative so it only ever removes unambiguous
+// `action`/`tool` invocations plus standalone argument objects.)
+const _TOOL_ACTION_KEYS = ['action', 'tool'];
+// Keys a tool ARGUMENT object may carry when the model re-emits just the args
+// (no action key). Used to strip orphaned args leaked after the action object.
+const _TOOL_ARG_KEYS = new Set([
+  'usernames', 'url', 'query', 'queries', 'path', 'file_path', 'code',
+  'content', 'command', 'edits', 'suggestions', 'time_filter',
+]);
+
+// Extract balanced JSON object literals (mirrors the backend brace-matcher so
+// fenced/bare/raw objects are found whole even when they contain nesting).
+function _extractJsonObjects(text) {
+  const out = [];
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    if (text[i] !== '{') { i++; continue; }
+    let depth = 0, inStr = false, esc = false, j = i;
+    while (j < n) {
+      const c = text[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+      } else {
+        if (c === '"') inStr = true;
+        else if (c === '{') depth++;
+        else if (c === '}') {
+          depth--;
+          if (depth === 0) { out.push(text.slice(i, j + 1)); i = j + 1; break; }
+        }
+      }
+      j++;
+    }
+    if (j >= n) i++;
+  }
+  return out;
+}
+
+function _parseJsonObject(raw) {
+  const s = String(raw || '').trim();
+  if (!s.startsWith('{') || !s.endsWith('}')) return null;
+  try {
+    const v = JSON.parse(s);
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
+  } catch (e) { return null; }
+}
+
+function _isToolCallJson(raw) {
+  const obj = _parseJsonObject(raw);
+  if (!obj) return false;
+  return _TOOL_ACTION_KEYS.some((k) => typeof obj[k] === 'string' && obj[k].trim() !== '');
+}
+
+function _isToolArgJson(raw) {
+  const obj = _parseJsonObject(raw);
+  if (!obj) return false;
+  const keys = Object.keys(obj);
+  if (!keys.length) return false;
+  return keys.every((k) => _TOOL_ARG_KEYS.has(k));
+}
+
 
 // Model pricing table — per million tokens
 // Model info: pricing (per 1M tokens) + context window length
@@ -776,6 +851,37 @@ export function stripToolBlocks(text) {
   cleaned = cleaned.replace(XML_TOOL_CALL_RE, '');
   cleaned = cleaned.replace(XML_INVOKE_RE, '');
   cleaned = cleaned.replace(TOOL_NARRATION_RE, '');
+
+  // (1) ```json fenced tool calls.
+  cleaned = cleaned.replace(JSON_FENCE_RE, (m, inner) => _isToolCallJson(inner) ? '' : m);
+  // (2) A bare `json` keyword line immediately followed by a JSON object is a
+  // tool call — collapse the keyword away so the object can be classified and
+  // stripped below (handles `json\n\n{...}` with any whitespace between).
+  cleaned = cleaned.replace(/(^|[\r\n])[ \t]*json[ \t]*[\r\n]+[ \t]*(?=\{)/gi, '$1');
+
+  // (3) Strip raw tool-call JSON + orphaned tool-argument objects.
+  for (const raw of _extractJsonObjects(cleaned)) {
+    if (_isToolCallJson(raw)) {
+      cleaned = cleaned.split(raw).join('');
+    } else if (_isToolArgJson(raw)) {
+      // Only strip argument-only objects when they're standalone on their own
+      // line(s) — i.e. not embedded in prose — so legitimate JSON data inside
+      // a normal answer is left alone.
+      const idx = cleaned.indexOf(raw);
+      if (idx >= 0) {
+        const before = cleaned.slice(0, idx);
+        const after = cleaned.slice(idx + raw.length);
+        const boundaryOk =
+          (!before || /[\r\n][ \t]*$/.test(before)) &&
+          (!after || /^[ \t]*[\r\n]/.test(after));
+        if (boundaryOk) cleaned = before + after;
+      }
+    }
+  }
+
+  // (4) Drop any now-orphaned `json` keyword lines.
+  cleaned = cleaned.replace(/^[ \t]*json[ \t]*$/gim, '');
+
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   return cleaned.trim();
 }
