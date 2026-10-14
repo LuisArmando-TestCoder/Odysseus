@@ -20,6 +20,7 @@ All failures degrade gracefully to the original text — the middleman must neve
 break a user's response.
 """
 
+import asyncio
 import contextvars
 import json
 import logging
@@ -265,6 +266,65 @@ def _chunk_text(text: str, size: int = 80) -> List[str]:
     return [text[i:i + size] for i in range(0, len(text), size)]
 
 
+# SSE keep-alive heartbeat. A comment line (``: ...``) is ignored by every
+# frontend parser (they only act on ``data: `` / ``event: `` lines), but it
+# keeps the HTTP connection alive through proxies and prevents the browser from
+# killing an idle stream when the tab goes inactive during the buffering +
+# JEV-detection + reducer phase.
+_HEARTBEAT = ": keep-alive\n\n"
+_HEARTBEAT_INTERVAL = 15.0
+
+
+async def _guard_both(
+    thinking_text: str,
+    answer_text: str,
+    *,
+    url: str,
+    model: str,
+    headers: Optional[Dict],
+) -> tuple:
+    """Guard reasoning and answer independently. Empty text is a no-op."""
+    guarded_thinking = (
+        await guard_response_async(thinking_text, url=url, model=model, headers=headers)
+        if thinking_text.strip() else thinking_text
+    )
+    guarded_answer = (
+        await guard_response_async(answer_text, url=url, model=model, headers=headers)
+        if answer_text.strip() else answer_text
+    )
+    return guarded_thinking, guarded_answer
+
+
+async def _guard_both_with_heartbeats(
+    thinking_text: str,
+    answer_text: str,
+    *,
+    url: str,
+    model: str,
+    headers: Optional[Dict],
+    interval: float = _HEARTBEAT_INTERVAL,
+):
+    """Run ``_guard_both`` once, yielding SSE keep-alive comments while it runs.
+
+    Yields ``: keep-alive`` heartbeats during the JEV + reducer round-trips, then
+    yields the final ``(guarded_thinking, guarded_answer)`` tuple as the last
+    item. The caller must treat the last yielded value as the result.
+    """
+    task = asyncio.ensure_future(
+        _guard_both(thinking_text, answer_text, url=url, model=model, headers=headers)
+    )
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=interval)
+            if task in done:
+                yield task.result()
+                return
+            yield _HEARTBEAT
+    finally:
+        if not task.done():
+            task.cancel()
+
+
 async def guard_stream(
     agen,
     *,
@@ -279,6 +339,12 @@ async def guard_stream(
     is redacted too. Non-text events (tool_calls, usage, fallback, doc_stream_*,
     etc.) pass through verbatim. Guarded text is re-chunked so the client still
     receives a smooth stream.
+
+    Because the guard must buffer the full response before it can detect PII and
+    rewrite it, the connection would otherwise sit idle for the whole generation
+    + JEV + reducer round-trip. We emit ``: keep-alive`` SSE comment heartbeats
+    throughout that phase so proxies and the browser don't drop the stream when
+    the tab goes inactive.
     """
     cfg = middleman_settings()
     if not cfg["enabled"] or is_active():
@@ -286,11 +352,22 @@ async def guard_stream(
             yield chunk
         return
 
-    # Buffer the whole stream first (thread-blocking semantics: hold until done).
+    # Buffer the whole stream first (thread-blocking semantics: hold until done),
+    # emitting heartbeats so the connection stays alive during generation.
     chunks = []
     thinking_parts = []
     answer_parts = []
-    async for chunk in agen:
+    agen_iter = agen.__aiter__()
+    while True:
+        try:
+            chunk = await asyncio.wait_for(
+                agen_iter.__anext__(), timeout=_HEARTBEAT_INTERVAL
+            )
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError:
+            yield _HEARTBEAT
+            continue
         chunks.append(chunk)
         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
             try:
@@ -306,15 +383,17 @@ async def guard_stream(
     thinking_text = "".join(thinking_parts)
     answer_text = "".join(answer_parts)
 
-    # Guard reasoning and answer independently. Each is a no-op when empty.
-    guarded_thinking = (
-        await guard_response_async(thinking_text, url=url, model=model, headers=headers)
-        if thinking_text.strip() else thinking_text
-    )
-    guarded_answer = (
-        await guard_response_async(answer_text, url=url, model=model, headers=headers)
-        if answer_text.strip() else answer_text
-    )
+    # Guard reasoning and answer once, emitting heartbeats during the JEV +
+    # reducer round-trips. The generator yields heartbeats, then the final
+    # (guarded_thinking, guarded_answer) tuple as its last item.
+    guarded_thinking, guarded_answer = None, None
+    async for item in _guard_both_with_heartbeats(
+        thinking_text, answer_text, url=url, model=model, headers=headers
+    ):
+        if isinstance(item, tuple):
+            guarded_thinking, guarded_answer = item
+        else:
+            yield item
 
     if guarded_thinking == thinking_text and guarded_answer == answer_text:
         for chunk in chunks:
