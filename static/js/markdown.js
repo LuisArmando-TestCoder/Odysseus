@@ -741,21 +741,56 @@ function _setThinkingExpanded(content, toggle, header, expanded) {
 document.addEventListener('click', function(e) {
   const header = e.target.closest('.thinking-header[data-thinking-id]');
   if (!header) return;
-  const id = header.dataset.thinkingId;
-  const content = document.getElementById(id);
-  const toggle = document.getElementById(id + '-toggle');
-  if (!content || !toggle) return;
 
-  const willExpand = !content.classList.contains('expanded');
-  _setThinkingExpanded(content, toggle, header, willExpand);
+  const section = header.closest('.thinking-section');
+  const content = section ? section.querySelector('.thinking-content') : null;
+  // Still actively streaming thinking has no `.thinking-content` yet (it shows
+  // a "Thinking (N lines)" placeholder), so there's nothing to toggle.
+  if (!content) return;
 
-  // Persist by content hash so the choice survives a refresh.
+  // During streaming the reply text below a *completed* thinking block keeps
+  // re-rendering the whole bubble on every token, replacing the section with a
+  // freshly generated Date.now() id. That means the clicked `header` can be
+  // DETACHED (replaced) by the time this handler runs — toggling classes on a
+  // disconnected node is invisible, which is exactly "can't open the dropdown
+  // until the response finishes". The thinking text itself is stable once the
+  // block closes, so we anchor intent on its content hash and re-apply to the
+  // CURRENT live node(s).
   const hash = _hashThinkingContent(content);
-  if (!hash) return;
   const set = _loadExpandedSet();
-  if (willExpand) set.add(hash);
-  else set.delete(hash);
-  _saveExpandedSet(set);
+
+  // If the clicked node is still in the live DOM, trust its visible state.
+  // If it was swapped out mid-click, derive intent from the persisted set.
+  const willExpand = header.isConnected
+    ? !content.classList.contains('expanded')
+    : !(hash && set.has(hash));
+
+  // Persist FIRST — the set is the source of truth across re-renders.
+  if (hash) {
+    if (willExpand) set.add(hash); else set.delete(hash);
+    _saveExpandedSet(set);
+  }
+
+  const _applySection = (sec) => {
+    const c = sec.querySelector('.thinking-content');
+    const h = sec.querySelector('.thinking-header[data-thinking-id]');
+    const t = h ? h.querySelector('.thinking-toggle') : null;
+    _setThinkingExpanded(c, t, h, willExpand);
+  };
+
+  // Apply to the clicked node if still live (the common case).
+  if (header.isConnected && section) _applySection(section);
+
+  // Also apply to any other live section carrying the same stable content
+  // hash — this is what makes the toggle stick across the per-token
+  // innerHTML rebuild that detaches the original node.
+  if (hash) {
+    document.querySelectorAll('.thinking-section').forEach((sec) => {
+      if (sec === section) return;
+      const c = sec.querySelector('.thinking-content');
+      if (c && _hashThinkingContent(c) === hash) _applySection(sec);
+    });
+  }
 });
 
 // Watch the chat history; whenever a thinking section appears, expand it if
@@ -778,8 +813,10 @@ document.addEventListener('click', function(e) {
       const hash = _hashThinkingContent(content);
       if (!hash || !set.has(hash)) continue;
       const header = sec.querySelector('.thinking-header[data-thinking-id]');
-      const id = header?.dataset.thinkingId;
-      const toggle = id ? document.getElementById(id + '-toggle') : null;
+      // Resolve the toggle relative to the section (same as the click
+      // handler) — a global-id lookup can miss when the section was just
+      // re-rendered with a fresh Date.now/random id during streaming.
+      const toggle = header ? header.querySelector('.thinking-toggle') : null;
       _setThinkingExpanded(content, toggle, header, true);
     }
   };
