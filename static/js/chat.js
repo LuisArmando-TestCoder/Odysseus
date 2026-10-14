@@ -2713,12 +2713,33 @@ import streamRouter from './streamRouter.js';
             if (node._elapsedTicker) { clearInterval(node._elapsedTicker); node._elapsedTicker = null; }
             node.classList.remove('running');
           });
-          // Stream died unexpectedly — the "silently died" case. Re-engage the
-          // model immediately (no wait) with a completion handshake, up to the
-          // cap. Only auto-recover from connection-class failures; deterministic
-          // errors (unsupported tools, 4xx/5xx, parse failures) surface right away
-          // instead of burning the nudge budget on a guaranteed-to-fail retry.
-          if (!(_isRecoverableStreamErr(err) && _tryAutoRecover(holder, accumulated, streamSessionId))) {
+          // Stream died unexpectedly — the "silently died" case. The run is
+          // now DETACHED server-side (agent_runs) and keeps generating on the
+          // non-frame-rate event-loop route, so the correct recovery is to
+          // RESUBSCRIBE to the detached run — NOT mark it "interrupted" and
+          // fire a duplicate continue handshake (that was the source of the
+          // "[Message interrupted]" banner appearing while the answer kept
+          // streaming). Only when there's genuinely nothing to resume do we
+          // fall back to the handshake, and only for connection-class failures;
+          // deterministic errors (unsupported tools, 4xx/5xx, parse failures)
+          // surface right away.
+          if (_isRecoverableStreamErr(err)) {
+            const _p = _resumeDetachedRun(holder, streamSessionId);
+            Promise.resolve(_p).then((tookOver) => {
+              if (tookOver) return;   // detached run resumed — reload will render it
+              // No detached run to resume → genuine death. Handshake, capped.
+              if (!_tryAutoRecover(holder, accumulated, streamSessionId)) {
+                const errorHolder = document.querySelector('.msg-ai:last-of-type .body');
+                if (errorHolder) {
+                  let errMsg = `Error: ${err.message}`;
+                  if (err.message && (err.message.includes('tool') || err.message.includes('auto'))) {
+                    errMsg += '\n\nThis model may not support tools — try switching to Chat mode.';
+                  }
+                  typewriterInto(errorHolder, errMsg);
+                }
+              }
+            });
+          } else {
             const errorHolder = document.querySelector('.msg-ai:last-of-type .body');
             if (errorHolder) {
               let errMsg = `Error: ${err.message}`;
@@ -2911,6 +2932,71 @@ import streamRouter from './streamRouter.js';
       sb.click();
     }, 200);
     return true;
+  }
+
+  // When the client's foreground reader dies (e.g. the browser suspends the
+  // fetch of a backgrounded tab), the run is still generating server-side on
+  // the DETACHED event-loop route (agent_runs). Don't mark it "interrupted" and
+  // don't fire a duplicate continue handshake — instead poll the detached run's
+  // status and reload the session to render the complete saved answer when it
+  // finishes. Returns true if it took over (a detached run is still active);
+  // false if there's nothing to resume (caller falls back to the handshake).
+  function _resumeDetachedRun(holder, streamSessionId) {
+    if (!streamSessionId) return false;
+    const _url = `${API_BASE}/api/chat/stream_status/${encodeURIComponent(streamSessionId)}`;
+
+    // Show a soft "finishing" spinner in the bubble so the user isn't left
+    // staring at the partial text with nothing moving.
+    let _spin = null;
+    if (holder) {
+      const body = holder.querySelector('.body');
+      if (body) {
+        _spin = spinnerModule.create('Finishing response…', 'right');
+        body.appendChild(_spin.createElement());
+        _spin.start();
+      }
+    }
+
+    const _killSpin = () => { if (_spin) { try { _spin.destroy(); } catch (_) {} _spin = null; } };
+
+    // Poll the detached run. As soon as it's no longer active, reload the
+    // session so the full persisted answer replaces the partial bubble.
+    const _poll = async () => {
+      // Bail if the user navigated away from this chat mid-poll.
+      if (sessionModule.getCurrentSessionId() !== streamSessionId) { _killSpin(); return; }
+      try {
+        const r = await fetch(_url, { credentials: 'same-origin' });
+        const st = r.ok ? await r.json().catch(() => null) : null;
+        const active = st && (st.status === 'streaming' || st.detached);
+        if (active) {
+          // Still going — check again shortly.
+          setTimeout(_poll, 800);
+          return;
+        }
+      } catch (_) { /* treat as done and reload */ }
+      // Detached run finished (or errored) — reload to render the full answer.
+      _killSpin();
+      if (sessionModule.getCurrentSessionId() === streamSessionId) {
+        sessionModule.selectSession(streamSessionId);
+      } else {
+        sessionModule.loadSessions();
+      }
+    };
+
+    // First probe: confirm a detached run is actually active before taking over.
+    return fetch(_url, { credentials: 'same-origin' })
+      .then((r) => {
+        if (!r.ok) return false;               // 404 → nothing to resume
+        return r.json().then((st) => {
+          if (!(st && (st.status === 'streaming' || st.detached))) return false;
+          _poll();
+          return true;
+        }).catch(() => false);
+      })
+      .catch(() => {
+        _killSpin();
+        return false;
+      });
   }
 
   function _removeStallBanner() {
