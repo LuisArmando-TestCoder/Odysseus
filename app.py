@@ -1044,6 +1044,18 @@ async def startup_event():
                 logger.warning(f"Nightly skill audit failed: {e}")
 
     _startup_tasks.append(asyncio.create_task(_skill_audit_nightly_loop()))
+
+    # Self-organizing chat taxonomy: background loop that places untagged chats
+    # (Team A) and segments over-threshold folder levels (Team B). The display
+    # side (routes + sessions.js) already exists; this loop is what actually
+    # populates the tree on an ongoing basis.
+    try:
+        from services.taxonomy.orchestrator import start_taxonomy_loop
+        _startup_tasks.append(asyncio.create_task(start_taxonomy_loop()))
+        logger.info("Taxonomy orchestrator scheduled")
+    except Exception as _e:
+        logger.warning(f"Taxonomy orchestrator failed to start: {_e}")
+
     logger.info("Application startup complete")
 
 @app.on_event("shutdown")
