@@ -115,55 +115,70 @@ def fetch_youtube_transcript(url: str, max_chars: int = 8000, target_language: s
         language = None
         translated_from = None
         try:
-            tl = api.list_transcripts(video_id)
-            track = None
+            tl = api.list(video_id)
+            # Version-stable selection: the `youtube-transcript-api` library's
+            # `find_*` helpers changed signatures across releases (some take
+            # `language_codes`, others don't), so we iterate the TranscriptList
+            # directly and inspect each Transcript's public attributes
+            # (`language_code`, `is_generated`, `is_translatable`), which are
+            # stable. Priority: manual in-target > any in-target > manual
+            # translate-able > generated translate-able > first available.
+            tracks = [t for t in tl]
 
-            # 1. Prefer a manual track already in the target language.
-            try:
-                track = tl.find_transcript([target_language])
-                is_generated = False
-            except Exception:
-                track = None
+            def _attrs(t):
+                lc = getattr(t, "language_code", "") or ""
+                gen = bool(getattr(t, "is_generated", False))
+                translatable = bool(getattr(t, "is_translatable", False))
+                return lc, gen, translatable
 
-            # 2. Else any manual track (original language), to translate below.
-            if track is None:
-                try:
-                    track = tl.find_manually_created_transcript()
-                    is_generated = False
-                except Exception:
-                    track = None
+            # 1. Manual track already in the target language.
+            chosen = None
+            for t in tracks:
+                lc, gen, _ = _attrs(t)
+                if not gen and lc == target_language:
+                    chosen = t
+                    break
+            # 2. Any track already in the target language (generated ASR ok).
+            if chosen is None:
+                for t in tracks:
+                    lc, _, _ = _attrs(t)
+                    if lc == target_language:
+                        chosen = t
+                        break
+            # 3. Manual track in another language (translate-able preferred).
+            if chosen is None:
+                for t in tracks:
+                    lc, gen, translatable = _attrs(t)
+                    if not gen and translatable:
+                        chosen = t
+                        break
+            # 4. Generated track in another language (translate-able preferred).
+            if chosen is None:
+                for t in tracks:
+                    lc, gen, translatable = _attrs(t)
+                    if translatable:
+                        chosen = t
+                        break
+            # 5. First available track regardless of language/translatability.
+            if chosen is None and tracks:
+                chosen = tracks[0]
 
-            # 3. Else an ASR (auto-generated) track.
-            if track is None:
-                try:
-                    track = tl.find_generated_transcript()
-                    is_generated = True
-                except Exception:
-                    track = None
-
-            # 4. Else the first available track.
-            if track is None:
-                try:
-                    track = next(iter(tl))
-                except Exception:
-                    track = None
-
-            if track is not None:
-                original_lang = track.language_code
-                if original_lang and original_lang != target_language:
-                    # Translate the chosen track to the target language. When
-                    # translation is unavailable, keep the original so we still
-                    # return something rather than nothing.
+            if chosen is not None:
+                original_lang, is_generated, translatable = _attrs(chosen)
+                if original_lang and original_lang != target_language and translatable:
+                    # Translate the chosen track to the target language.
                     try:
-                        translated = track.translate(target_language)
+                        translated = chosen.translate(target_language)
                         translated_from = original_lang
                         transcript = list(translated.fetch())
                         language = target_language
                     except Exception:
-                        transcript = list(track.fetch())
+                        # Translation failed — keep the original so we still
+                        # return something rather than nothing.
+                        transcript = list(chosen.fetch())
                         language = original_lang
                 else:
-                    transcript = list(track.fetch())
+                    transcript = list(chosen.fetch())
                     language = original_lang or target_language
         except Exception:
             # Older API / fallback: fetch() returns the default track.
@@ -208,6 +223,21 @@ def fetch_youtube_transcript(url: str, max_chars: int = 8000, target_language: s
             "truncated": truncated,
         }
     except Exception as e:
+        # Distinguish transient YouTube anti-bot blocks from genuine failures
+        # so the agent can decide to wait/retry or fall back to another source
+        # rather than just dumping a multi-line error into the chat.
+        etype = type(e).__name__
+        if etype in ("IpBlocked", "RequestBlocked", "TooManyRequests"):
+            logger.warning(f"youtube_transcript: {etype} for {video_id}")
+            return {
+                "success": False,
+                "error": (
+                    f"YouTube is temporarily blocking transcript requests from this IP "
+                    f"({etype}). Wait a bit and retry, or use a different video."
+                ),
+                "transcript": None,
+                "_blocked": True,
+            }
         logger.warning(f"fetch_youtube_transcript failed for {url}: {e}")
         return {
             "success": False,
