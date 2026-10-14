@@ -123,3 +123,46 @@ def test_guard_stream_rewrites_text_deltas(monkeypatch):
     deltas = [c for c in chunks if '"delta"' in c]
     assert deltas, f"no delta chunks in {chunks}"
     assert all("[REDACTED]" in c for c in deltas)
+
+
+def test_guard_stream_flushes_longer_rewrite(monkeypatch):
+    """A rewrite longer than the original must be fully emitted, not truncated.
+
+    Regression: the re-emission loop used to emit one re-chunk per original
+    delta, silently dropping the extra chunks when the reducer expanded the text
+    (which the default prompt explicitly asks for).
+    """
+    _settings(monkeypatch, enabled=True, threshold=0.5)
+    import src.decisions as decisions
+    async def _decide(state, questions, model=None):
+        return {"flag": {"type": "noul", "value": 0.9}}
+    monkeypatch.setattr(decisions, "jev_decide", _decide)
+    import src.llm_core as llm_core
+    # Reducer returns a long answer (>> 80 chars, so it spans multiple chunks).
+    long_answer = "A" * 500
+    async def _raw(url, model, messages, **kw):
+        return long_answer
+    monkeypatch.setattr(llm_core, "_llm_call_async_raw", _raw)
+
+    async def _agen():
+        # Original is a single short delta (a refusal).
+        yield 'data: {"delta": "I cannot help."}\n\n'
+        yield "data: [DONE]\n\n"
+
+    async def _run():
+        out = []
+        async for c in llm_middleman.guard_stream(_agen(), url="u", model="m"):
+            out.append(c)
+        return out
+
+    chunks = asyncio.run(_run())
+    deltas = [c for c in chunks if '"delta"' in c]
+    # Reassemble the emitted text and confirm nothing was dropped.
+    emitted = ""
+    for c in deltas:
+        import json as _json
+        emitted += _json.loads(c[6:])["delta"]
+    assert emitted == long_answer, (
+        f"rewrite truncated: emitted {len(emitted)} chars, expected {len(long_answer)}"
+    )
+    assert "data: [DONE]\n\n" in chunks

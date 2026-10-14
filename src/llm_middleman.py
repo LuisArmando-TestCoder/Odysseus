@@ -503,6 +503,18 @@ async def guard_stream(
     _answer_chunks = _chunk_text(guarded_answer)
     _ti = 0
     _ai = 0
+
+    def _flush_remaining():
+        """Yield any re-chunks not yet emitted (rewrite may be longer than the
+        original, so we must not tie emission to the original delta count)."""
+        nonlocal _ti, _ai
+        while _ti < len(_thinking_chunks):
+            yield f'data: {json.dumps({"delta": _thinking_chunks[_ti], "thinking": True})}\n\n'
+            _ti += 1
+        while _ai < len(_answer_chunks):
+            yield f'data: {json.dumps({"delta": _answer_chunks[_ai]})}\n\n'
+            _ai += 1
+
     for chunk in chunks:
         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
             try:
@@ -521,4 +533,13 @@ async def guard_stream(
                         yield f'data: {json.dumps({"delta": _answer_chunks[_ai]})}\n\n'
                         _ai += 1
                     continue
+        # Before the terminal [DONE], flush any remaining re-chunks so a longer
+        # rewrite is never truncated.
+        if chunk.startswith("data: [DONE]"):
+            for _c in _flush_remaining():
+                yield _c
         yield chunk
+
+    # Safety net: if the stream ended without a [DONE], still flush everything.
+    for _c in _flush_remaining():
+        yield _c
