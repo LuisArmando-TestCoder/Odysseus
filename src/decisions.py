@@ -99,14 +99,9 @@ def _normalize_answer(raw: Any) -> Dict[str, Any]:
     return out
 
 
-async def jev_decide(state: Any, questions: Dict[str, Dict[str, Any]],
-                     model: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
-    """Ask JEV typed questions about ``state``.
-
-    Returns ``{question_name: {type, value, confidence, probabilities}}``.
-    Raises ``DecisionsUnavailable`` when disabled / no key / upstream error so
-    the caller can degrade gracefully.
-    """
+def _jev_payload(state: Any, questions: Dict[str, Dict[str, Any]],
+                 model: Optional[str]) -> Dict[str, Any]:
+    """Build the JEV request payload + headers (shared by sync/async clients)."""
     cfg = jev_settings()
     if not cfg["enabled"]:
         raise DecisionsUnavailable("JEV disabled in settings")
@@ -114,7 +109,6 @@ async def jev_decide(state: Any, questions: Dict[str, Dict[str, Any]],
     key = resolve_openrouter_key()
     if not key:
         raise DecisionsUnavailable("No OpenRouter API key configured")
-
     payload = {
         "model": model or cfg["model"],
         "state": state,
@@ -126,6 +120,39 @@ async def jev_decide(state: Any, questions: Dict[str, Dict[str, Any]],
         "HTTP-Referer": "https://github.com/pewdiepie-archdaemon/odysseus",
         "X-Title": "Odysseus",
     }
+    return payload, headers
+
+
+def _jev_parse(data: Any, model: str) -> Dict[str, Dict[str, Any]]:
+    """Parse a JEV response body into normalized answers (shared by sync/async)."""
+    # Accept either {answers: {...}} or {decision: {answers: {...}}}.
+    answers = data.get("answers")
+    if answers is None and isinstance(data.get("decision"), dict):
+        answers = data["decision"].get("answers")
+    if not isinstance(answers, dict):
+        raise DecisionsUnavailable(f"JEV unexpected schema: {str(data)[:300]}")
+    try:
+        from src.cost_ledger import record
+        u = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        cost = u.get("cost", data.get("cost"))
+        record(provider="openrouter", model=model, source="jev",
+               input_tokens=u.get("prompt_tokens", 0) or 0,
+               output_tokens=u.get("completion_tokens", 0) or 0,
+               base_usd=float(cost) if isinstance(cost, (int, float)) else None)
+    except Exception:
+        pass
+    return {name: _normalize_answer(ans) for name, ans in answers.items()}
+
+
+async def jev_decide(state: Any, questions: Dict[str, Dict[str, Any]],
+                     model: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """Ask JEV typed questions about ``state``.
+
+    Returns ``{question_name: {type, value, confidence, probabilities}}``.
+    Raises ``DecisionsUnavailable`` when disabled / no key / upstream error so
+    the caller can degrade gracefully.
+    """
+    payload, headers = _jev_payload(state, questions, model)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             r = await client.post(DECISIONS_URL, headers=headers, json=payload)
@@ -137,21 +164,26 @@ async def jev_decide(state: Any, questions: Dict[str, Dict[str, Any]],
         data = r.json()
     except json.JSONDecodeError:
         raise DecisionsUnavailable("JEV returned non-JSON")
+    return _jev_parse(data, payload["model"])
 
-    # Accept either {answers: {...}} or {decision: {answers: {...}}}.
-    answers = data.get("answers")
-    if answers is None and isinstance(data.get("decision"), dict):
-        answers = data["decision"].get("answers")
-    if not isinstance(answers, dict):
-        raise DecisionsUnavailable(f"JEV unexpected schema: {str(data)[:300]}")
+
+def jev_decide_sync(state: Any, questions: Dict[str, Dict[str, Any]],
+                    model: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """Synchronous twin of :func:`jev_decide` for the sync ``llm_call`` path.
+
+    Uses a blocking ``httpx.Client`` so it can run inside FastAPI's threadpool
+    without an event loop. Same semantics and error contract as the async form.
+    """
+    payload, headers = _jev_payload(state, questions, model)
     try:
-        from src.cost_ledger import record
-        u = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        cost = u.get("cost", data.get("cost"))
-        record(provider="openrouter", model=payload["model"], source="jev",
-               input_tokens=u.get("prompt_tokens", 0) or 0,
-               output_tokens=u.get("completion_tokens", 0) or 0,
-               base_usd=float(cost) if isinstance(cost, (int, float)) else None)
-    except Exception:
-        pass
-    return {name: _normalize_answer(ans) for name, ans in answers.items()}
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            r = client.post(DECISIONS_URL, headers=headers, json=payload)
+    except httpx.HTTPError as e:
+        raise DecisionsUnavailable(f"JEV unreachable: {e}")
+    if not r.is_success:
+        raise DecisionsUnavailable(f"JEV HTTP {r.status_code}: {r.text[:300]}")
+    try:
+        data = r.json()
+    except json.JSONDecodeError:
+        raise DecisionsUnavailable("JEV returned non-JSON")
+    return _jev_parse(data, payload["model"])
