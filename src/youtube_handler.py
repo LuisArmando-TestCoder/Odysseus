@@ -81,14 +81,17 @@ def extract_youtube_id(url: str) -> Optional[str]:
     return None
 
 
-def fetch_youtube_transcript(url: str, max_chars: int = 8000) -> Dict[str, Any]:
+def fetch_youtube_transcript(url: str, max_chars: int = 8000, target_language: str = "en") -> Dict[str, Any]:
     """Synchronously fetch a YouTube video's transcript from a URL.
 
     A self-contained wrapper for the ``youtube_transcript`` agent tool: it
-    extracts the video id from the URL, prioritizes manual captions over
-    ASR auto-generated ones, and returns both the stitched full text and the
-    timestamped segments. Degrades to a clear ``{"success": False, "error": ...}``
-    instead of raising, so the agent can reason around a missing API/library.
+    extracts the video id from the URL, prefers a manual-caption track already
+    in ``target_language``, falls back to ASR auto-generated, and as a last
+    resort translates the best available track (e.g. a Hindi- or Spanish-only
+    video the agent needs in English). Returns both the stitched full text and
+    the timestamped segments. Degrades to a clear
+    ``{"success": False, "error": ...}`` instead of raising, so the agent can
+    reason around a missing API/library / translation.
     """
     if not YOUTUBE_AVAILABLE or YouTubeTranscriptApi is None:
         # Lazy-init: the library may not be imported at import time.
@@ -107,27 +110,61 @@ def fetch_youtube_transcript(url: str, max_chars: int = 8000) -> Dict[str, Any]:
 
     try:
         api = YouTubeTranscriptApi()
-        # Prefer manual captions; fall back to ASR auto-generated only when no
-        # manual track exists. list_transcripts() raises TranscriptsDisabled /
-        # NoTranscriptFound when none exist, which we surface cleanly.
         transcript = None
         is_generated = False
         language = None
+        translated_from = None
         try:
             tl = api.list_transcripts(video_id)
+            track = None
+
+            # 1. Prefer a manual track already in the target language.
             try:
-                track = tl.find_manually_created_transcript()
+                track = tl.find_transcript([target_language])
                 is_generated = False
             except Exception:
                 track = None
+
+            # 2. Else any manual track (original language), to translate below.
             if track is None:
-                generated = tl.find_generated_transcript()
-                if generated is not None:
-                    track = generated
+                try:
+                    track = tl.find_manually_created_transcript()
+                    is_generated = False
+                except Exception:
+                    track = None
+
+            # 3. Else an ASR (auto-generated) track.
+            if track is None:
+                try:
+                    track = tl.find_generated_transcript()
                     is_generated = True
+                except Exception:
+                    track = None
+
+            # 4. Else the first available track.
+            if track is None:
+                try:
+                    track = next(iter(tl))
+                except Exception:
+                    track = None
+
             if track is not None:
-                transcript = list(track.fetch())
-                language = track.language_code
+                original_lang = track.language_code
+                if original_lang and original_lang != target_language:
+                    # Translate the chosen track to the target language. When
+                    # translation is unavailable, keep the original so we still
+                    # return something rather than nothing.
+                    try:
+                        translated = track.translate(target_language)
+                        translated_from = original_lang
+                        transcript = list(translated.fetch())
+                        language = target_language
+                    except Exception:
+                        transcript = list(track.fetch())
+                        language = original_lang
+                else:
+                    transcript = list(track.fetch())
+                    language = original_lang or target_language
         except Exception:
             # Older API / fallback: fetch() returns the default track.
             transcript = list(api.fetch(video_id))
@@ -164,7 +201,8 @@ def fetch_youtube_transcript(url: str, max_chars: int = 8000) -> Dict[str, Any]:
             "success": True,
             "transcript": full_text,
             "video_id": video_id,
-            "language": language or "unknown",
+            "language": language or target_language,
+            "translated_from": translated_from,
             "is_generated": is_generated,
             "segments": segments,
             "truncated": truncated,

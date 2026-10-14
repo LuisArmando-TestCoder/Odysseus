@@ -612,13 +612,23 @@ async def _direct_fallback(
             from src.youtube_handler import fetch_youtube_transcript
             raw = content.strip()
             url = raw
+            target_language = "en"
             if raw.startswith("{"):
                 try:
                     parsed = _json.loads(raw)
                     if isinstance(parsed, dict):
                         url = str(parsed.get("url") or "").strip()
+                        lang = parsed.get("language")
+                        if isinstance(lang, str) and lang.strip():
+                            target_language = lang.strip()
                 except _json.JSONDecodeError:
                     url = ""
+            else:
+                # Non-JSON form may carry "@@LANG@@<code>" on a second line.
+                lines = raw.split("\n")
+                url = lines[0].strip()
+                if len(lines) > 1 and lines[1].strip().startswith("@@LANG@@"):
+                    target_language = lines[1].strip()[len("@@LANG@@"):] or "en"
             if not url:
                 url = raw.split("\n")[0].strip()
             if not url:
@@ -626,7 +636,10 @@ async def _direct_fallback(
             loop = asyncio.get_running_loop()
             try:
                 data = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: fetch_youtube_transcript(url, max_chars=8000)),
+                    loop.run_in_executor(
+                        None,
+                        lambda: fetch_youtube_transcript(url, max_chars=8000, target_language=target_language),
+                    ),
                     timeout=30,
                 )
             except asyncio.TimeoutError:
@@ -637,7 +650,11 @@ async def _direct_fallback(
                 return {"error": f"youtube_transcript: {data.get('error', 'unknown error')}", "exit_code": 1}
             segs = data.get("segments", [])
             lines = []
-            lines.append(f"YouTube transcript (video {data.get('video_id')}, language {data.get('language')}, {'auto-generated ASR' if data.get('is_generated') else 'manual captions'}):")
+            lang_label = data.get("language") or "unknown"
+            if data.get("translated_from"):
+                lang_label = f"{lang_label} (translated from {data['translated_from']})"
+            src_kind = "auto-generated ASR" if data.get("is_generated") else "manual captions"
+            lines.append(f"YouTube transcript (video {data.get('video_id')}, language {lang_label}, {src_kind}):")
             lines.append("")
             # Timestamped segments when short, plain text otherwise.
             if segs and len(segs) <= 300:

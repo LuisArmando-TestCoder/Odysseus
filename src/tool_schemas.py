@@ -97,11 +97,12 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "youtube_transcript",
-            "description": "Fetch the transcript (captions) of a YouTube video from its URL. Returns the stitched full text plus timestamped segments; prioritizes manual captions over auto-generated (ASR) ones. Use when the user shares a YouTube link or asks what a video says.",
+            "description": "Fetch the transcript (captions) of a YouTube video from its URL. Returns the stitched full text plus timestamped segments; prioritizes manual captions over auto-generated (ASR) ones, and translates to English when the only track is in another language. Use when the user shares a YouTube link or asks what a video says.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "The YouTube video URL (youtube.com/watch?v=..., youtu.be/..., shorts, or embed)"}
+                    "url": {"type": "string", "description": "The YouTube video URL (youtube.com/watch?v=..., youtu.be/..., shorts, or embed)"},
+                    "language": {"type": "string", "description": "Target language code to translate the transcript to when no track matches (default 'en')"}
                 },
                 "required": ["url"]
             }
@@ -1313,7 +1314,11 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "run_javascript":
         content = args.get("code", "")
     elif tool_type == "youtube_transcript":
-        content = args.get("url", "")
+        lang = args.get("language")
+        if lang:
+            content = f"{args.get('url', '')}\n@@LANG@@{lang}"
+        else:
+            content = args.get("url", "")
     elif tool_type == "reddit_search":
         content = json.dumps(args)
     else:
