@@ -521,7 +521,9 @@ Answer ONLY with JSON:
 {"coherent": 0..1, "duplicate": 0..1, "faithful": 0..1}
 - coherent: probability the message is a clear, sensible, actionable request (not garbled, contradictory,
   or nonsense that makes no sense at all)
-- duplicate: probability the message repeats something already in already_sent_to_chat or the recent chat thread
+- duplicate: probability the message repeats something ALREADY in already_sent_to_chat (a message that actually
+  reached the chat). The user's own spoken words — including any earlier reworded attempt that was denied — do NOT
+  count. If already_sent_to_chat is empty, duplicate must be 0.
 - faithful: probability the message faithfully represents what the user actually asked (not invented or hallucinated)
 """
 
@@ -546,11 +548,15 @@ async def _guard(owner: str, message: str, context: Dict[str, Any], use_jev: boo
                 "duplicate": {
                     "type": "noul",
                     "instructions": (
-                        "Is the message essentially the same as something already in already_sent_to_chat or "
-                        "the recent chat thread? A near-identical repeat is a duplicate."
+                        "Is the message essentially the same as something ALREADY listed in already_sent_to_chat "
+                        "(a message that actually reached the chat)? Only already_sent_to_chat counts as 'already "
+                        "sent'. The user's own spoken words in live_transcript / recent_context — including an "
+                        "earlier, differently-worded attempt at this same request that was never sent — do NOT "
+                        "count, and must not make this a duplicate. If already_sent_to_chat is empty, this is "
+                        "definitively false."
                     ),
-                    "criteria": {"true": "It repeats something already sent/asked",
-                                 "false": "It is new"},
+                    "criteria": {"true": "It repeats a message actually listed in already_sent_to_chat",
+                                 "false": "It is new, or only repeats the user's own unsent speech"},
                 },
                 "faithful": {
                     "type": "noul",
@@ -640,8 +646,15 @@ async def _forge_and_emit(
     yield _ev(type="guard", guard=g, ms=gms)
 
     # Deterministic duplicate guard (token similarity) still applies.
+    # JEV's duplicate score is only trusted when something was ACTUALLY sent —
+    # otherwise it can hallucinate a duplicate against the user's own live
+    # speech (including an earlier, denied attempt at the same request), which
+    # would damn every corrected re-phrasing to be "guarded" forever. Only
+    # messages that actually reached the chat may gate the next one.
+    has_sent = bool(spine["recently_sent"]) or any(
+        t["speaker"] == "chat_user" for t in mem.recent_turns(8))
     dup = mem.is_duplicate(message)
-    if dup or g.get("duplicate", 0) >= 0.7:
+    if dup or (has_sent and g.get("duplicate", 0) >= 0.7):
         yield _ev(type="stage", stage="guard", status="idle", ms=gms)
         yield _ev(type="done", send=False, reason="duplicate", duplicate_of=(dup or "similar")[:160])
         return
