@@ -19,6 +19,7 @@
 //            └─► when the chat answers, GPT-Live speaks a short summary back.
 
 import * as vectors from './voice_vectors.js';
+import streamRouter from './streamRouter.js';
 
 const BANDS = 64;
 const STATE_COLORS = {
@@ -121,6 +122,7 @@ let _lvl = 0, _out = 0, _think = 0, _thinkTarget = 0;
 let _scale = 1, _scaleAt = 0, _lastFrameAt = 0;
 let _bgCanvas = null, _bgGl = null, _bgProg = null, _bgTex = null, _bgU = {};
 let _orbRect = null, _orbResizeBound = false, _measureAt = 0;
+let _visResumeBound = false;   // visibility-resume listener wired once
 const _reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 let _root = null;
@@ -457,6 +459,15 @@ function _readBands(analyser, into, mix) {
 }
 
 function _loop() {
+  // Frame-aware route: only render when the tab is visible and in view.
+  // When hidden there is no frame rate to protect, so we pause the render
+  // loop entirely — the pipeline (SSE) and chat streams keep draining on the
+  // event loop independently. The visibility listener below restarts the loop
+  // when the tab returns to view.
+  if (!streamRouter.isTabVisible()) {
+    _raf = 0;
+    return;
+  }
   _raf = requestAnimationFrame(_loop);
   const now = performance.now();
 
@@ -2848,6 +2859,16 @@ export function openVoiceMode({ autostart = true } = {}) {
   requestAnimationFrame(() => _root.classList.add('open'));
   if (!_raf) { _t0 = performance.now(); _raf = requestAnimationFrame(_loop); }
   else { _lastFrameAt = performance.now(); }
+  // Resume the frame-aware render loop when the tab returns to view (it pauses
+  // itself while hidden — see _loop). The pipeline + chat streams are
+  // unaffected: they drain on the event loop regardless of visibility.
+  if (!_visResumeBound) {
+    _visResumeBound = true;
+    streamRouter.onVisibilityChange((visible) => {
+      if (!visible || !_root || _root.hidden) return;
+      if (!_raf) { _lastFrameAt = performance.now(); _raf = requestAnimationFrame(_loop); }
+    });
+  }
   const sid = window.sessionModule?.getCurrentSessionId?.();
   if (!_active) _bindVoiceToSession(sid);
   _setState(_active ? 'listening' : 'idle');

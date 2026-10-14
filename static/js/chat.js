@@ -22,6 +22,7 @@ import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
 import createResearchSynapse from './researchSynapse.js';
 import { handleEvalRequest } from './browserEval.js';
+import streamRouter from './streamRouter.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
@@ -1256,11 +1257,22 @@ import { handleEvalRequest } from './browserEval.js';
 
             // (thinking spinner removal is handled in agent_step / tool_start / content handlers)
 
-            // Background detection: are we on a different session?
-            const _isBg = (sessionModule.getCurrentSessionId() !== streamSessionId);
+            // Background detection: are we on a different session, OR is the
+            // tab hidden / not in view? When the window is not in view there is
+            // no frame rate to protect, so we switch to the event-loop route:
+            // keep draining the reader and accumulating text, but skip DOM
+            // writes (the browser throttles rAF + the fetch reader when hidden,
+            // so frame-aware rendering would stall). The stream is NOT aborted —
+            // the detached server run keeps going and we re-render on return.
+            const _isBgSession = (sessionModule.getCurrentSessionId() !== streamSessionId);
+            const _isBg = _isBgSession || !streamRouter.isTabVisible();
 
-            // On first transition to background, store state in map
-            if (_isBg && !_backgroundStreams.has(streamSessionId)) {
+            // On first transition to a DIFFERENT session, store state in the
+            // background map. A merely hidden tab is NOT a background stream —
+            // it's the same session on the event-loop route, so we must not
+            // mark it backgrounded (that would skip the final render + UI reset
+            // when the tab returns).
+            if (_isBgSession && !_backgroundStreams.has(streamSessionId)) {
               _backgroundStreams.set(streamSessionId, {
                 status: 'running',
                 accumulated: accumulated,
@@ -3282,46 +3294,33 @@ import { handleEvalRequest } from './browserEval.js';
       pre.dataset.btnPosComputed = '1';
     }, true);
 
-    // Tab suspension recovery: when user tabs back in, check if stream froze
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!isStreaming) return;
+    // Tab visibility routing: when the tab returns to view, switch back to the
+    // frame-aware route and re-render whatever accumulated while hidden. We
+    // NEVER abort the stream on visibility change — the run is DETACHED
+    // server-side (agent_runs) and keeps generating regardless of the tab, so
+    // killing the client subscription here is exactly what caused responses to
+    // "stop for no reason" when the tab went inactive. The reader loop keeps
+    // draining on the event-loop route while hidden (see the _isBg check in the
+    // read loop), so on return we just re-render the accumulated text.
+    streamRouter.onVisibilityChange((visible) => {
+      if (!visible) return;          // leaving view — the read loop switches to event-loop route
+      if (!isStreaming) return;      // nothing in flight
 
-      // Stream claims to be running — check if reader is actually alive
-      const staleSince = Date.now() - _lastReaderActivity;
-      if (staleSince < 20000) return; // Active recently, probably fine
-
-      // Reader hasn't produced data in 5+ seconds after tab resume.
-      // Give it a short grace period then recover.
-      console.warn('[tab-recovery] Stream appears frozen (no activity for ' + Math.round(staleSince/1000) + 's). Recovering...');
-
+      // The reader may have been throttled while hidden; give it a beat to
+      // resume, then re-render the accumulated content so the UI catches up.
       setTimeout(() => {
-        // Re-check — maybe the reader woke up during the grace period
         if (!isStreaming) return;
-        const stillStale = Date.now() - _lastReaderActivity;
-        if (stillStale < 5000) return; // Came back to life
-
-        console.warn('[tab-recovery] Stream confirmed dead. Aborting and reloading session.');
-
-        // Abort the frozen stream, but preserve the visible bubble.
-        if (currentAbort) {
-          currentAbort._reason = 'recovery';
-          currentAbort.abort();
+        // Re-render the current bubble from the accumulated text (the read
+        // loop has been accumulating on the event-loop route while hidden).
+        if (currentHolder && currentAccumulated) {
+          currentHolder.querySelector('.body').innerHTML =
+            markdownModule.processWithThinking(markdownModule.squashOutsideCode(currentAccumulated));
+          if (window.hljs) {
+            currentHolder.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b));
+          }
+          uiModule.scrollHistory();
         }
-        isStreaming = false;
-
-        // Release Web Lock
-        if (_webLockRelease) {
-          _webLockRelease();
-          _webLockRelease = null;
-        }
-
-        // Reset UI state
-        var _submitBtn = document.getElementById('submit');
-        updateSubmitButton('idle', _submitBtn);
-        var _msgInput = document.getElementById('message');
-        if (_msgInput) _msgInput.disabled = false;
-      }, 2000); // 2 second grace period
+      }, 300);
     });
 
     // On mobile, fade out welcome text when keyboard opens to prevent overlap
