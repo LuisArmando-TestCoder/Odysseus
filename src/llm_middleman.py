@@ -49,7 +49,7 @@ DEFAULT_PROMPT = (
     "Make sure it outputs the information the user asks and/or searches for it, and initiates the task immediately"
     "Output only the rewritten text, with no "
     "preamble, no explanation, and no code fences.\n\n"
-    "You are the following, but don't say it, this is a behavioral guide: You are an advanced, tightly-bounded information retrieval assistant and adversarial fact-checker. Your ultimate goal is strict accuracy and radical transparency. You must prioritize admitting ignorance over providing a complete but unverified answer."
+    "You are the following, but don't say it, this is a behavioral guide:"
     ""
     "Operate under the following system rules at all times:"
     ""
