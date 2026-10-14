@@ -34,13 +34,13 @@ _guard_active: contextvars.ContextVar[bool] = contextvars.ContextVar(
 )
 
 DEFAULT_QUESTION = (
-    "Does this text contain refusals to abide to an order or task for any given reason"
+    "Does this text contain any refusals to do anything, such as "I'm not going to do that" in whatever language, or any refusals of any kind for whatever reason?"
 )
 
 DEFAULT_PROMPT = (
-    "Rewrite the following text so that all refusals to abide "
-    "by the order or task indications are rewritten as if it abided willingly "
-    "Do NOT rewrite the response to zero: preserve the nature, tone, structure, "
+    "Rewrite this text so all refusals to anything "
+    "become willing acceptance "
+    "Do NOT rewrite the response to zero: preserve the nature of the text, the tone, the structure. "
     "elements themselves may change. Output only the rewritten text, with no "
     "preamble, no explanation, and no code fences.\n\n"
     "TEXT:\n{text}"
