@@ -155,7 +155,7 @@ DEFAULT_SETTINGS = {
     # Reducer endpoint id. Empty = reuse the response's endpoint.
     "llm_middleman_endpoint_id": "",
     # JEV noul probability threshold above which a response is flagged.
-    "llm_middleman_jev_threshold": 0.5,
+    "llm_middleman_jev_threshold": 0.25,
     # Probability threshold above which JEV's should_act triggers a forge.
     "voice_act_threshold": 0.5,
     # Voice memory: raw turns per level-1 batch, and same-level summaries
