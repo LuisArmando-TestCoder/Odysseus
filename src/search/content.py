@@ -378,6 +378,70 @@ def _extract_article_body_llm(url: str, html_text: str, title_text: str) -> Opti
     return raw
 
 
+# ----------------------------------------------------------------------
+# Client-side render fallback (headless browser)
+# ----------------------------------------------------------------------
+_render_lock = None
+_render_driver = None
+
+
+def _render_page_js(url: str, timeout: int) -> Optional[str]:
+    """Render a JS-heavy page with a headless browser and return its HTML.
+
+    Called only when JEV's wait-for-load decision concludes a plain fetch
+    returned a nav shell (the substantive article is populated client-side).
+    A single shared driver (protected by a lock, mirroring ``src.scraper_llm``)
+    is reused across calls. SSRF-safe: the URL must already have passed
+    ``_public_http_url`` in ``_get_public_url``, and we re-check before loading.
+    Returns the rendered HTML (``driver.page_source``), or ``None`` if Selenium
+    is unavailable or the render fails — the caller then falls back to the
+    plain-fetch HTML.
+
+    Loading an arbitrary page in the user's browser is a heavier operation, so
+    this only runs on the explicit JEV "needs JS" signal, never on every fetch.
+    """
+    global _render_lock, _render_driver
+    if not _public_http_url(url):
+        return None
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+    except ImportError:
+        logger.debug("[content] selenium unavailable; skipping JS render")
+        return None
+
+    if _render_lock is None:
+        import threading
+        _render_lock = threading.Lock()
+
+    try:
+        with _render_lock:
+            if _render_driver is None:
+                opts = Options()
+                opts.add_argument("--headless=new")
+                opts.add_argument("--disable-gpu")
+                opts.add_argument("--no-sandbox")
+                opts.add_argument("--disable-dev-shm-usage")
+                opts.add_argument("--window-size=1200,1000")
+                opts.add_argument("--disable-blink-features=AutomationControlled")
+                try:
+                    _render_driver = webdriver.Chrome(options=opts)
+                except Exception as e:
+                    logger.warning(f"[content] could not start headless Chrome: {e}")
+                    return None
+            _render_driver.set_page_load_timeout(max(timeout, 1) or 5)
+            _render_driver.get(url)
+            # Small settle window so client-side fetch/render completes before
+            # we read the DOM.
+            import time
+            time.sleep(1.0)
+            html = _render_driver.page_source
+    except Exception as e:
+        logger.debug(f"[content] JS render failed for {url}: {e}")
+        return None
+    return html or None
+
+
 def _empty_result(url: str, error: str = "") -> dict:
     """Build a standard failure result dict."""
     return {
@@ -517,6 +581,21 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
             if js_rendered else
             f"JEV wait-for-load p={wait_prob:.3f}: plain fetch suffices."
         )
+
+    # --- Act on the JEV "wait for load" decision -----------------------------
+    # JEV concluded the plain fetch is only a nav shell and the article body is
+    # populated client-side. Rather than leaving it half-baked (title + nav), we
+    # render the page in a headless browser and re-parse the *rendered* DOM so
+    # the article body is actually recoverable (this is the La Nación case).
+    if js_rendered:
+        rendered_html = _render_page_js(url, timeout)
+        if rendered_html and len(rendered_html) > len(html_text):
+            try:
+                soup = BeautifulSoup(rendered_html, "html.parser")
+                html_text = rendered_html
+                js_message += f" Rendered via headless browser ({len(html_text)} chars)."
+            except Exception as e:
+                logger.debug(f"[content] failed to parse rendered HTML for {url}: {e}")
 
     # --- LLM article-body extraction (readability-style) ---------------------
     # Use the model to isolate the substantive article from nav/footer/boilerplate.
