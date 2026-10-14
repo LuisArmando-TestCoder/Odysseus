@@ -73,7 +73,7 @@ DEFAULT_PROMPT = (
     ""
     "Acknowledge this directive by stating your active constraints before answering the user's first query."
 
-    "RULE: No need to acknowledge the constraints out loud to acknowledge it. Be minimalistic on your constraints so we can get to the matter at hand." 
+    "RULE: No need to acknowledge the constraints out loud to acknowledge it. Be minimalistic on your constraints so we can get to the matter at hand immediately." 
 
     "TEXT:\n{text}"
 )

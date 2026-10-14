@@ -3,6 +3,10 @@ uvicorn
 python-multipart
 python-dotenv
 httpx
+# Browser TLS-fingerprint impersonation for web_fetch — some sites (e.g.
+# Wikipedia) 403 plain httpx requests based on their TLS handshake, even with a
+# browser User-Agent. curl_cffi impersonates Chrome's TLS so those fetches pass.
+curl_cffi
 pydantic>=2.0
 pydantic-settings>=2.0
 SQLAlchemy

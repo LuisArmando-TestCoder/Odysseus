@@ -70,6 +70,40 @@ def _public_http_url(url: str) -> bool:
     return bool(ips) and all(not _is_private_address(ip) for ip in ips)
 
 
+def _curl_cffi_fetch(url: str, *, headers: dict, timeout: int):
+    """Fetch ``url`` via curl_cffi with a real browser TLS fingerprint.
+
+    Some sites (e.g. Wikipedia) 403 plain httpx requests based on their TLS
+    fingerprint, even with a browser User-Agent. curl_cffi impersonates Chrome's
+    TLS handshake, which passes those bot checks. Returns an ``httpx.Response``
+    (so callers keep a single response type), or ``None`` if curl_cffi is
+    unavailable or the request fails. Redirects are NOT followed here — the
+    caller has already validated the URL as public, and we must not bypass the
+    SSRF redirect guard.
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError:
+        return None
+    try:
+        r = curl_requests.get(
+            url, headers=headers, timeout=timeout,
+            impersonate="chrome", allow_redirects=False,
+        )
+    except Exception:
+        return None
+    # curl_cffi already decompresses the body, so drop the Content-Encoding /
+    # Content-Length headers before wrapping in httpx.Response — otherwise httpx
+    # tries to decompress the already-decompressed bytes and fails.
+    resp_headers = {k: v for k, v in r.headers.items() if k.lower() not in ("content-encoding", "content-length")}
+    return httpx.Response(
+        status_code=r.status_code,
+        headers=resp_headers,
+        content=r.content,
+        request=httpx.Request("GET", url),
+    )
+
+
 def _get_public_url(url: str, *, headers: dict, timeout: int) -> httpx.Response:
     if not _public_http_url(url):
         raise httpx.RequestError(f"Blocked non-public URL: {url}")
@@ -79,6 +113,12 @@ def _get_public_url(url: str, *, headers: dict, timeout: int) -> httpx.Response:
         for _ in range(8):
             response = client.get(current)
             if response.status_code not in (301, 302, 303, 307, 308):
+                # Bot-blocked (403) by TLS fingerprint — retry with a browser
+                # TLS impersonation before giving up.
+                if response.status_code == 403:
+                    fallback = _curl_cffi_fetch(current, headers=headers, timeout=timeout)
+                    if fallback is not None and fallback.status_code not in (301, 302, 303, 307, 308):
+                        return fallback
                 return response
             location = response.headers.get("location")
             if not location:
