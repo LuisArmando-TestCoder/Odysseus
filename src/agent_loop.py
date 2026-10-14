@@ -206,6 +206,16 @@ Search the web for a SINGLE quick fact/lookup mid-task. For news / "today" / "la
 ```
 Fetch and read the text content of a SPECIFIC URL the user names (e.g. "check example.com", "what does this page say <url>"). A bare domain like `example.com` works (defaults to https). Use this when you already have a concrete URL. For open-ended lookups use `web_search`, and for "research X" jobs use `trigger_research`.""",
 
+    "universal_search": """\
+```universal_search
+<claim or question to verify>
+```
+Or with JSON for freshness:
+```universal_search
+{"query": "<your claim>", "time_filter": "day"}
+```
+Run the Universal Search Framework to FACT-CHECK a claim. It deconstructs the prompt into Static Anchors and Variable Claims, fires three parallel query tiers (proximity / broad context / adversarial "fake debunked"), scores evidence via a validation matrix (source consensus, temporal recency, semantic distance), and returns a grounded answer or an explicit "insufficient verified evidence" default. Use this when the user asks "is it true that…", "verify…", "fact-check…", or feeds a suspicious/fictional riddle — it avoids hallucination by only confirming what multiple independent sources back.""",
+
     "read_file": """\
 ```read_file
 <file path>

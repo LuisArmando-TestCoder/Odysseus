@@ -81,6 +81,21 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "universal_search",
+            "description": "Run the Universal Search Framework. Deconstructs the prompt into Static Anchors and Variable Claims, fires three parallel query tiers (proximity / broad / adversarial), scores retrieved evidence via a validation matrix (source consensus, temporal recency, semantic distance), and returns a grounded synthesis or an explicit ignorance default. Use for factual-verification questions, checking a claim, or validating any assertion — especially where hallucination must be avoided.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The claim or question to verify"},
+                    "time_filter": {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Optional freshness filter"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": "Read a file from disk",
             "parameters": {
@@ -1143,6 +1158,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
             content = str(queries)
         else:
             content = args.get("query", "")
+    elif tool_type == "universal_search":
+        content = args.get("query", "")
     elif tool_type == "read_file":
         content = args.get("path", "")
     elif tool_type == "write_file":

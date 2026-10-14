@@ -608,6 +608,76 @@ async def _direct_fallback(
                 output += "\n\n<!-- SOURCES:" + _json.dumps(sources) + " -->"
             return {"output": output, "exit_code": 0}
 
+        if tool == "universal_search":
+            from services.search.universal import universal_search
+            raw = content.strip()
+            query = raw
+            time_filter = None
+            max_pages = 4
+            if raw.startswith("{"):
+                try:
+                    parsed = _json.loads(raw)
+                    if isinstance(parsed, dict):
+                        query = str(parsed.get("query") or raw).strip()
+                        mp = parsed.get("max_pages")
+                        if isinstance(mp, int) and 1 <= mp <= 10:
+                            max_pages = mp
+                        tf = parsed.get("time_filter") or parsed.get("freshness")
+                        if isinstance(tf, str) and tf.lower() in ("day", "week", "month", "year"):
+                            time_filter = tf.lower()
+                except _json.JSONDecodeError:
+                    query = raw
+            if not query:
+                return {"error": "universal_search: a query/claim is required", "exit_code": 1}
+            loop = asyncio.get_running_loop()
+            try:
+                payload = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: universal_search(query, max_pages=max_pages, time_filter=time_filter),
+                    ),
+                    timeout=60,
+                )
+            except Exception as e:
+                return {"error": f"universal_search: {e}", "exit_code": 1}
+            # Format a compact, deterministic response for the model.
+            decon = payload.get("deconstruction", {})
+            queries = payload.get("queries", {})
+            matrix = payload.get("validation", {})
+            synth = payload.get("synthesis", {})
+            lines = [
+                "UNIVERSAL SEARCH RESULT",
+                "=" * 40,
+                "Phase 1 — Deconstruction:",
+                f"  Anchors: {', '.join(decon.get('static_anchors', [])) or '(none)'}",
+                f"  Claims:  {', '.join(decon.get('variable_claims', [])) or '(none)'}",
+                f"  Constraints: {', '.join(decon.get('structural_constraints', [])) or '(none)'}",
+                f"  Information gap: {decon.get('information_gap')}",
+                "",
+                "Phase 2 — 3-Tier queries:",
+                f"  [proximity] {queries.get('tier1_proximity', '')}",
+                f"  [broad]     {queries.get('tier2_broad', '')}",
+                f"  [opposing]  {queries.get('tier3_opposing', '')}",
+                "",
+                "Phase 3 — Validation matrix:",
+                f"  Source consensus:   {matrix.get('source_consensus', {}).get('score')} ({matrix.get('source_consensus', {}).get('detail', '')})",
+                f"  Temporal recency:   {matrix.get('temporal_recency', {}).get('score')} ({matrix.get('temporal_recency', {}).get('detail', '')})",
+                f"  Semantic distance:  {matrix.get('semantic_distance', {}).get('score')} ({matrix.get('semantic_distance', {}).get('detail', '')})",
+                f"  Domains: {matrix.get('distinct_domains')}  Snippets: {matrix.get('total_snippets')}  Combined: {matrix.get('combined_confidence')}",
+                "",
+                "Phase 4 — Synthesis:",
+                f"  grounded: {synth.get('grounded')}",
+                f"  answer: {synth.get('answer', '')}",
+            ]
+            if synth.get("supporting_sources"):
+                lines.append("  supporting sources:")
+                for s in synth["supporting_sources"]:
+                    lines.append(f"    - {s.get('title', '')} ({s.get('domain', '')}) {s.get('url', '')}")
+            output = "\n".join(lines)
+            if len(output) > MAX_OUTPUT_CHARS:
+                output = output[:MAX_OUTPUT_CHARS] + "\n\n[...truncated]"
+            return {"output": output, "exit_code": 0}
+
         if tool == "web_fetch":
             # Lightweight single-URL fetch. Wraps the SSRF-safe fetcher used
             # by deep research, so private/loopback/metadata addresses are
@@ -905,6 +975,9 @@ async def execute_tool_block(
     elif tool == "edit_image":
         desc = "edit_image"
         result = await do_edit_image(content, owner=owner)
+    elif tool == "universal_search":
+        desc = f"universal_search: {content.split(chr(10))[0][:60]}"
+        result = await _direct_fallback("universal_search", content)
     elif tool == "trigger_research":
         desc = "trigger_research"
         result = await do_trigger_research(content, owner=owner)
