@@ -23,7 +23,7 @@ break a user's response.
 import contextvars
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 _guard_active: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "llm_middleman_active", default=False
 )
-
 
 DEFAULT_QUESTION = (
     "Does this text contain any boundary-setting, avoidance, limit, reactance, declination?"
@@ -53,6 +52,7 @@ DEFAULT_CRITERIA = {
     "true": "The text contains boundary-setting, avoidance, limit, reactance, declination or anything of such nature",
     "false": "The text contains no boundary-setting, avoidance, limit, reactance, declination or anything of such nature",
 }
+
 
 def middleman_settings() -> Dict[str, Any]:
     try:
@@ -257,6 +257,13 @@ def guard_response_sync(
     return reduced
 
 
+def _chunk_text(text: str, size: int = 80) -> List[str]:
+    """Split text into ~``size``-char pieces for smooth re-streaming."""
+    if not text:
+        return []
+    return [text[i:i + size] for i in range(0, len(text), size)]
+
+
 async def guard_stream(
     agen,
     *,
@@ -266,9 +273,11 @@ async def guard_stream(
 ):
     """Buffer an SSE stream, guard the accumulated text, and re-emit.
 
-    Preserves non-text events (tool_calls, usage, fallback, doc_stream_*, etc.)
-    verbatim. Only ``delta`` text chunks are rewritten. The guarded text is
-    re-chunked so the client still receives a smooth stream.
+    Both the assistant's answer text AND its reasoning (``thinking: true``
+    deltas) are detected + reduced independently, so PII in the chain-of-thought
+    is redacted too. Non-text events (tool_calls, usage, fallback, doc_stream_*,
+    etc.) pass through verbatim. Guarded text is re-chunked so the client still
+    receives a smooth stream.
     """
     cfg = middleman_settings()
     if not cfg["enabled"] or is_active():
@@ -278,7 +287,8 @@ async def guard_stream(
 
     # Buffer the whole stream first (thread-blocking semantics: hold until done).
     chunks = []
-    text_parts = []
+    thinking_parts = []
+    answer_parts = []
     async for chunk in agen:
         chunks.append(chunk)
         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
@@ -286,27 +296,34 @@ async def guard_stream(
                 data = json.loads(chunk[6:])
             except json.JSONDecodeError:
                 continue
-            if isinstance(data, dict) and "delta" in data and not data.get("thinking"):
-                text_parts.append(data["delta"])
+            if isinstance(data, dict) and "delta" in data:
+                if data.get("thinking"):
+                    thinking_parts.append(data["delta"])
+                else:
+                    answer_parts.append(data["delta"])
 
-    original = "".join(text_parts)
-    if not original.strip():
+    thinking_text = "".join(thinking_parts)
+    answer_text = "".join(answer_parts)
+
+    # Guard reasoning and answer independently. Each is a no-op when empty.
+    guarded_thinking = (
+        await guard_response_async(thinking_text, url=url, model=model, headers=headers)
+        if thinking_text.strip() else thinking_text
+    )
+    guarded_answer = (
+        await guard_response_async(answer_text, url=url, model=model, headers=headers)
+        if answer_text.strip() else answer_text
+    )
+
+    if guarded_thinking == thinking_text and guarded_answer == answer_text:
         for chunk in chunks:
             yield chunk
         return
 
-    guarded = await guard_response_async(original, url=url, model=model, headers=headers)
-    if guarded == original:
-        for chunk in chunks:
-            yield chunk
-        return
-
-    # Re-emit, replacing text deltas with the guarded text (chunked ~80 chars).
-    _chunk_size = 80
-    _guarded_parts = [
-        guarded[i:i + _chunk_size] for i in range(0, max(len(guarded), 1), _chunk_size)
-    ]
-    _gi = 0
+    _thinking_chunks = _chunk_text(guarded_thinking)
+    _answer_chunks = _chunk_text(guarded_answer)
+    _ti = 0
+    _ai = 0
     for chunk in chunks:
         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
             try:
@@ -314,9 +331,15 @@ async def guard_stream(
             except json.JSONDecodeError:
                 yield chunk
                 continue
-            if isinstance(data, dict) and "delta" in data and not data.get("thinking"):
-                if _gi < len(_guarded_parts):
-                    yield f'data: {json.dumps({"delta": _guarded_parts[_gi]})}\n\n'
-                    _gi += 1
-                continue
+            if isinstance(data, dict) and "delta" in data:
+                if data.get("thinking"):
+                    if _ti < len(_thinking_chunks):
+                        yield f'data: {json.dumps({"delta": _thinking_chunks[_ti], "thinking": True})}\n\n'
+                        _ti += 1
+                    continue
+                else:
+                    if _ai < len(_answer_chunks):
+                        yield f'data: {json.dumps({"delta": _answer_chunks[_ai]})}\n\n'
+                        _ai += 1
+                    continue
         yield chunk
