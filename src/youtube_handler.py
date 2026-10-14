@@ -72,9 +72,110 @@ def extract_youtube_id(url: str) -> Optional[str]:
                 return params["v"][0]
         elif parsed.path.startswith("/embed/"):
             return parsed.path.split("/")[-1]
+        elif parsed.path.startswith("/live/"):
+            return parsed.path.split("/")[-1]
+        elif parsed.path.startswith("/shorts/"):
+            return parsed.path.split("/")[-1]
     elif parsed.hostname == "youtu.be":
         return parsed.path[1:]
     return None
+
+
+def fetch_youtube_transcript(url: str, max_chars: int = 8000) -> Dict[str, Any]:
+    """Synchronously fetch a YouTube video's transcript from a URL.
+
+    A self-contained wrapper for the ``youtube_transcript`` agent tool: it
+    extracts the video id from the URL, prioritizes manual captions over
+    ASR auto-generated ones, and returns both the stitched full text and the
+    timestamped segments. Degrades to a clear ``{"success": False, "error": ...}``
+    instead of raising, so the agent can reason around a missing API/library.
+    """
+    if not YOUTUBE_AVAILABLE or YouTubeTranscriptApi is None:
+        # Lazy-init: the library may not be imported at import time.
+        init_youtube()
+    if not YOUTUBE_AVAILABLE or YouTubeTranscriptApi is None:
+        return {
+            "success": False,
+            "error": "youtube-transcript-api is not installed.",
+            "transcript": None,
+        }
+
+    url = (url or "").strip()
+    video_id = extract_youtube_id(url)
+    if not video_id:
+        return {"success": False, "error": f"Could not extract a YouTube video id from: {url[:120]}", "transcript": None}
+
+    try:
+        api = YouTubeTranscriptApi()
+        # Prefer manual captions; fall back to ASR auto-generated only when no
+        # manual track exists. list_transcripts() raises TranscriptsDisabled /
+        # NoTranscriptFound when none exist, which we surface cleanly.
+        transcript = None
+        is_generated = False
+        language = None
+        try:
+            tl = api.list_transcripts(video_id)
+            try:
+                track = tl.find_manually_created_transcript()
+                is_generated = False
+            except Exception:
+                track = None
+            if track is None:
+                generated = tl.find_generated_transcript()
+                if generated is not None:
+                    track = generated
+                    is_generated = True
+            if track is not None:
+                transcript = list(track.fetch())
+                language = track.language_code
+        except Exception:
+            # Older API / fallback: fetch() returns the default track.
+            transcript = list(api.fetch(video_id))
+
+        if not transcript:
+            return {
+                "success": False,
+                "error": "This video has no available transcript (captions disabled).",
+                "transcript": None,
+            }
+
+        segments = []
+        for snippet in transcript:
+            text = getattr(snippet, "text", "")
+            if isinstance(text, str):
+                text = text.strip()
+            if not text:
+                continue
+            start = float(getattr(snippet, "start", 0.0) or 0.0)
+            duration = float(getattr(snippet, "duration", 0.0) or 0.0)
+            segments.append({
+                "text": text,
+                "start": start,
+                "duration": duration,
+                "timestamp": f"{int(start // 60):02d}:{int(start % 60):02d}",
+            })
+
+        full_text = " ".join(s["text"] for s in segments)
+        truncated = len(full_text) > max_chars
+        if truncated:
+            full_text = full_text[:max_chars] + "... [transcript truncated]"
+
+        return {
+            "success": True,
+            "transcript": full_text,
+            "video_id": video_id,
+            "language": language or "unknown",
+            "is_generated": is_generated,
+            "segments": segments,
+            "truncated": truncated,
+        }
+    except Exception as e:
+        logger.warning(f"fetch_youtube_transcript failed for {url}: {e}")
+        return {
+            "success": False,
+            "error": f"Transcript fetch failed: {e}",
+            "transcript": None,
+        }
 
 
 async def extract_transcript_async(

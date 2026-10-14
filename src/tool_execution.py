@@ -608,6 +608,102 @@ async def _direct_fallback(
                 output += "\n\n<!-- SOURCES:" + _json.dumps(sources) + " -->"
             return {"output": output, "exit_code": 0}
 
+        if tool == "youtube_transcript":
+            from src.youtube_handler import fetch_youtube_transcript
+            raw = content.strip()
+            url = raw
+            if raw.startswith("{"):
+                try:
+                    parsed = _json.loads(raw)
+                    if isinstance(parsed, dict):
+                        url = str(parsed.get("url") or "").strip()
+                except _json.JSONDecodeError:
+                    url = ""
+            if not url:
+                url = raw.split("\n")[0].strip()
+            if not url:
+                return {"error": "youtube_transcript: provide a YouTube URL", "exit_code": 1}
+            loop = asyncio.get_running_loop()
+            try:
+                data = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: fetch_youtube_transcript(url, max_chars=8000)),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                return {"error": f"youtube_transcript: timed out fetching {url}", "exit_code": 1}
+            except Exception as e:
+                return {"error": f"youtube_transcript: {e}", "exit_code": 1}
+            if not data.get("success"):
+                return {"error": f"youtube_transcript: {data.get('error', 'unknown error')}", "exit_code": 1}
+            segs = data.get("segments", [])
+            lines = []
+            lines.append(f"YouTube transcript (video {data.get('video_id')}, language {data.get('language')}, {'auto-generated ASR' if data.get('is_generated') else 'manual captions'}):")
+            lines.append("")
+            # Timestamped segments when short, plain text otherwise.
+            if segs and len(segs) <= 300:
+                for s in segs:
+                    lines.append(f"[{s['timestamp']}] {s['text']}")
+            else:
+                lines.append(data.get("transcript", ""))
+            output = "\n".join(lines)
+            if len(output) > MAX_OUTPUT_CHARS:
+                output = output[:MAX_OUTPUT_CHARS] + "\n\n[...truncated]"
+            return {"output": output, "exit_code": 0}
+
+        if tool == "reddit_search":
+            from src.reddit_scraper import reddit_search
+            raw = content.strip()
+            query = ""
+            subreddit = ""
+            limit = 5
+            if raw.startswith("{"):
+                try:
+                    parsed = _json.loads(raw)
+                    if isinstance(parsed, dict):
+                        query = str(parsed.get("query") or "").strip()
+                        subreddit = str(parsed.get("subreddit") or "").strip()
+                        lp = parsed.get("limit")
+                        if isinstance(lp, int):
+                            limit = lp
+                except _json.JSONDecodeError:
+                    query = raw
+            else:
+                # Plain form: first line = query, optional second line = subreddit.
+                lines_raw = [ln.strip() for ln in raw.split("\n") if ln.strip()]
+                query = lines_raw[0] if lines_raw else ""
+                subreddit = lines_raw[1] if len(lines_raw) > 1 else ""
+            if not query and not subreddit:
+                return {"error": "reddit_search: provide a query and/or subreddit", "exit_code": 1}
+            loop = asyncio.get_running_loop()
+            try:
+                data = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: reddit_search(query=query, subreddit=subreddit, limit=limit),
+                    ),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                return {"error": "reddit_search: timed out", "exit_code": 1}
+            except Exception as e:
+                return {"error": f"reddit_search: {e}", "exit_code": 1}
+            if not data.get("success"):
+                return {"error": f"reddit_search: {data.get('error', 'no results')}", "exit_code": 1}
+            posts = data.get("posts", [])
+            lines = [f"Reddit results ({len(posts)} posts):", ""]
+            for i, p in enumerate(posts, 1):
+                lines.append(f"{i}. r/{p.get('subreddit', '?')} · u/{p.get('author', '?')} · score {p.get('score', '?')}")
+                lines.append(f"   {p.get('title', '')}")
+                if p.get("url"):
+                    lines.append(f"   {p.get('url')}")
+                st = (p.get("selftext") or "").strip()
+                if st:
+                    lines.append(f"   {st[:300]}")
+            output = "\n".join(lines)
+            if len(output) > MAX_OUTPUT_CHARS:
+                output = output[:MAX_OUTPUT_CHARS] + "\n\n[...truncated]"
+            return {"output": output, "exit_code": 0}
+
         if tool == "universal_search":
             from services.search.universal import universal_search
             raw = content.strip()
@@ -978,6 +1074,12 @@ async def execute_tool_block(
     elif tool == "universal_search":
         desc = f"universal_search: {content.split(chr(10))[0][:60]}"
         result = await _direct_fallback("universal_search", content)
+    elif tool == "youtube_transcript":
+        desc = f"youtube_transcript: {content.split(chr(10))[0][:60]}"
+        result = await _direct_fallback("youtube_transcript", content)
+    elif tool == "reddit_search":
+        desc = f"reddit_search: {content.split(chr(10))[0][:60]}"
+        result = await _direct_fallback("reddit_search", content)
     elif tool == "trigger_research":
         desc = "trigger_research"
         result = await do_trigger_research(content, owner=owner)

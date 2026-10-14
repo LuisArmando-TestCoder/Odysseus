@@ -216,6 +216,27 @@ Or with JSON for freshness:
 ```
 Run the Universal Search Framework to FACT-CHECK a claim. It deconstructs the prompt into Static Anchors and Variable Claims, fires three parallel query tiers (proximity / broad context / adversarial "fake debunked"), scores evidence via a validation matrix (source consensus, temporal recency, semantic distance), and returns a grounded answer or an explicit "insufficient verified evidence" default. Use this when the user asks "is it true that…", "verify…", "fact-check…", or feeds a suspicious/fictional riddle — it avoids hallucination by only confirming what multiple independent sources back.""",
 
+    "youtube_transcript": """\
+```youtube_transcript
+<youtube url>
+```
+Or with JSON:
+```youtube_transcript
+{"url": "https://www.youtube.com/watch?v=..."}
+```
+Fetch the transcript (captions) of a YouTube video from its URL. Prioritizes manual captions over auto-generated ASR. Use when the user shares a YouTube link or asks what a video says.""",
+
+    "reddit_search": """\
+```reddit_search
+<search query>
+[optional subreddit]
+```
+Or with JSON:
+```reddit_search
+{"query": "your keywords", "subreddit": "python", "limit": 5}
+```
+Search Reddit (zero-login) by keyword and/or within a subreddit, returning posts (title, author, score, url, selftext). Use when the user asks what Reddit says about a topic, to search a subreddit, or to read a discussion.""",
+
     "read_file": """\
 ```read_file
 <file path>

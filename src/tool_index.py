@@ -67,6 +67,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "python": "Execute Python code for computation, data processing, math, scripting, parsing, API calls. Not for writing code for the user.",
     "web_search": "Quick single web lookup for a fact, current event, or doc mid-task. NOT for 'research X' / 'do research on X' requests — those are deep-research jobs (use trigger_research). web_search = one query; trigger_research = a full researched report in the sidebar.",
     "web_fetch": "Fetch and read the text content of a specific URL/website the user names (e.g. 'check example.com', 'open this link'). Use when you have a concrete URL; for open-ended lookups use web_search instead.",
+    "youtube_transcript": "Fetch the transcript (captions) of a YouTube video from its URL — manual captions preferred over auto-generated ASR. Use when the user shares a YouTube link or asks what a video says.",
+    "reddit_search": "Search Reddit (zero-login) by keyword and/or within a subreddit, returning posts with title, author, score, url, and selftext. Use when the user asks what Reddit says about a topic, to search a subreddit, or read a discussion.",
     "read_file": "Read a file from disk and return its contents. View source code, config files, logs. Documents created in the editor are saved as files under data/documents/ — read_file can open them there so a chat can reference a document another chat wrote.",
     "write_file": "Write content to a file on disk. Create new files, save output, update configs.",
     "create_document": "Create a new document in the editor panel. For code, articles, text content longer than 15 lines, unless an already-open document/email draft is the obvious target. If an email compose draft is open, edit that draft instead of creating another document.",
@@ -344,6 +346,14 @@ class ToolIndex:
                    "deep dive", "deep research", "find out about", "study up on",
                    "report on", "do research", "look up everything"}):
             {"trigger_research"},
+        # YouTube transcript intent — user shares a YouTube link / asks what a video says
+        frozenset({"youtube", "youtu.be", "transcript", "captions", "subtitles",
+                   "watch?v=", "what does this video", "summarize this video", "video says"}):
+            {"youtube_transcript"},
+        # Reddit intent — "what does reddit say", search a subreddit, read a discussion
+        frozenset({"reddit", "r/", "subreddit", "what does reddit", "reddit says",
+                   "reddit thinks", "on reddit"}):
+            {"reddit_search"},
         # OSINT framework browsing / tool discovery intent
         frozenset({"osint", "osint framework", "osint tools", "what tools",
                    "username search", "email osint", "domain osint",

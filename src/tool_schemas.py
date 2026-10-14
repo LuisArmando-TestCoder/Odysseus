@@ -96,6 +96,36 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "youtube_transcript",
+            "description": "Fetch the transcript (captions) of a YouTube video from its URL. Returns the stitched full text plus timestamped segments; prioritizes manual captions over auto-generated (ASR) ones. Use when the user shares a YouTube link or asks what a video says.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The YouTube video URL (youtube.com/watch?v=..., youtu.be/..., shorts, or embed)"}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reddit_search",
+            "description": "Search Reddit (zero-login) by keyword and/or within a specific subreddit, returning normalized posts (title, author, score, url, selftext). Use when the user asks what Reddit says about a topic, to search a subreddit, or to read a discussion.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search keywords to find on Reddit"},
+                    "subreddit": {"type": "string", "description": "Optional subreddit to restrict the search to (with or without 'r/')"},
+                    "limit": {"type": "integer", "description": "Max posts to return (default 5, max 25)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": "Read a file from disk",
             "parameters": {
@@ -1282,6 +1312,10 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = args.get("model", "auto") + "\n" + args.get("problem", "")
     elif tool_type == "run_javascript":
         content = args.get("code", "")
+    elif tool_type == "youtube_transcript":
+        content = args.get("url", "")
+    elif tool_type == "reddit_search":
+        content = json.dumps(args)
     else:
         content = json.dumps(args)
 
