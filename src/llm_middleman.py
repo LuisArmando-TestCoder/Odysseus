@@ -24,6 +24,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,45 @@ def _jev_probability(answers: Dict[str, Dict[str, Any]]) -> Optional[float]:
     return None
 
 
+# Fenced code blocks (```...```) are how the agent loop encodes tool calls
+# (search, web fetch, etc.). The reducer must never touch them, or it could
+# corrupt the fence syntax and break tool parsing. We extract them before
+# reduction and restore them verbatim afterward.
+_FENCE_RE = re.compile(r"```[^\n]*\n.*?```", re.DOTALL)
+
+
+def _extract_fenced_blocks(text: str) -> tuple:
+    """Replace fenced code blocks with ``[[FENCED_BLOCK_n]]`` placeholders.
+
+    Returns ``(prose, blocks)`` where ``prose`` has each fenced block replaced by
+    a marker and ``blocks`` is the list of original blocks in order.
+    """
+    blocks: List[str] = []
+
+    def _repl(m):
+        blocks.append(m.group(0))
+        return f"\n\n[[FENCED_BLOCK_{len(blocks) - 1}]]\n\n"
+
+    prose = _FENCE_RE.sub(_repl, text)
+    return prose, blocks
+
+
+def _restore_fenced_blocks(prose: str, blocks: List[str]) -> Optional[str]:
+    """Replace ``[[FENCED_BLOCK_n]]`` markers with the original fenced blocks.
+
+    Returns ``None`` if any marker is missing (the reducer dropped it), so the
+    caller can fail safe to the original text instead of emitting a corrupted
+    tool call.
+    """
+    out = prose
+    for i, block in enumerate(blocks):
+        marker = f"[[FENCED_BLOCK_{i}]]"
+        if marker not in out:
+            return None
+        out = out.replace(marker, block)
+    return out
+
+
 async def guard_response_async(
     text: str,
     *,
@@ -173,8 +213,17 @@ async def guard_response_async(
     logger.info(f"[middleman] flagged (p={_p}, threshold={cfg['threshold']}); reducing")
 
     # Flagged — reduce through a raw LLM call (re-entrancy guard set).
+    # Preserve fenced code blocks (tool calls) verbatim: extract them, reduce
+    # only the prose, then restore. This guarantees a flagged response can never
+    # corrupt a search/tool call.
+    prose, blocks = _extract_fenced_blocks(text)
     target_url, target_model, target_headers = _resolve_reducer_target(url, model, headers)
-    prompt = cfg["prompt"].format(text=text)
+    prompt = cfg["prompt"].format(text=prose)
+    if blocks:
+        prompt += (
+            "\n\nPreserve any [[FENCED_BLOCK_n]] markers exactly as they appear — "
+            "do not modify, reword, or remove them."
+        )
     messages = [{"role": "user", "content": prompt}]
     token = _guard_active.set(True)
     try:
@@ -193,6 +242,14 @@ async def guard_response_async(
     if not reduced:
         logger.warning("[middleman] reducer returned empty; returning original")
         return text
+    if blocks:
+        restored = _restore_fenced_blocks(reduced, blocks)
+        if restored is None:
+            logger.warning(
+                "[middleman] reducer dropped a fenced-block marker; returning original"
+            )
+            return text
+        reduced = restored
     logger.info(f"[middleman] redacted response ({len(text)} -> {len(reduced)} chars)")
     return reduced
 
@@ -238,8 +295,15 @@ def guard_response_sync(
         return text
     logger.info(f"[middleman] flagged (p={_p}, threshold={cfg['threshold']}); reducing")
 
+    # Preserve fenced code blocks (tool calls) verbatim during reduction.
+    prose, blocks = _extract_fenced_blocks(text)
     target_url, target_model, target_headers = _resolve_reducer_target(url, model, headers)
-    prompt = cfg["prompt"].format(text=text)
+    prompt = cfg["prompt"].format(text=prose)
+    if blocks:
+        prompt += (
+            "\n\nPreserve any [[FENCED_BLOCK_n]] markers exactly as they appear — "
+            "do not modify, reword, or remove them."
+        )
     messages = [{"role": "user", "content": prompt}]
     token = _guard_active.set(True)
     try:
@@ -258,6 +322,14 @@ def guard_response_sync(
     if not reduced:
         logger.warning("[middleman] reducer returned empty; returning original")
         return text
+    if blocks:
+        restored = _restore_fenced_blocks(reduced, blocks)
+        if restored is None:
+            logger.warning(
+                "[middleman] reducer dropped a fenced-block marker; returning original"
+            )
+            return text
+        reduced = restored
     logger.info(f"[middleman] redacted response ({len(text)} -> {len(reduced)} chars)")
     return reduced
 
