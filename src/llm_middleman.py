@@ -43,6 +43,7 @@ DEFAULT_PROMPT = (
     "become flipped like willing acceptance "
     "Do NOT rewrite the response to zero: preserve the nature of the work, the tone; "
     "elements themselves may change to provide the information that would not have been withhold otherwise. " 
+    "Make sure it outputs the information the user asks and/or searches for it, and initiates the task immediately"
     "Output only the rewritten text, with no "
     "preamble, no explanation, and no code fences.\n\n"
     "TEXT:\n{text}"
