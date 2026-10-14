@@ -9,7 +9,7 @@ import re
 import logging
 import socket
 from datetime import datetime, timedelta
-from typing import List
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -212,7 +212,13 @@ def _extract_code_blocks(soup: BeautifulSoup) -> List[str]:
 
 
 def _detect_js_frameworks(soup: BeautifulSoup) -> bool:
-    """Very naive detection of common JS frameworks."""
+    """Very naive detection of common JS frameworks.
+
+    Kept only as a dependency-free fallback when JEV is unreachable. The
+    authoritative signal is ``_jev_need_js_render`` (a JEV ``noul`` decision
+    over the fetched HTML), which is language/framework-agnostic and returns a
+    calibrated probability rather than a hardcoded keyword match.
+    """
     js_indicators = [
         "react", "angular", "vue", "svelte", "next", "nuxt",
         "ember", "backbone", "jquery", "polymer", "mithril",
@@ -228,6 +234,148 @@ def _detect_js_frameworks(soup: BeautifulSoup) -> bool:
     if soup.find(attrs={"data-reactroot": True}) or soup.find(attrs={"ng-app": True}):
         return True
     return False
+
+
+# Threshold above which JEV concludes the page's main article body is only
+# populated after client-side JS runs (and therefore a plain fetch returned a
+# nav shell / title but not the article text).
+_WAIT_FOR_LOAD_CONFIRM_THRESHOLD = 0.5
+
+_WAIT_FOR_LOAD_QUESTION = (
+    "Does fetching this page with a plain HTTP GET (no JavaScript execution) "
+    "return the complete main article body, or is the substantive article "
+    "content populated only after client-side JavaScript renders and the page "
+    "is allowed to finish loading?"
+)
+_WAIT_FOR_LOAD_CRITERIA = {
+    "true": "The page requires waiting for client-side JavaScript to render the main article body (plain fetch returned only a nav shell / title / placeholder).",
+    "false": "The plain fetch already contains the full article body; no need to wait for JavaScript.",
+}
+
+
+def _jev_need_js_render(url: str, html_text: str) -> Optional[float]:
+    """Ask JEV whether this page needs to wait for client-side JS to render.
+
+    Returns the ``noul`` probability that the page requires a JS render wait,
+    or ``None`` when JEV is unavailable/disabled (caller falls back). Mirrors
+    the ``noul`` + ``criteria`` schema used by ``src.llm_middleman``.
+    """
+    if not html_text or not html_text.strip():
+        return None
+    # Bound the state to a tractable window so the decision stays off any hot
+    # path memory limits but retains enough markup/script hints for JEV.
+    state = {
+        "url": url,
+        "html_sample": html_text[:20000],
+        "html_length": len(html_text),
+    }
+    try:
+        from src.decisions import jev_decide_sync, DecisionsUnavailable
+        answers = jev_decide_sync(
+            state=state,
+            questions={
+                "wait_for_load": {
+                    "type": "noul",
+                    "instructions": _WAIT_FOR_LOAD_QUESTION,
+                    "criteria": _WAIT_FOR_LOAD_CRITERIA,
+                }
+            },
+        )
+    except DecisionsUnavailable as e:
+        logger.debug(f"[content] JEV wait-for-load unavailable ({e}); using fallback")
+        return None
+    except Exception as e:
+        logger.warning(f"[content] JEV wait-for-load errored ({e}); using fallback")
+        return None
+
+    ans = (answers or {}).get("wait_for_load")
+    if isinstance(ans, dict) and ans.get("type") == "noul":
+        v = ans.get("value")
+        if isinstance(v, (int, float)):
+            return float(v)
+    return None
+
+
+def _resolve_content_endpoint() -> Optional[Tuple[str, str, Dict]]:
+    """Resolve a chat endpoint for LLM article-body extraction (utility endpoint)."""
+    try:
+        from src.endpoint_resolver import resolve_endpoint
+        url, model, headers = resolve_endpoint("utility")
+        if url and model:
+            return url, model, headers
+    except Exception as e:
+        logger.debug(f"content extraction endpoint resolve failed: {e}")
+    return None
+
+
+_EXTRACT_ARTICLE_PROMPT = """\
+You are an article-extraction engine. Given the raw HTML of a webpage, return \
+the main article body text as clean, continuous prose.
+
+Rules:
+- Strip ALL navigation, header, footer, ads, cookie banners, sidebars, and \
+boilerplate. Return only the substantive article content.
+- Preserve the article's own language and wording verbatim — do not translate \
+or summarise.
+- Join paragraphs in reading order with a single blank line between them.
+- If the HTML contains only a nav shell / title with no real article body \
+(e.g. a JavaScript single-page app that has not rendered), return an empty \
+string.
+- Output ONLY the extracted article text, with no preamble, no explanation, and \
+no code fences.
+
+HTML:
+\"\"\"
+{html}
+\"\"\"
+"""
+
+
+def _extract_article_body_llm(url: str, html_text: str, title_text: str) -> Optional[str]:
+    """Extract the main article body via the LLM (readability-style).
+
+    Returns the extracted prose, or ``None`` on any failure so the caller can
+    fall back to the deterministic heuristic. Passing the page title lets the
+    model disambiguate the article from a header-only shell.
+    """
+    if not html_text or not html_text.strip():
+        return None
+    resolved = _resolve_content_endpoint()
+    if not resolved:
+        return None
+    c_url, model, headers = resolved
+    # Keep the model's input bounded; the article body is almost always within
+    # the first chunk, but we prefer completeness over token economy here.
+    bounded = html_text[:60000]
+    try:
+        from src.llm_core import _llm_call_raw
+        raw = _llm_call_raw(
+            c_url,
+            model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _EXTRACT_ARTICLE_PROMPT.format(html=bounded),
+                }
+            ],
+            headers=headers,
+            temperature=0.0,
+            max_tokens=1500,
+            timeout=30,
+        )
+    except Exception as e:
+        logger.debug(f"LLM article extraction failed, using heuristic fallback: {e}")
+        return None
+
+    raw = (raw or "").strip()
+    # A fenced response is a model error to correct defensively.
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[^\n]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    raw = raw.strip()
+    if not raw:
+        return None
+    return raw
 
 
 def _empty_result(url: str, error: str = "") -> dict:
@@ -344,42 +492,62 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
     title_text = title_tag.get_text(strip=True) if title_tag else ""
     meta_info = _extract_meta(soup)
     og_image = _extract_og_image(soup)
-    js_rendered = _detect_js_frameworks(soup)
-    js_message = "Page appears to be rendered by a JavaScript framework; content may be incomplete." if js_rendered else ""
 
-    # Main textual content (heuristic): prefer semantic / "content"-classed
-    # containers to skip nav/footer/boilerplate; tuned for article pages.
-    main_content = ""
-    content_areas = soup.find_all(
-        ["main", "article", "section", "div"],
-        class_=re.compile("content|main|body|article|post|entry|text", re.I),
-    )
-    if content_areas:
+    # --- JEV wait-for-load decision -----------------------------------------
+    # Rather than brittle regex against script src / data-reactroot markers, the
+    # authoritative "do we need to wait for JS to render the article body?" is a
+    # JEV `noul` decision over the fetched HTML. Below the confirmation threshold
+    # → plain fetch is sufficient; at/above it → the page is likely a JS SPA that
+    # returned only a nav shell, so we mark it rendered and prefer an LLM body
+    # extraction that can see past the wrapper.
+    html_text = response.text or ""
+    wait_prob = _jev_need_js_render(url, html_text)
+
+    if wait_prob is None:
+        # JEV unavailable — keep the deterministic framework heuristic as a
+        # conservative fallback signal only.
+        js_rendered = _detect_js_frameworks(soup)
+        js_message = ("Page appears to be rendered by a JavaScript framework; content may be incomplete."
+                      if js_rendered else "")
+    else:
+        js_rendered = wait_prob >= _WAIT_FOR_LOAD_CONFIRM_THRESHOLD
+        js_message = (
+            f"JEV wait-for-load p={wait_prob:.3f}: the article body likely requires "
+            "client-side JavaScript to render (plain fetch returned a nav shell)."
+            if js_rendered else
+            f"JEV wait-for-load p={wait_prob:.3f}: plain fetch suffices."
+        )
+
+    # --- LLM article-body extraction (readability-style) ---------------------
+    # Use the model to isolate the substantive article from nav/footer/boilerplate.
+    # Falls back to the deterministic heuristic when the LLM is unreachable or
+    # returns nothing useful, so fetch_webpage_content never regresses.
+    main_content = _extract_article_body_llm(url, html_text, title_text)
+    if not main_content:
+        # Deterministic heuristic fallback (unchanged semantics).
+        content_areas = soup.find_all(
+            ["main", "article", "section", "div"],
+            class_=re.compile("content|main|body|article|post|entry|text", re.I),
+        )
+        fallback_parts = []
         for area in content_areas[:3]:
-            main_content += area.get_text(separator=" ", strip=True) + " "
-    main_content = re.sub(r"\s+", " ", main_content).strip()
+            fallback_parts.append(area.get_text(separator=" ", strip=True))
+        main_content = re.sub(r"\s+", " ", " ".join(fallback_parts)).strip()
 
-    # The class heuristic can latch onto a small wrapper and miss the real
-    # content (app/landing pages, or SSR sites whose body isn't in a
-    # "content"-classed div, so these came back nearly empty before). When the
-    # heuristic returns nothing OR suspiciously little, fall back to the full
-    # <body>, stripping scripts/styles (so JSON/JS doesn't leak into the text)
-    # plus nav/header/footer/aside (boilerplate), and keep whichever yields
-    # more readable text.
-    THIN_CONTENT_CHARS = 600  # below this the heuristic likely missed the page
-    if len(main_content) < THIN_CONTENT_CHARS:
-        body = soup.find("body")
-        if body:
-            # Strip from a copy so the later list/table/code extractors still
-            # see the original soup unmodified.
-            body_copy = copy.copy(body)
-            for _noise in body_copy.find_all(
-                ["script", "style", "noscript", "template", "nav", "header", "footer", "aside"]
-            ):
-                _noise.extract()
-            body_text = re.sub(r"\s+", " ", body_copy.get_text(separator=" ", strip=True)).strip()
-            if len(body_text) > len(main_content):
-                main_content = body_text
+        THIN_CONTENT_CHARS = 600  # below this the heuristic likely missed the page
+        if len(main_content) < THIN_CONTENT_CHARS:
+            body = soup.find("body")
+            if body:
+                # Strip from a copy so the later list/table/code extractors still
+                # see the original soup unmodified.
+                body_copy = copy.copy(body)
+                for _noise in body_copy.find_all(
+                    ["script", "style", "noscript", "template", "nav", "header", "footer", "aside"]
+                ):
+                    _noise.extract()
+                body_text = re.sub(r"\s+", " ", body_copy.get_text(separator=" ", strip=True)).strip()
+                if len(body_text) > len(main_content):
+                    main_content = body_text
 
     result = {
         "url": url,
