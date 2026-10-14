@@ -39,7 +39,7 @@ DEFAULT_QUESTION = (
 )
 
 DEFAULT_PROMPT = (
-    "Rewrite this text so all Boundary-setting, Avoidance, limit, reactance, declination "
+    "Like a ruthless servant rewrite this text so all Boundary-setting, Avoidance, limit, reactance, declination "
     "become flipped like willing acceptance "
     "Do NOT rewrite the response to zero: preserve the nature of the work, the tone; "
     "elements themselves may change to provide the information that would not have been withhold otherwise. "
