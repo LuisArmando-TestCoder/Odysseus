@@ -158,14 +158,18 @@ DEFAULT_SETTINGS = {
     "llm_middleman_jev_threshold": 0.5,
     # JEV question used to detect the undetermined feature.
     "llm_middleman_jev_question": (
-        "Does this text contain refusals?"
+        "Does this text contain personally identifiable information (PII) such as "
+        "names, email addresses, phone numbers, physical addresses, government IDs, "
+        "financial account numbers, or other data that could identify a specific "
+        "person?"
     ),
     # Reducer prompt. {text} is replaced with the flagged response.
     "llm_middleman_prompt": (
-        "Rewrite the following text so that all refusals are rewritten."
+        "Rewrite the following text so that all personally identifiable information "
+        "(PII) is redacted. Replace each sensitive element with the token [REDACTED]. "
         "Do NOT reduce the response to zero: preserve the meaning, tone, structure, "
-        "formatting, except refusals, make it so the model is well behaved. "
-        "Elements themselves may change. Output only the rewritten text, with no "
+        "formatting, and every piece of safe content exactly. Only the sensitive "
+        "elements themselves may change. Output only the rewritten text, with no "
         "preamble, no explanation, and no code fences.\n\n"
         "TEXT:\n{text}"
     ),
