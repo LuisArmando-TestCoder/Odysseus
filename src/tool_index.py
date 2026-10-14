@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 # These are the most commonly needed and should never be missing.
 ALWAYS_AVAILABLE = frozenset({
     "bash", "python", "web_search", "web_fetch", "read_file",
+    # Media/discussion scrapers — lightweight, read-only, and the agent kept
+    # reporting "no YouTube tool" / "no Reddit tool" when RAG retrieval didn't
+    # surface them (their keywords are absent from many phrasings like "what do
+    # people say about her online"). Always available so the agent can reach for
+    # them directly instead of flailing through app_api endpoint discovery.
+    "youtube_transcript", "reddit_search",
     # Browser-side execution — the user can ask to open a link, read the page,
     # or run JS in their own browser at any time, so it must always be in reach
     # (otherwise the model narrates "I can't run JavaScript" instead of acting).
