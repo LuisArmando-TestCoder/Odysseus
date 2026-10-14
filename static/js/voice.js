@@ -1315,6 +1315,7 @@ function _buildLegend() {
     search: { color: 'rgb(255, 210, 127)', label: 'Search' },
     direct_message: { color: 'rgb(159, 208, 255)', label: 'Direct' },
     guard_error: { color: 'rgb(255, 150, 70)', label: 'Guard' },
+    guard_rewrite: { color: 'rgb(232, 127, 255)', label: 'Guard rewrite' },
     system_error: { color: 'rgb(255, 107, 127)', label: 'Error' },
   })) {
     const s = document.createElement('span');

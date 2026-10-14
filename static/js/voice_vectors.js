@@ -28,6 +28,7 @@ const TYPE_META = {
   search:        { color: 'rgb(255, 210, 127)',  label: 'Search' },
   direct_message:{ color: 'rgb(159, 208, 255)',  label: 'Direct message' },
   guard_error:   { color: 'rgb(255, 150, 70)',   label: 'Guard blocked' },
+  guard_rewrite: { color: 'rgb(232, 127, 255)',  label: 'Guard rewrite' },
   system_error:  { color: 'rgb(255, 107, 127)',  label: 'System error' },
 };
 const DEFAULT_META = { color: 'rgb(150, 170, 190)', label: 'Message' };

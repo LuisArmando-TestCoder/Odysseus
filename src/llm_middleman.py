@@ -24,7 +24,9 @@ import asyncio
 import contextvars
 import json
 import logging
+import math
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -197,6 +199,87 @@ def _restore_fenced_blocks(prose: str, blocks: List[str]) -> Optional[str]:
     return out
 
 
+# ── Advanced voice vector event ─────────────────────────────────────────────
+# When the middleman rewrites content (reduced != original), we persist one
+# conversation vector ("radar dot") into the chat's voice memory so the
+# advanced-voice HUD shows that a guard rewrite happened. The dot's position is
+# the same deterministic polar mapping the frontend uses (see
+# `static/js/voice_vectors.js::_polarPosition`): ts → angle (one revolution per
+# minute), significance → radius (closer to centre = more weight). We mirror it
+# here so a server-emitted dot lands exactly where the frontend would have put
+# it.
+
+_R_MIN = 0.14
+_R_MAX = 0.82
+
+
+def _polar_position(ts: float, significance: float):
+    s = max(0.0, min(1.0, significance))
+    frac = (ts % 60000) / 60000.0
+    theta = frac * math.pi * 2
+    r = _R_MIN + (1 - s) * (_R_MAX - _R_MIN)
+    return math.cos(theta) * r, math.sin(theta) * r
+
+
+def _record_rewrite_vector(original: str, reduced: str) -> None:
+    """Persist a ``guard_rewrite`` vector when the middleware changed content.
+
+    Fully asynchronous and never blocks the caller or the event loop:
+      - reads the cost-ledger scope (contextvars) on the caller's context only,
+      - then hands a fully-built vector dict to the shared background writer
+        (``services.voice.memory._VectorPersistenceWorker``). That single daemon
+        thread owns all memory mutation + disk I/O, serialized so concurrent
+        rewrites never race (``atomic_write_json`` is not safe under
+        concurrency). The enqueue itself is ``put_nowait`` — non-blocking.
+
+    The vector is keyed per (owner, chat-{session_id}), so it lands in the same
+    voice memory the frontend polls via GET /api/realtime/memory and re-seeds on
+    the HUD. Best-effort: any failure is swallowed, never erroring the response.
+    """
+    try:
+        from src.cost_ledger import current_session, current_owner
+
+        session_id = current_session()
+        if not session_id:
+            return  # outside a chat request — nothing to attribute to
+        owner = current_owner() or ""
+        voice_id = f"chat-{session_id}"
+    except Exception as e:
+        logger.debug(f"[middleman] rewrite vector scope read failed: {e}")
+        return
+
+    ts = time.time()
+    # Weight by how much content was rewritten (token-ish, ~4 chars/token).
+    significance = min(1.0, math.sqrt(max(len(original), 1) / 600.0))
+    x, y = _polar_position(ts, significance)
+    label = f"Guard rewrote response ({len(original)} → {len(reduced)} chars)"
+    import uuid
+    vector = {
+        "id": uuid.uuid4().hex[:12],
+        "type": "guard_rewrite",
+        "ts": ts,
+        "label": label,
+        "x": x,
+        "y": y,
+        "color": "",
+        "extra": {
+            "significance": significance,
+            "tokens": max(1, len(reduced) // 4),
+            "before_len": len(original),
+            "after_len": len(reduced),
+        },
+    }
+    try:
+        from services.voice.memory import _get_vector_worker
+        # Non-blocking enqueue onto the serialized background writer. The hot
+        # path returns immediately; the daemon worker thread does the memory
+        # mutation + disk write, serialized so concurrent rewrites never race
+        # (atomic_write_json is not safe under concurrency).
+        _get_vector_worker().enqueue_vector(owner, voice_id, vector)
+    except Exception as e:
+        logger.debug(f"[middleman] rewrite vector enqueue skipped: {e}")
+
+
 async def guard_response_async(
     text: str,
     *,
@@ -277,6 +360,8 @@ async def guard_response_async(
             return text
         reduced = restored
     logger.info(f"[middleman] redacted response ({len(text)} -> {len(reduced)} chars)")
+    if reduced != text:
+        _record_rewrite_vector(text, reduced)
     return reduced
 
 
@@ -357,6 +442,8 @@ def guard_response_sync(
             return text
         reduced = restored
     logger.info(f"[middleman] redacted response ({len(text)} -> {len(reduced)} chars)")
+    if reduced != text:
+        _record_rewrite_vector(text, reduced)
     return reduced
 
 

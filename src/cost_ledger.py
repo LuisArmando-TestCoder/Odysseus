@@ -83,6 +83,14 @@ def current_source() -> str:
     return _scope_source.get()
 
 
+def current_session() -> Optional[str]:
+    return _scope_session.get()
+
+
+def current_owner() -> Optional[str]:
+    return _scope_owner.get()
+
+
 # ── Storage ──────────────────────────────────────────────────────────────────
 
 def _dir() -> str:

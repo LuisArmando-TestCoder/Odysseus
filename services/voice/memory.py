@@ -24,7 +24,9 @@ import hashlib
 import json
 import logging
 import os
+import queue
 import re
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -63,6 +65,88 @@ def _voice_settings() -> Dict[str, int]:
         "batch_size": _int("voice_batch_size", 20, 2, 64),
         "merge_size": _int("voice_merge_size", 3, 2, 12),
     }
+
+
+class _VectorPersistenceWorker:
+    """Serialized background writer for conversation-vector appends.
+
+    ``add_vector()`` is called from the hot path (middleman guard, chat vector
+    detection, error reporting) where a disk write must never block the event
+    loop or a request thread. The naive fix — ``run_in_executor`` — is unsafe
+    here because ``VoiceMemory`` instances are shared and ``atomic_write_json``
+    uses a per-PID temp file: two concurrent saves would race and corrupt the
+    file. Instead, ONE daemon thread drains a bounded queue, appending each
+    vector to its memory store in arrival order. This is both non-blocking
+    (enqueue only) and race-free (all writes serialize through one thread).
+    """
+
+    def __init__(self):
+        self._q: "queue.Queue" = queue.Queue()
+        self._thread = threading.Thread(target=self._run, name="voice-vector-persist", daemon=True)
+        self._thread.start()
+
+    # Mutation is queued by (owner, voice_id); the worker mutates the shared
+    # VoiceMemory + saves. Queued until drained; the worker coalesces writes so
+    # a burst of dots is a single disk write. The enqueue itself is non-blocking
+    # (put_nowait), so the hot path never waits on the disk I/O that happens in
+    # the worker thread.
+    def enqueue_vector(self, owner: str, voice_id: str, vector: Dict[str, Any]):
+        try:
+            self._q.put_nowait(("vector", owner, voice_id, vector))
+        except Exception as e:
+            logger.debug(f"voice vector queue full/dropped: {e}")
+
+    def _run(self):
+        while True:
+            try:
+                try:
+                    first = self._q.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                if first is None:
+                    continue
+                now = time.time()
+                items = [(*first, now)]
+                # Bundle follow-ups that arrived near-simultaneously.
+                try:
+                    while len(items) < 120 and time.time() - now < 0.05:
+                        item = self._q.get_nowait()
+                        if item is None:
+                            break
+                        items.append((*item, time.time()))
+                except queue.Empty:
+                    pass
+            except Exception as e:
+                logger.debug(f"voice vector worker drain error: {e}")
+                continue
+
+            # Group by memory key; append all vectors for a key, then save once.
+            grouped: Dict[str, Dict[str, Any]] = {}
+            for kind, owner, voice_id, payload, _ts in items:
+                if kind != "vector":
+                    continue
+                g = grouped.setdefault((owner, voice_id), {"owner": owner, "voice_id": voice_id, "vectors": []})
+                g["vectors"].append(payload)
+
+            for (owner, voice_id), g in grouped.items():
+                try:
+                    mem = get_voice_memory(owner, voice_id)
+                    for vec in g["vectors"]:
+                        mem.vectors.append(vec)
+                    mem.vectors = mem.vectors[-_MAX_VECTORS:]
+                    mem._save()
+                except Exception as e:
+                    logger.debug(f"voice vector persist failed: {e}")
+
+
+_vector_worker: Optional[_VectorPersistenceWorker] = None
+
+
+def _get_vector_worker() -> _VectorPersistenceWorker:
+    global _vector_worker
+    if _vector_worker is None:
+        _vector_worker = _VectorPersistenceWorker()
+    return _vector_worker
 
 
 class VoiceMemory:

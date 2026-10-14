@@ -613,7 +613,7 @@ def setup_chat_routes(
             web_sources = ctx.web_sources
             try:
                 from src.cost_ledger import set_cost_scope
-                set_cost_scope(session, "chat")
+                set_cost_scope(session, "chat", _user)
             except Exception:
                 pass
 
