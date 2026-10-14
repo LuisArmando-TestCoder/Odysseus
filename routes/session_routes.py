@@ -1,4 +1,5 @@
 # routes/session_routes.py
+import asyncio
 import re
 import html
 import json
@@ -1118,7 +1119,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         if not session_id:
             raise HTTPException(400, "session_id is required")
         from services.taxonomy import place_chat, get_tree
-        breadcrumb = place_chat(user, session_id, title, excerpt)
+        breadcrumb = await asyncio.to_thread(place_chat, user, session_id, title, excerpt)
         return {"breadcrumb": breadcrumb, "tree": get_tree(user)}
 
     @router.post("/taxonomy/segment")
@@ -1136,7 +1137,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         if not isinstance(sessions, list):
             raise HTTPException(400, "sessions must be a list")
         from services.taxonomy import segment_level
-        groups = segment_level(user, list(path), sessions)
+        groups = await asyncio.to_thread(segment_level, user, list(path), sessions)
         return {"groups": groups}
 
     @router.post("/taxonomy/move")
