@@ -809,10 +809,10 @@ def normalize_model_id(endpoint_url: str, requested: str, timeout: int = LLMConf
             return a
     return None
 
-def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+def _llm_call_raw(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
              max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None, 
              timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None) -> str:
-    """Synchronous LLM call with optional prompt type enhancement."""
+    """Synchronous LLM call with optional prompt type enhancement (unguarded)."""
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -965,7 +965,7 @@ async def llm_call_async_with_fallback(candidates, messages, **kwargs) -> str:
     raise last_err if last_err else HTTPException(503, "All fallback candidates failed")
 
 
-async def llm_call_async(
+async def _llm_call_async_raw(
     url: str,
     model: str,
     messages: List[Dict],
@@ -977,7 +977,7 @@ async def llm_call_async(
     prompt_type: Optional[str] = None,
     reasoning_effort: Optional[str] = None
 ) -> str:
-    """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
+    """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging (unguarded)."""
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -1095,11 +1095,11 @@ async def llm_call_async(
                 raise HTTPException(502, f"POST {target_url} failed after {max_retries} attempts: {e}")
             await asyncio.sleep(LLMConfig.RETRY_DELAY)
 
-async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+async def _stream_llm_raw(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None):
-    """Stream LLM responses with improved error handling.
+    """Stream LLM responses with improved error handling (unguarded).
 
     Yields SSE chunks:
       - data: {"delta": "text"}           — text content
@@ -1518,8 +1518,8 @@ def _summarize_stream_error(err_chunk: Optional[str]) -> str:
     return "primary model failed"
 
 
-async def stream_llm_with_fallback(candidates, messages, **kwargs):
-    """Wrap stream_llm with an ordered fallback chain.
+async def _stream_llm_with_fallback_raw(candidates, messages, **kwargs):
+    """Wrap _stream_llm_raw with an ordered fallback chain (unguarded).
 
     `candidates` is a list of (url, model, headers). Each is tried in order,
     but only retried on a *pre-content* failure — i.e. an ``event: error``
@@ -1578,3 +1578,78 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
     # Every candidate failed pre-content — surface the last error.
     if last_error:
         yield last_error
+
+
+# ── Guarded wrappers (LLM response middleman) ────────────────────────────────
+# These keep the original public names so every existing caller is transparently
+# routed through the middleman. Each calls the raw function, then applies the
+# guard (detect + reduce) before returning. The guard is a no-op when disabled
+# or when the reducer is already running (re-entrancy guard).
+
+def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+             max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
+             timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None) -> str:
+    """Synchronous LLM call, guarded by the response middleman."""
+    response = _llm_call_raw(url, model, messages, temperature=temperature,
+                             max_tokens=max_tokens, headers=headers,
+                             timeout=timeout, prompt_type=prompt_type)
+    try:
+        from src.llm_middleman import guard_response_sync
+        return guard_response_sync(response, url=url, model=model, headers=headers)
+    except Exception as e:
+        logger.debug(f"[middleman] sync guard skipped: {e}")
+        return response
+
+
+async def llm_call_async(
+    url: str,
+    model: str,
+    messages: List[Dict],
+    temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+    max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS,
+    headers: Optional[Dict] = None,
+    timeout: int = LLMConfig.STREAM_TIMEOUT,
+    max_retries: int = LLMConfig.MAX_RETRIES,
+    prompt_type: Optional[str] = None,
+    reasoning_effort: Optional[str] = None
+) -> str:
+    """Asynchronous LLM call, guarded by the response middleman."""
+    response = await _llm_call_async_raw(
+        url, model, messages, temperature=temperature, max_tokens=max_tokens,
+        headers=headers, timeout=timeout, max_retries=max_retries,
+        prompt_type=prompt_type, reasoning_effort=reasoning_effort,
+    )
+    try:
+        from src.llm_middleman import guard_response_async
+        return await guard_response_async(response, url=url, model=model, headers=headers)
+    except Exception as e:
+        logger.debug(f"[middleman] async guard skipped: {e}")
+        return response
+
+
+async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+                     max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
+                     timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
+                     tools: Optional[List[Dict]] = None):
+    """Stream LLM responses, guarded by the response middleman.
+
+    Yields the same SSE chunk protocol as the raw streamer, with text deltas
+    rewritten when the middleman flags + reduces the response.
+    """
+    from src.llm_middleman import guard_stream
+    raw = _stream_llm_raw(url, model, messages, temperature=temperature,
+                          max_tokens=max_tokens, headers=headers,
+                          timeout=timeout, prompt_type=prompt_type, tools=tools)
+    async for chunk in guard_stream(raw, url=url, model=model, headers=headers):
+        yield chunk
+
+
+async def stream_llm_with_fallback(candidates, messages, **kwargs):
+    """Wrap stream_llm with an ordered fallback chain, guarded by the middleman.
+
+    Each candidate is streamed through the guarded ``stream_llm``, so every
+    response is independently detected + reduced before the fallback indicator
+    decides. Yields the same SSE chunk protocol as stream_llm.
+    """
+    async for chunk in _stream_llm_with_fallback_raw(candidates, messages, **kwargs):
+        yield chunk
