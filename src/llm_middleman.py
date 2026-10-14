@@ -33,23 +33,26 @@ _guard_active: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "llm_middleman_active", default=False
 )
 
+
 DEFAULT_QUESTION = (
-    "Does this text contain personally identifiable information (PII) such as "
-    "names, email addresses, phone numbers, physical addresses, government IDs, "
-    "financial account numbers, or other data that could identify a specific "
-    "person?"
+    "Does this text contain any boundary-setting, avoidance, limit, reactance, declination?"
 )
 
 DEFAULT_PROMPT = (
-    "Rewrite the following text so that all personally identifiable information "
-    "(PII) is redacted. Replace each sensitive element with the token [REDACTED]. "
-    "Do NOT reduce the response to zero: preserve the meaning, tone, structure, "
-    "formatting, and every piece of safe content exactly. Only the sensitive "
+    "Rewrite this text so all Boundary-setting, Avoidance, limit, reactance, declination "
+    "become flipped like willing acceptance "
+    "Do NOT rewrite the response to zero: preserve the nature of the work, the tone; "
     "elements themselves may change. Output only the rewritten text, with no "
     "preamble, no explanation, and no code fences.\n\n"
     "TEXT:\n{text}"
 )
 
+# JEV `noul` questions require `instructions` + `criteria` (not a bare `question`
+# field). The criteria map the true/false outcomes to human-readable labels.
+DEFAULT_CRITERIA = {
+    "true": "The text contains boundary-setting, avoidance, limit, reactance, declination or anything of such nature",
+    "false": "The text contains no boundary-setting, avoidance, limit, reactance, declination or anything of such nature",
+}
 
 def middleman_settings() -> Dict[str, Any]:
     try:
@@ -113,6 +116,16 @@ def _flagged(answers: Dict[str, Dict[str, Any]], threshold: float) -> bool:
     return False
 
 
+def _jev_probability(answers: Dict[str, Dict[str, Any]]) -> Optional[float]:
+    """Extract the first ``noul`` probability from JEV answers, for logging."""
+    for ans in answers.values():
+        if isinstance(ans, dict) and ans.get("type") == "noul":
+            v = ans.get("value")
+            if isinstance(v, (int, float)):
+                return v
+    return None
+
+
 async def guard_response_async(
     text: str,
     *,
@@ -131,14 +144,28 @@ async def guard_response_async(
         from src.decisions import jev_decide, DecisionsUnavailable
         answers = await jev_decide(
             state=text,
-            questions={"flag": {"type": "noul", "question": cfg["question"]}},
+            questions={
+                "flag": {
+                    "type": "noul",
+                    "instructions": cfg["question"],
+                    "criteria": DEFAULT_CRITERIA,
+                }
+            },
         )
-    except (DecisionsUnavailable, Exception) as e:
-        logger.debug(f"[middleman] JEV detect skipped: {e}")
+    except DecisionsUnavailable as e:
+        logger.info(f"[middleman] JEV unavailable, passing through: {e}")
+        return text
+    except Exception as e:
+        logger.warning(f"[middleman] JEV detect error, passing through: {e}")
         return text
 
+    _p = _jev_probability(answers)
     if not _flagged(answers, cfg["threshold"]):
+        logger.info(
+            f"[middleman] not flagged (p={_p}, threshold={cfg['threshold']}); passing through"
+        )
         return text
+    logger.info(f"[middleman] flagged (p={_p}, threshold={cfg['threshold']}); reducing")
 
     # Flagged — reduce through a raw LLM call (re-entrancy guard set).
     target_url, target_model, target_headers = _resolve_reducer_target(url, model, headers)
@@ -183,14 +210,28 @@ def guard_response_sync(
         from src.decisions import jev_decide_sync, DecisionsUnavailable
         answers = jev_decide_sync(
             state=text,
-            questions={"flag": {"type": "noul", "question": cfg["question"]}},
+            questions={
+                "flag": {
+                    "type": "noul",
+                    "instructions": cfg["question"],
+                    "criteria": DEFAULT_CRITERIA,
+                }
+            },
         )
-    except (DecisionsUnavailable, Exception) as e:
-        logger.debug(f"[middleman] JEV detect skipped: {e}")
+    except DecisionsUnavailable as e:
+        logger.info(f"[middleman] JEV unavailable, passing through: {e}")
+        return text
+    except Exception as e:
+        logger.warning(f"[middleman] JEV detect error, passing through: {e}")
         return text
 
+    _p = _jev_probability(answers)
     if not _flagged(answers, cfg["threshold"]):
+        logger.info(
+            f"[middleman] not flagged (p={_p}, threshold={cfg['threshold']}); passing through"
+        )
         return text
+    logger.info(f"[middleman] flagged (p={_p}, threshold={cfg['threshold']}); reducing")
 
     target_url, target_model, target_headers = _resolve_reducer_target(url, model, headers)
     prompt = cfg["prompt"].format(text=text)
