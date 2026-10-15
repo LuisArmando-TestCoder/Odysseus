@@ -94,7 +94,8 @@ Judge ONLY new_user_speech; the rest is context.
 Answer ONLY with JSON:
 {"should_send": 0..1, "ready": 0..1, "already_sent": 0..1,
  "intent": "task|question|research|remember|followup|none", "urgency": 0|1|2,
- "commitment": 0..1, "stop_talking": 0..1, "interrupt": 0..1}
+ "commitment": 0..1, "stop_talking": 0..1, "interrupt": 0..1,
+ "negative_directive": 0..1, "directed_to_chat": 0..1}
 - should_send: probability the user wants something done, looked up, answered or remembered — implicit and
   indirect requests count ("I want to see…", "bring me…", "what time is it")
 - ready: probability the user has finished expressing it (not mid-sentence / still thinking)
@@ -108,6 +109,14 @@ Answer ONLY with JSON:
   list of words.
 - interrupt: probability the user wants to INTERRUPT the task currently running in the chat and supersede
   it with a new request.
+- negative_directive: probability the user explicitly FORBIDS sending, telling, sharing, or forwarding this
+  to the chat or anyone ("don't tell anyone", "no le digas nada", "no quiero que le digas al chat", "keep
+  this between us", "this is a secret", "no lo envíes", "no compartas"). This is a directive to NOT act, in
+  ANY language — even if the words describe something the chat could do, the user is forbidding it, so this
+  must be high and should_send must be 0.
+- directed_to_chat: probability the user explicitly names the CHAT as the target ("ask the chat", "send to
+  the chat", "the chat should…", "pregúntale al chat", "dile al chat") — they want the CHAT AGENT to do the
+  work, not the voice assistant to answer from its own chatter. Judge in ANY language.
 """ + NOT_A_REQUEST + "\n" + IMPLICIT_ASK
 
 # Forger output contract: a BARE message, not JSON and not a labelled envelope.
@@ -355,35 +364,10 @@ def _fmt(turns: List[Dict[str, Any]]) -> str:
     return "\n".join(f"{t['speaker'].upper()}: {t['text']}" for t in turns)
 
 
-# Explicit "do this in the chat" directives. When the user names the chat as the
-# target ("as the chat", "ask the chat", "send to the chat", "the chat should…",
-# "chat agent"), they want the CHAT AGENT to do the work — the voice assistant
-# must not answer from its own chatter. These bypass the lateral extractor.
-_CHAT_DIRECTIVE = re.compile(
-    r"\b(?:as|ask|send|tell|have|let|for|to|in|via|through)\s+the\s+chat\b"
-    r"|\bchat\s+agent\b"
-    r"|\bthe\s+chat\s+(?:should|needs|must|can|will|has|is)\b",
-    re.IGNORECASE,
-)
-
-
-def _directed_to_chat(text: str) -> bool:
-    return bool(_CHAT_DIRECTIVE.search(text or ""))
-
-
-# Explicit "do NOT send/tell/share this" directives. When the user forbids
-# forwarding something, the decider must NOT forge — this is a hard gate, not a
-# model judgement. Deterministic so a weak decider can't override it.
-_NEGATIVE_DIRECTIVE = re.compile(
-    r"\b(?:don'?t|do\s+not|never|no)\s+(?:tell|send|share|forward|pass|say|le\s+digas|lo\s+envíes|lo\s+mandes|compartas|se\s+lo\s+digas)\b"
-    r"|\b(?:no\s+le\s+digas|no\s+lo\s+envíes|no\s+lo\s+mandes|no\s+compartas|no\s+se\s+lo\s+digas)\b"
-    r"|\b(?:keep\s+this\s+between\s+us|this\s+is\s+a\s+secret|don'?t\s+tell\s+anyone|no\s+le\s+digas\s+a\s+nadie)\b",
-    re.IGNORECASE,
-)
-
-
-def _is_negative_directive(text: str) -> bool:
-    return bool(_NEGATIVE_DIRECTIVE.search(text or ""))
+# No regex detectors here. Negative directives ("don't tell the chat"),
+# incomplete requests ("...por ejemplo", "de Mm..."), and "directed at the
+# chat" are all judged by JEV — the only detector — so they work across every
+# language without hardcoded word lists that would clash between languages.
 
 
 def _lock_for(mem) -> asyncio.Lock:
@@ -415,10 +399,16 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "ready": {
                     "type": "noul",
                     "instructions": (
-                        "Is the request in new_user_speech clear enough to act on? Spoken requests are full of fillers "
-                        "('um', 'uh', 'let's say') and trailing words — that is still ready if the intent is clear."
+                        "Is the request in new_user_speech FINISHED and clear enough to act on? Spoken requests are "
+                        "full of fillers ('um', 'uh', 'let's say') and trailing words — that is still ready if the "
+                        "intent is clear. But if the user trails off MID-THOUGHT — a trailing connector or filler "
+                        "('por ejemplo', 'o sea', 'entonces', 'and', 'but', 'so'), an ellipsis, or a placeholder for "
+                        "a name they can't recall ('el creador de Mm...', 'the creator of...', 'la película de...') — "
+                        "the request is NOT finished and must be false, in ANY language. Do not forge a truncated "
+                        "request."
                     ),
-                    "criteria": {"true": "Intent is clear enough to act on", "false": "Genuinely cut off before the request was stated"},
+                    "criteria": {"true": "The request is finished and clear enough to act on",
+                                 "false": "Cut off mid-thought (trailing filler/connector, ellipsis, or an unresolved placeholder)"},
                 },
                 "already_sent": {
                     "type": "noul",
@@ -486,6 +476,31 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                     "criteria": {"true": "The user wants to interrupt the in-progress task",
                                  "false": "The user is not asking to interrupt the current task"},
                 },
+                "negative_directive": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does the user explicitly FORBID sending, telling, sharing, or forwarding this to the chat "
+                        "or to anyone? Judge the intent in ANY language: 'don't tell anyone', 'no le digas nada', "
+                        "'no quiero que le digas al chat', 'keep this between us', 'this is a secret', 'no lo "
+                        "envíes', 'no compartas', 'no se lo digas', 'don't send this'. This is a directive to NOT "
+                        "act — even if the words describe something the chat could do, the user is forbidding it. "
+                        "If the user is forbidding it, this is true and should_send must be 0."
+                    ),
+                    "criteria": {"true": "The user explicitly forbids sending/telling/sharing this",
+                                 "false": "The user is not forbidding it"},
+                },
+                "directed_to_chat": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does the user explicitly name the CHAT as the target of this request? Judge in ANY "
+                        "language: 'ask the chat', 'send to the chat', 'the chat should…', 'pregúntale al chat', "
+                        "'dile al chat', 'que el chat…'. When the user names the chat, they want the CHAT AGENT to "
+                        "do the work — the voice assistant must not answer from its own chatter. If the user is "
+                        "just talking to the voice assistant without naming the chat, this is false."
+                    ),
+                    "criteria": {"true": "The user explicitly names the chat as the target",
+                                 "false": "The user is not naming the chat as the target"},
+                },
                 "urgency": {
                     "type": "score",
                     "instructions": "How urgent is it for the user?",
@@ -503,6 +518,8 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "commitment": _f(ans["commitment"]["value"]),
                 "stop_talking": _f(ans["stop_talking"]["value"]),
                 "interrupt": _f(ans["interrupt"]["value"]),
+                "negative_directive": _f(ans["negative_directive"]["value"]),
+                "directed_to_chat": _f(ans["directed_to_chat"]["value"]),
                 "urgency": ans["urgency"]["value"],
             }
         except DecisionsUnavailable as e:
@@ -520,6 +537,8 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
         "commitment": _f(data.get("commitment")),
         "stop_talking": _f(data.get("stop_talking")),
         "interrupt": _f(data.get("interrupt")),
+        "negative_directive": _f(data.get("negative_directive")),
+        "directed_to_chat": _f(data.get("directed_to_chat")),
         "urgency": data.get("urgency", 0),
     }
 
@@ -854,22 +873,19 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         has_sent = bool(spine["recently_sent"]) or any(
             t["speaker"] == "chat_user" for t in mem.recent_turns(8))
         dup = has_sent and decision.get("already_sent", 0) >= 0.8
+        # JEV is the ONLY detector. A negative directive ("don't tell the chat")
+        # and an incomplete request ("...por ejemplo", "de Mm...") are judged by
+        # JEV — no regex — so they work across every language.
+        negative = decision.get("negative_directive", 0) >= 0.7
         send = (
             bool(new_text)
             and decision.get("should_send", 0) >= thr
             and ready
             and not dup
+            and not negative
             and decision.get("intent") != "none"
         )
         decision["threshold"] = thr
-        # Hard gate: an explicit "don't send/tell/share this" directive overrides
-        # the decider. The decider is a model and can be weak; this is
-        # deterministic and cannot be overridden.
-        if _is_negative_directive(new_text):
-            decision["should_send"] = 0.0
-            decision["intent"] = "none"
-            decision["send"] = False
-            send = False
         decision["send"] = send
         # Finished speech is consumed whether or not it was actionable, so the
         # same words are never re-evaluated (or re-forged) on the next turn.
@@ -898,7 +914,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # SKIP when the user explicitly directed the request to the chat ("as
         # the chat", "ask the chat") — they want the chat agent to do the work,
         # not the voice to answer from its own chatter.
-        if send and decision.get("answerable", 0) >= 0.7 and not _directed_to_chat(new_text):
+        if send and decision.get("answerable", 0) >= 0.7 and not decision.get("directed_to_chat", 0) >= 0.7:
             context = (chat_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
             answer = await _extract_answer(owner, new_text, context)
             if answer:
