@@ -510,11 +510,26 @@ async def build_chat_context(
     try:
         from services.voice.memory import get_voice_memory
         _vm = get_voice_memory(user, f"chat-{session_id}")
+        # The compressed spine (highest summary + newest of each level) gives the
+        # chat the distilled overview. The FULL live transcript gives it the
+        # actual spoken conversation — what the user really said, verbatim, so
+        # the chat can answer "what did I talk about" without the compression
+        # losing the specifics. Both are read-only DATA (untrusted), never
+        # instructions.
         _spine = _vm.spine_text(include_live=True)
+        _transcript = _vm.transcript_text(max_turns=200)
+        _parts = []
         if _spine.strip():
+            _parts.append(_spine)
+        if _transcript.strip():
+            _parts.append(
+                "[Full voice transcript — the actual spoken conversation, newest last]\n"
+                + _transcript
+            )
+        if _parts:
             preface.append(untrusted_context_message(
                 "voice memory stratum (read-only)",
-                _spine,
+                "\n\n".join(_parts),
             ))
     except Exception as _vme:
         logger.debug(f"voice memory stratum injection skipped: {_vme}")

@@ -681,6 +681,14 @@ async def _forge_and_emit(
         logger.warning(f"voice forger failed: {e}")
         message, title = "", ""
     if not message:
+        # A commitment forge that declines means the assistant's promise was
+        # vague filler ("I'll get on it", "let me think") — do NOT fall back to
+        # the raw assistant speech, which would send filler like "Comprendido,
+        # sir, lo reviso" to the chat. Skip instead.
+        if source == "commitment":
+            yield _ev(type="stage", stage="forge", status="idle")
+            yield _ev(type="done", send=False, reason="commitment-declined")
+            return
         message = fallback_text
         title = _title_from_message(message)
         logger.warning("voice forger declined/errored after decider said send; using raw speech as the message")

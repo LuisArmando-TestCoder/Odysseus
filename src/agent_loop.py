@@ -1336,10 +1336,31 @@ async def _run_verifier_subagent(
     return [r.strip() for r in reasons.split(";") if r.strip()]
 
 
+def _looks_ambiguous(text: str) -> bool:
+    """Heuristic: a request is likely ambiguous/underspecified if it is very
+    short or contains no clear ask (no question word, no imperative verb)."""
+    t = (text or "").strip()
+    if not t:
+        return True
+    words = t.split()
+    if len(words) <= 2:
+        return True
+    if "?" in t:
+        return False
+    lowered = t.lower()
+    question_words = ("what", "who", "where", "when", "why", "how", "which",
+                      "can", "could", "would", "will", "is", "are", "do", "does", "did")
+    if any(lowered.startswith(w + " ") or f" {w} " in lowered for w in question_words):
+        return False
+    return True
+
+
 def _empty_response_fallback(
     full_response: str,
     round_reasoning: str,
     tool_events: list,
+    stream_error: bool = False,
+    last_user: str = "",
 ) -> tuple:
     """Return (final_response, sse_chunk_or_none) for the end-of-loop empty-response guard.
 
@@ -1347,6 +1368,12 @@ def _empty_response_fallback(
     content=""), full_response is empty but round_reasoning has content.
     The reasoning was already streamed as {thinking:true} chunks — do not
     re-emit it as a normal delta.  Just persist it and yield nothing.
+
+    When the response is genuinely empty, state the likely cause and offer to
+    retry or reformulate, instead of a bare "try again" apology:
+      - stream_error → a temporary connection/processing error;
+      - an ambiguous/underspecified request → a format issue;
+      - otherwise → the model failed to generate any output.
 
     Returns:
         (final_response: str, chunk: str | None)
@@ -1356,7 +1383,21 @@ def _empty_response_fallback(
         return full_response, None
     if round_reasoning.strip():
         return round_reasoning, None
-    _error_msg = "The model returned an empty response. Please try again or switch to a different model."
+    if stream_error:
+        _error_msg = (
+            "The model returned an empty response due to a temporary connection or "
+            "processing error. Would you like me to retry, or reformulate the request?"
+        )
+    elif _looks_ambiguous(last_user):
+        _error_msg = (
+            "The model returned an empty response — the request may have been unclear or "
+            "ambiguous. Would you like me to reformulate it, or retry as-is?"
+        )
+    else:
+        _error_msg = (
+            "The model returned an empty response — it failed to generate any output. "
+            "Would you like me to retry, or reformulate the request?"
+        )
     return _error_msg, f'data: {json.dumps({"delta": _error_msg})}\n\n'
 
 
@@ -1603,6 +1644,7 @@ async def stream_agent_loop(
     backend_gen_tps = 0      # backend-reported true gen speed (llama.cpp timings)
     backend_prefill_tps = 0  # backend-reported prefill speed
     total_tool_calls = 0  # for budget enforcement
+    _stream_error = False  # a connection/processing error was seen during streaming
 
     # Loop-breaker state. Small models (e.g. deepseek-v4-flash) can get
     # stuck firing the same tool call over and over with no text — burns
@@ -1698,6 +1740,7 @@ async def stream_agent_loop(
                 break
             # Forward error events from stream_llm to the frontend
             if chunk.startswith("event: error"):
+                _stream_error = True
                 yield chunk
                 continue
             if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
@@ -1824,6 +1867,7 @@ async def stream_agent_loop(
                                     _doc_last_len = 0
                     elif data.get("error"):
                         err_msg = data.get("error", "unknown")
+                        _stream_error = True
                         logger.error(f"Agent round {round_num}: stream error: {err_msg}")
                         yield f'data: {json.dumps({"delta": chr(10) + chr(10) + "*[Stream error: " + str(err_msg) + "]*"})}\n\n'
                 except json.JSONDecodeError:
@@ -2294,7 +2338,8 @@ async def stream_agent_loop(
     # If the response is completely empty and no tools were executed,
     # yield a fallback message so the user is not left hanging.
     full_response, _fallback_chunk = _empty_response_fallback(
-        full_response, round_reasoning, tool_events
+        full_response, round_reasoning, tool_events,
+        stream_error=_stream_error, last_user=_last_user,
     )
     if _fallback_chunk:
         yield _fallback_chunk

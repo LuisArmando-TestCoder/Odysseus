@@ -349,7 +349,13 @@ class VoiceMemory:
             # Similar wording but NEW specifics (handles, names, URLs, numbers
             # the user just gave) is a refinement, not a repeat — e.g. the same
             # audit request now with "LuisArmando-TestCoder, ArmandoOriens".
-            novel = {w for w in new - old if len(w) >= 4 or any(c.isdigit() for c in w)}
+            # Only identifier-like tokens (digits, or URL fragments) count as a
+            # genuine refinement. Plain descriptive words ("conversación",
+            # "incluyendo", "temas") are NOT a refinement — they are the same
+            # request rephrased, and must still be caught as a duplicate.
+            # Otherwise the observer re-sends near-identical messages over and
+            # over because it can't see what the guard already let through.
+            novel = {w for w in new - old if any(c.isdigit() for c in w) or "://" in w}
             if len(novel) >= 2:
                 continue
             return s.get("message")
