@@ -24,6 +24,8 @@ from src.youtube_handler import (
     fetch_youtube_comments,
     format_comments_for_context,
     YOUTUBE_INSTRUCTION_PROMPT,
+    save_transcript_cache,
+    index_transcript_to_rag,
 )
 
 logger = logging.getLogger(__name__)
@@ -139,6 +141,23 @@ class ChatHandler:
                 if comments_ctx:
                     youtube_transcripts.append(comments_ctx)
 
+                # Persist the transcript and index it into RAG so this video is
+                # searchable in FUTURE chats, not just this turn. Best-effort:
+                # never block or fail the chat on a transcript that can't be
+                # cached/embedded. Owner-scoped to the session owner.
+                if transcript_data.get("success"):
+                    try:
+                        _owner = getattr(sess, "owner", None)
+                        save_transcript_cache(video_id, transcript_data,
+                                              title=title, channel=channel, url=url)
+                        index_transcript_to_rag(
+                            video_id, transcript_data,
+                            owner=_owner, title=title, channel=channel, url=url,
+                        )
+                    except Exception:
+                        logger.debug("YouTube transcript persist/index skipped",
+                                     exc_info=True)
+
         # Inject instruction prompt so the LLM gives a structured breakdown
         if has_youtube:
             youtube_transcripts.insert(0, YOUTUBE_INSTRUCTION_PROMPT)
@@ -171,6 +190,44 @@ class ChatHandler:
                         "width": fi.get("width"),
                         "height": fi.get("height"),
                     })
+
+        # Index chat attachments into RAG (PDFs, Office docs, and image OCR).
+        # Extraction is blocking, so offload to a thread and never fail the
+        # send on an attachment the RAG layer can't handle.
+        if att_ids and files_by_id:
+            def _index_attachments():
+                try:
+                    from src import rag_index
+                    from src.personal_docs import extract_pdf_text, extract_office_text
+                    from src.markitdown_runtime import MARKITDOWN_EXTS
+                    for att_id in att_ids:
+                        fi = files_by_id.get(att_id)
+                        if not fi:
+                            continue
+                        path = fi.get("path") or ""
+                        name = (fi.get("name") or fi.get("original_name") or att_id).lower()
+                        if not path:
+                            continue
+                        text = ""
+                        if name.endswith(".pdf"):
+                            text = extract_pdf_text(path)
+                        elif any(name.endswith(e) for e in MARKITDOWN_EXTS):
+                            text = extract_office_text(path) or ""
+                        else:
+                            # Image OCR/caption (already computed or stored in
+                            # the .vision cache) — index the description too.
+                            vcache = os.path.join(UPLOAD_DIR, ".vision", att_id + ".txt")
+                            if os.path.exists(vcache):
+                                try:
+                                    with open(vcache, encoding="utf-8") as _vf:
+                                        text = _vf.read().strip()
+                                except Exception:
+                                    text = ""
+                        if text and text.strip():
+                            rag_index.index_upload(att_id, text, owner=owner)
+                except Exception as _e:
+                    logger.debug("chat attachment RAG index skipped: %s", _e)
+            asyncio.create_task(asyncio.to_thread(_index_attachments))
 
         if att_ids and vision_enabled:
             meta_by_id = {m["id"]: m for m in attachment_meta}

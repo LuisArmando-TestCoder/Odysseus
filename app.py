@@ -446,6 +446,14 @@ init_youtube()
 from src.rag_singleton import get_rag_manager
 rag_manager = get_rag_manager()
 rag_available = rag_manager is not None
+# Pin the shared VectorRAG into the unified ingest helpers so document /
+# attachment / YouTube mutation paths resolve the same instance the chat
+# retrieves from — prevents a second ChromaDB collection from diverging.
+try:
+    from src import rag_index
+    rag_index.set_rag_manager(rag_manager)
+except Exception as _rie:
+    logger.debug("rag_index wiring skipped: %s", _rie)
 if rag_available:
     logger.info("Vector document RAG initialized")
 else:
@@ -613,6 +621,10 @@ logger.info("Browser eval routes initialized")
 # Documents (artifacts/canvas)
 from routes.document_routes import setup_document_routes
 app.include_router(setup_document_routes(session_manager, upload_handler))
+
+# YouTube playlist ingestion (bulk transcript fetch + RAG indexing)
+from routes.youtube_ingest_routes import setup_youtube_ingest_routes
+app.include_router(setup_youtube_ingest_routes(upload_handler))
 
 # Signatures (reusable image stamps)
 from routes.signature_routes import setup_signature_routes
@@ -889,6 +901,20 @@ async def startup_event():
             logger.warning(f"Tool index warmup failed (non-critical): {type(e).__name__}: {e}")
 
     _startup_tasks.append(asyncio.create_task(_warmup_tool_index()))
+
+    # Backfill the vector RAG with existing documents + cached YouTube
+    # transcripts (owner-stamped). Runs in a thread because embedding a large
+    # corpus is blocking; idempotent and safe when ChromaDB is still down.
+    def _rag_backfill():
+        try:
+            from src.rag_backfill import run_backfill
+            run_backfill(rag_manager)
+        except Exception as e:
+            logger.warning(f"RAG backfill skipped: {e}")
+
+    if rag_available:
+        _startup_tasks.append(asyncio.create_task(asyncio.to_thread(_rag_backfill)))
+
     # Warmup: ping all known LLM endpoints to prime connections
     async def _warmup_endpoints():
         try:

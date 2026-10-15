@@ -38,12 +38,17 @@ _DEFAULT_FASTEMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 class EmbeddingClient:
     """Drop-in replacement for SentenceTransformer.encode() using an HTTP API."""
 
-    def __init__(self, url: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, url: Optional[str] = None, model: Optional[str] = None,
+                 api_key: Optional[str] = None):
         self.url = url or os.getenv(
             "EMBEDDING_URL",
             f"http://{os.getenv('LLM_HOST', 'localhost')}:11434/v1/embeddings",
         )
         self.model = model or os.getenv("EMBEDDING_MODEL", _DEFAULT_MODEL)
+        # Optional bearer key for hosted embedding APIs (OpenRouter, OpenAI, …).
+        # Mirrors the LLM endpoint's api_key so a multilingual hosted model can
+        # be used without a local embedding server. Env takes precedence.
+        self.api_key = api_key or os.getenv("EMBEDDING_API_KEY") or ""
         self._dim: Optional[int] = None
         # Short connect timeout so a DOWN embedding endpoint (e.g. Ollama not
         # running on :11434) fast-fails to the local FastEmbed fallback instead
@@ -70,11 +75,13 @@ class EmbeddingClient:
 
         # Batch in chunks of 64 to avoid oversized requests
         all_vecs = []
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
         for i in range(0, len(texts), 64):
             batch = texts[i : i + 64]
             resp = self._client.post(
                 self.url,
                 json={"input": batch, "model": self.model},
+                headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -222,10 +229,13 @@ def get_embedding_client():
     if persisted.get("url"):
         url = persisted["url"]
         model = persisted.get("model", "")
+        api_key = persisted.get("api_key", "")
         # Also set in env so other code sees it
         os.environ["EMBEDDING_URL"] = url
         if model:
             os.environ["EMBEDDING_MODEL"] = model
+        if api_key:
+            os.environ["EMBEDDING_API_KEY"] = api_key
 
     # Try the HTTP embedding API — unless we already found it down this process
     # (avoids paying the connect timeout again on every RAG/memory/tool probe).
@@ -233,7 +243,10 @@ def get_embedding_client():
         try:
             client = EmbeddingClient()
             client.get_sentence_embedding_dimension()  # health check
-            logger.info(f"Using HTTP embedding API: {client.url} model={client.model}")
+            logger.info(
+                f"Using HTTP embedding API: {client.url} model={client.model} "
+                f"api_key={'set' if client.api_key else 'none'}"
+            )
             return client
         except Exception as e:
             _http_embed_down = True

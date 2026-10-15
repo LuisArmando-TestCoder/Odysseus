@@ -10,7 +10,7 @@ import shutil
 import sys
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +301,127 @@ async def extract_transcript_async(
                 await asyncio.sleep(1 * (attempt + 1))
 
     return {"success": False, "error": f"Failed after {max_retries} attempts", "transcript": None}
+
+
+# ---------------------------------------------------------------------------
+# Transcript persistence + RAG indexing
+# ---------------------------------------------------------------------------
+
+def _transcript_cache_dir() -> Path:
+    """Directory for cached YouTube transcripts, keyed by video id.
+
+    Lives under data/youtube/ so transcripts survive restarts and can be
+    re-indexed on startup without re-fetching from YouTube.
+    """
+    base = Path(__file__).resolve().parent.parent
+    d = base / "data" / "youtube"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+def _transcript_cache_path(video_id: str) -> Path:
+    return _transcript_cache_dir() / f"{video_id}.json"
+
+
+def save_transcript_cache(video_id: str, transcript_data: Dict[str, Any],
+                          title: str = "", channel: str = "", url: str = "") -> bool:
+    """Persist a fetched transcript to data/youtube/<video_id>.json."""
+    try:
+        import time as _time
+        payload = {
+            "video_id": video_id,
+            "title": title,
+            "channel": channel,
+            "url": url,
+            "transcript": transcript_data.get("transcript", ""),
+            "segments": transcript_data.get("segments", []),
+            "language": transcript_data.get("language", ""),
+            "is_generated": transcript_data.get("is_generated", False),
+            "translated_from": transcript_data.get("translated_from"),
+            "fetched_at": _time.time(),
+        }
+        with open(_transcript_cache_path(video_id), "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.warning(f"save_transcript_cache({video_id}) failed: {e}")
+        return False
+
+
+def load_transcript_cache(video_id: str) -> Optional[Dict[str, Any]]:
+    """Return the cached transcript for a video, or None."""
+    try:
+        p = _transcript_cache_path(video_id)
+        if not p.exists():
+            return None
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"load_transcript_cache({video_id}) failed: {e}")
+        return None
+
+
+def transcript_index_text(transcript_data: Dict[str, Any]) -> str:
+    """Serialize a transcript into the text form we vector-index.
+
+    Timestamped segments are preferred (one line each, preserving the
+    ``[mm:ss]`` prefix so citations can reference the exact moment); falls
+    back to the stitched transcript when no segments are present.
+    """
+    segs = transcript_data.get("segments") or []
+    if segs:
+        return "\n".join(f"[{s.get('timestamp', '00:00')}] {s.get('text', '')}" for s in segs if s.get("text"))
+    return transcript_data.get("transcript", "") or ""
+
+
+def index_transcript_to_rag(video_id: str, transcript_data: Dict[str, Any],
+                            owner: Optional[str] = None, title: str = "",
+                            channel: str = "", url: str = "") -> bool:
+    """Best-effort: vectorize a transcript into the shared RAG store."""
+    try:
+        from src import rag_index
+        text = transcript_index_text(transcript_data)
+        if not text.strip():
+            return False
+        return rag_index.index_youtube(
+            video_id, text, owner=owner, title=title, channel=channel, url=url,
+        )
+    except Exception as e:
+        logger.warning(f"index_transcript_to_rag({video_id}) failed: {e}")
+        return False
+
+
+def list_youtube_playlist_video_ids(
+    playlist_url: str, max_videos: int = 200, timeout: int = 120
+) -> List[str]:
+    """Return the video IDs of a YouTube playlist URL via yt-dlp.
+
+    Uses ``--flat-playlist`` so only metadata is fetched (cheap). Returns an
+    empty list on failure so callers can degrade gracefully.
+    """
+    cmd = [
+        _find_ytdlp(),
+        "--flat-playlist",
+        "--print", "%(id)s",
+        "--no-warnings",
+        playlist_url,
+    ]
+    try:
+        import subprocess
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+        if proc.returncode != 0:
+            logger.warning(f"yt-dlp playlist listing failed for {playlist_url}: {proc.stderr[:200]}")
+            return []
+        ids = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
+        return ids[:max_videos]
+    except Exception as e:
+        logger.warning(f"list_youtube_playlist_video_ids failed: {e}")
+        return []
 
 
 def format_transcript_for_context(

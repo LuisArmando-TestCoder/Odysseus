@@ -2,6 +2,7 @@
 
 import uuid
 import logging
+import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
@@ -24,6 +25,51 @@ from routes.document_helpers import (
     _sync_doc_file,
     _PDF_RENDER_SCALE,
 )
+
+
+def _index_doc_into_rag(doc) -> bool:
+    """Index a document's content into the RAG store (best-effort, never raises).
+
+    Wrapped in a helper so every mutation path shares one implementation; a
+    missing/unhealthy RAG simply logs and returns False so CRUD never fails.
+    """
+    try:
+        from src import rag_index
+        return rag_index.index_document(
+            doc.id,
+            getattr(doc, "current_content", "") or "",
+            owner=getattr(doc, "owner", None),
+            extra_meta={
+                "title": getattr(doc, "title", "") or "",
+                "language": getattr(doc, "language", "") or "",
+            },
+        )
+    except Exception:
+        logger.debug("document RAG index skipped", exc_info=True)
+        return False
+
+
+def _remove_doc_from_rag(doc_id: str) -> int:
+    """Remove a document's chunks from the RAG store (best-effort)."""
+    try:
+        from src import rag_index
+        return rag_index.remove_document(doc_id)
+    except Exception:
+        logger.debug("document RAG remove skipped", exc_info=True)
+        return 0
+
+
+def _async_index_doc(doc):
+    """Offload blocking embed work off the event loop; ignore failures.
+
+    ``asyncio.create_task`` schedules the thread offload to run in the
+    background without blocking the route response, and a missing RAG simply
+    no-ops inside ``_index_doc_into_rag``.
+    """
+    try:
+        return asyncio.create_task(asyncio.to_thread(_index_doc_into_rag, doc))
+    except Exception:
+        return None
 
 
 def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
@@ -119,6 +165,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             db.commit()
             db.refresh(doc)
             _sync_doc_file(db, doc)
+            _async_index_doc(doc)
             try:
                 from src.event_bus import fire_event
                 fire_event("document_created", doc.owner)
@@ -237,6 +284,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 doc.owner = user
                 db.commit()
                 db.refresh(doc)
+            _async_index_doc(doc)
             return _doc_to_dict(doc)
         finally:
             db.close()
@@ -397,6 +445,11 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             _verify_doc_owner(db, doc, user)
             doc.archived = bool(archived)
             db.commit()
+            if archived:
+                _remove_doc_from_rag(doc_id)
+            else:
+                # Restoring an archived doc — put its content back in the index.
+                _async_index_doc(doc)
             return {"ok": True, "id": doc_id, "archived": doc.archived}
         finally:
             db.close()
@@ -457,6 +510,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 source="ocr",
             ))
             db.commit()
+            db.refresh(doc)
+            _async_index_doc(doc)
             return {"ok": True, "id": doc_id, "extracted": True, "chars": len(body_text)}
         finally:
             db.close()
@@ -578,6 +633,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             db.commit()
             db.refresh(doc)
             _sync_doc_file(db, doc)
+            _async_index_doc(doc)
             return _doc_to_dict(doc)
         except HTTPException:
             raise
@@ -616,6 +672,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             db.commit()
             db.refresh(doc)
             _sync_doc_file(db, doc)
+            _async_index_doc(doc)
             return _doc_to_dict(doc)
         except HTTPException:
             raise
@@ -644,6 +701,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             except Exception:
                 pass
             db.commit()
+            _remove_doc_from_rag(doc_id)
             return {"status": "deleted", "id": doc_id}
         except HTTPException:
             raise
@@ -729,6 +787,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             db.add(ver)
             db.commit()
             db.refresh(doc)
+            _async_index_doc(doc)
             return _doc_to_dict(doc)
         except HTTPException:
             raise
@@ -814,6 +873,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
 
             for doc in to_delete:
                 db.delete(doc)
+                _remove_doc_from_rag(doc.id)
 
             # Also clean up inactive empty docs from previous soft-deletes
             inactive_q = (
@@ -826,6 +886,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             inactive_docs = inactive_q.all()
             for doc in inactive_docs:
                 db.delete(doc)
+                _remove_doc_from_rag(doc.id)
             deleted += len(inactive_docs)
 
             db.commit()
@@ -917,6 +978,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 if verdict == "junk":
                     doc.tidy_verdict = "junk"
                     db.delete(doc)
+                    _remove_doc_from_rag(doc.id)
                     deleted += 1
                 else:
                     doc.tidy_verdict = "keep"

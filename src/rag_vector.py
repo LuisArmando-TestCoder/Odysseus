@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FILE_EXTENSIONS: Set[str] = {
     '.txt', '.md', '.py', '.json', '.yaml', '.yml',
-    '.csv', '.html', '.css', '.js', '.pdf'
+    '.csv', '.html', '.css', '.js', '.pdf',
+    '.docx', '.pptx', '.xlsx', '.xls', '.epub',
 }
 
 VECTOR_WEIGHT = 0.7
@@ -120,6 +121,62 @@ class VectorRAG:
         except Exception as e:
             logger.error(f"add_document failed: {e}")
             return False
+
+    def index_source(
+        self,
+        source: str,
+        text: str,
+        *,
+        owner: Optional[str] = None,
+        kind: str = "document",
+        extra_meta: Optional[Dict[str, Any]] = None,
+        chunk_size: int = 1000,
+        overlap: int = 200,
+    ) -> int:
+        """Index a single logical source, replacing any prior chunks for it.
+
+        Unlike ``add_document`` (which dedups by content hash and never deletes
+        stale chunks), this deletes the source's existing chunks first and re-adds
+        with a deterministic source-derived id, so edits update the index instead
+        of piling up orphaned vectors. Returns the number of chunks added, or 0
+        on failure / empty text.
+        """
+        if not self.healthy:
+            logger.warning("index_source: collection not initialized")
+            return 0
+        if not text or not isinstance(text, str) or not text.strip():
+            return 0
+        if not source:
+            return 0
+
+        try:
+            self.delete_by_source(source)
+            chunks = self._split_into_chunks(text, chunk_size, overlap)
+            if not chunks:
+                return 0
+            base = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+            meta = {"source": source, "kind": kind}
+            if owner:
+                meta["owner"] = owner
+            if extra_meta:
+                meta.update(extra_meta)
+
+            ids = [f"src_{base}_{i}" for i in range(len(chunks))]
+            metadatas = [{**meta, "chunk_id": i} for i in range(len(chunks))]
+            embeddings = self._embed(chunks)
+
+            # Batch in chunks of 100 to avoid oversized ChromaDB requests.
+            for i in range(0, len(chunks), 100):
+                self._collection.add(
+                    ids=ids[i:i + 100],
+                    embeddings=embeddings[i:i + 100],
+                    documents=chunks[i:i + 100],
+                    metadatas=metadatas[i:i + 100],
+                )
+            return len(chunks)
+        except Exception as e:
+            logger.error(f"index_source failed for {source}: {e}")
+            return 0
 
     def add_documents_batch(self, docs: List[tuple]) -> Dict[str, Any]:
         if not self.healthy:
@@ -338,6 +395,9 @@ class VectorRAG:
                         if ext == '.pdf':
                             from src.personal_docs import extract_pdf_text
                             content = extract_pdf_text(fpath)
+                        elif ext in ('.docx', '.pptx', '.xlsx', '.xls', '.epub'):
+                            from src.personal_docs import extract_office_text
+                            content = extract_office_text(fpath) or ""
                         else:
                             with open(fpath, 'r', encoding='utf-8') as f:
                                 content = f.read()
