@@ -60,8 +60,13 @@ NOT_A_REQUEST = (
     "'I like the state of the system'); (2) READING ALOUD — the user reciting or quoting a passage, headline "
     "or article verbatim (long, literal, no ask of their own) — that is context, not a request, unless they "
     "then ask something about it; (3) thinking out loud / musing without an ask; (4) telling the assistant "
-    "what they did NOT ask for. A real request is something the CHAT AGENT can do: answer, look up, research, "
-    "create, edit, send, schedule, remember."
+    "what they did NOT ask for; (5) EXPLICIT NEGATIVE DIRECTIVE — the user explicitly says NOT to send, share, "
+    "forward, or tell something to the chat or anyone ('don't tell anyone', 'no le digas nada', 'no le digas "
+    "esto a nadie', 'keep this between us', 'this is a secret', 'don't send this', 'no lo envíes', 'no le "
+    "digas al chat', 'no compartas'). That is a directive to NOT act, not a request — even if the words "
+    "describe something the chat could do, the user is explicitly forbidding it, so should_send must be 0. "
+    "A real request is something the CHAT AGENT can do: answer, look up, research, create, edit, send, "
+    "schedule, remember."
 )
 
 # Indirect asks: the words alone look like filler, but combined with the
@@ -111,18 +116,17 @@ Answer ONLY with JSON:
 # stray prefixes that the parser had to strip). The message body is now the
 # ENTIRE output, verbatim — nothing inside it can break parsing, and there is
 # no prefix to malform.
+# The forger is a TRANSFORM, not a decider. It never declines — the decider
+# already decided this speech should be sent. Its only job is to convert the
+# speech into one self-contained, instruction-like message. (FORGE_DECLINE is
+# kept only for backward-compat parsing of legacy cached outputs; the prompt
+# no longer tells the model to emit it.)
 FORGE_DECLINE = "NO_MESSAGE"
 FORGE_FORMAT = (
     "OUTPUT FORMAT (plain text, NOT JSON, no code fences, no labels, no prefixes):\n"
     "Respond with ONLY the chat message itself — nothing else. Do NOT add a "
     "\"TITLE:\" or \"MESSAGE:\" prefix, no markdown, no explanation, no preamble.\n"
-    f"To send nothing, output exactly one line: {FORGE_DECLINE}"
-)
-
-FORGER_META_RULE = (
-    "If NEW USER SPEECH is only meta-commentary about this voice system or the app, feedback/notes for the "
-    "developer or coding agent, musing, or the user reading a text aloud with no ask of their own, do NOT "
-    f"invent a task — output exactly {FORGE_DECLINE}."
+    "You MUST always produce a message — never decline, never output an empty reply."
 )
 
 FORGER_PROMPT = """You are the message forger of a voice→chat pipeline. A separate chat agent will execute
@@ -183,7 +187,7 @@ legitimate; a third-person phrasing makes it look like profiling a stranger and 
 IDENTIFIERS: carry EVERY username, handle, name, email, URL or number the user lists, verbatim, into the
 message — the chat agent cannot guess them and will otherwise stop and ask for exactly what you dropped.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
-""" + FORGE_FORMAT + "\n" + FORGER_META_RULE
+""" + FORGE_FORMAT
 
 # The voice assistant promised the user to do something ("I'll run a quick check
 # on Stroessner"). Turn that promise into a real chat request so the promise is
@@ -191,8 +195,8 @@ Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a f
 COMMITMENT_PROMPT = """You turn a promise made by the VOICE ASSISTANT into a request for a separate chat
 agent that will actually do the work (the chat agent cannot hear the call). Write ONE concise, self-contained
 message in the user's first-person voice ("Look up…", "Check…"), resolving names and details from context.
-If the promise is vague filler with no concrete subject ("I'll get on it", "let me think"), or it only repeats
-something already sent to the chat, output exactly """ + FORGE_DECLINE + ".\n" + FORGE_FORMAT
+You MUST always produce a message — never decline, never output an empty reply.
+""" + FORGE_FORMAT
 
 # Lateral extractor: when the answer to the user's question is ALREADY in the
 # chat thread (or voice memory), pull it out and hand it straight to the voice
@@ -367,6 +371,21 @@ def _directed_to_chat(text: str) -> bool:
     return bool(_CHAT_DIRECTIVE.search(text or ""))
 
 
+# Explicit "do NOT send/tell/share this" directives. When the user forbids
+# forwarding something, the decider must NOT forge — this is a hard gate, not a
+# model judgement. Deterministic so a weak decider can't override it.
+_NEGATIVE_DIRECTIVE = re.compile(
+    r"\b(?:don'?t|do\s+not|never|no)\s+(?:tell|send|share|forward|pass|say|le\s+digas|lo\s+envíes|lo\s+mandes|compartas|se\s+lo\s+digas)\b"
+    r"|\b(?:no\s+le\s+digas|no\s+lo\s+envíes|no\s+lo\s+mandes|no\s+compartas|no\s+se\s+lo\s+digas)\b"
+    r"|\b(?:keep\s+this\s+between\s+us|this\s+is\s+a\s+secret|don'?t\s+tell\s+anyone|no\s+le\s+digas\s+a\s+nadie)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_negative_directive(text: str) -> bool:
+    return bool(_NEGATIVE_DIRECTIVE.search(text or ""))
+
+
 def _lock_for(mem) -> asyncio.Lock:
     lock = getattr(mem, "_pipe_lock", None)
     if lock is None:
@@ -391,7 +410,7 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                     ),
                     "criteria": {"true": "An explicit, implicit or indirect request the chat agent can act on",
                                  "false": "Filler / small talk / meta-commentary about the system / notes for the "
-                                          "developer / reading a text aloud"},
+                                          "developer / reading a text aloud / an explicit 'don't send/tell/share this' directive"},
                 },
                 "ready": {
                     "type": "noul",
@@ -431,15 +450,18 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "commitment": {
                     "type": "noul",
                     "instructions": (
-                        "Does the ASSISTANT's recent speech contain a concrete promise to do real work for the "
+                        "Does the ASSISTANT's recent speech contain a CONCRETE promise to do real work for the "
                         "user — look something up, check, search, research, find, verify, open, run, create, "
                         "send, ask the chat, etc. ('I'll check that', 'let me look into it', 'I'll ask the chat', "
-                        "'I'll find out')? A concrete promise to act is true. Vague filler ('I'm on it', 'let me "
-                        "think', 'one moment'), mere acknowledgement, or the assistant already answering the "
-                        "question itself is false."
+                        "'I'll find out')? A concrete promise names a real subject/action. Mere acknowledgement "
+                        "or vague filler is FALSE: 'understood', 'comprendido', 'entendido', 'de acuerdo', 'ok', "
+                        "'sure', 'got it', 'I'm on it', 'let me think', 'one moment', 'I'll review it', 'lo "
+                        "reviso', 'déjame ver', 'ya te comento' — these are acknowledgements, not concrete "
+                        "promises, and must score 0. The assistant already answering the question itself is also "
+                        "false."
                     ),
-                    "criteria": {"true": "The assistant promised concrete work that should be forwarded to the chat agent",
-                                 "false": "No concrete promise / vague filler / mere acknowledgement"},
+                    "criteria": {"true": "The assistant promised concrete, named work that should be forwarded to the chat agent",
+                                 "false": "No concrete promise / vague filler / mere acknowledgement ('understood', 'comprendido', 'ok', 'I'm on it')"},
                 },
                 "stop_talking": {
                     "type": "noul",
@@ -681,17 +703,12 @@ async def _forge_and_emit(
         logger.warning(f"voice forger failed: {e}")
         message, title = "", ""
     if not message:
-        # A commitment forge that declines means the assistant's promise was
-        # vague filler ("I'll get on it", "let me think") — do NOT fall back to
-        # the raw assistant speech, which would send filler like "Comprendido,
-        # sir, lo reviso" to the chat. Skip instead.
-        if source == "commitment":
-            yield _ev(type="stage", stage="forge", status="idle")
-            yield _ev(type="done", send=False, reason="commitment-declined")
-            return
+        # The forger is a TRANSFORM, not a decider — it must always produce a
+        # message. If it errored or returned empty, fall back to the raw speech
+        # (the decider already vetted that this should be sent).
         message = fallback_text
         title = _title_from_message(message)
-        logger.warning("voice forger declined/errored after decider said send; using raw speech as the message")
+        logger.warning("voice forger returned empty; using raw speech as the message")
 
     # ④b GUARD — a JEV agent reviews the forged message against the context and
     # drops duplicates AND anything that doesn't make sense at all (garbled,
@@ -845,6 +862,14 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
             and decision.get("intent") != "none"
         )
         decision["threshold"] = thr
+        # Hard gate: an explicit "don't send/tell/share this" directive overrides
+        # the decider. The decider is a model and can be weak; this is
+        # deterministic and cannot be overridden.
+        if _is_negative_directive(new_text):
+            decision["should_send"] = 0.0
+            decision["intent"] = "none"
+            decision["send"] = False
+            send = False
         decision["send"] = send
         # Finished speech is consumed whether or not it was actionable, so the
         # same words are never re-evaluated (or re-forged) on the next turn.
