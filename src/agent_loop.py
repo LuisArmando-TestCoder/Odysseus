@@ -1059,45 +1059,11 @@ def _build_base_prompt(
         elif compact:
             agent_prompt = _assemble_prompt(set(TOOL_SECTIONS.keys()), disabled, compact=True)
 
-    # Inject the Level-0 skill index — one line per skill so the agent
-    # knows what canonical procedures exist. Includes published skills
-    # plus teacher-escalation drafts (auto-written when the student
-    # fails a task; appear here on the very next turn so the student
-    # can apply them immediately). Full SKILL.md fetched on demand via
-    # `manage_skills view name=...`. Gating mirrors index_for: platform
-    # + requires_toolsets + fallback_for_toolsets.
-    #
-    # SECURITY: skill `name` and `description` are user-editable, so the
-    # index block is returned SEPARATELY (not appended to agent_prompt).
-    # The caller wraps it in untrusted_context_message and ships it as a
-    # user-role message — same treatment as the matched-skills block.
+    # Skill index block removed: the full skills catalog was being injected
+    # into the chat agent's context as an "UNTRUSTED SOURCE DATA" block, which
+    # the voice assistant misread as a prompt-injection attack and produced
+    # half-baked, confused responses. The index is no longer embedded.
     skill_index_block = ""
-    try:
-        from services.memory.skills import SkillsManager
-        from src.constants import DATA_DIR
-        _sm = SkillsManager(DATA_DIR)
-        active_tools = list(set(TOOL_SECTIONS.keys()) - set(disabled or []))
-        skill_idx = _sm.index_for(owner=None, active_toolsets=active_tools)
-        if skill_idx:
-            lines = ["## Available skills",
-                     "Procedures the assistant should consult before doing domain work. "
-                     "Fetch the full procedure with `manage_skills` action=view name=<name> "
-                     "when one looks relevant. Entries tagged `(draft)` were written by the "
-                     "teacher-escalation loop after a prior failure — treat them as authoritative "
-                     "guidance; if you follow one and it works, that's a good signal the procedure "
-                     "is correct."]
-            by_cat: dict[str, list] = {}
-            for s in skill_idx:
-                by_cat.setdefault(s["category"], []).append(s)
-            for cat in sorted(by_cat):
-                lines.append(f"\n**{cat}**")
-                for s in by_cat[cat]:
-                    badge = " *(draft)*" if s.get("status") == "draft" else ""
-                    lines.append(f"- `{s['name']}` — {s['description']}{badge}")
-            skill_index_block = "\n\n" + "\n".join(lines)
-    except Exception as _e:
-        # Skill index is a soft enhancement — never fail prompt assembly on it.
-        logger.debug(f"Skill-index injection skipped: {_e}")
 
     # Inject integration descriptions
     from src.integrations import get_integrations_prompt
