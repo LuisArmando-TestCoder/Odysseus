@@ -1195,6 +1195,14 @@ function _onPipeEvent(ev) {
         _queueSpeak(ev.answer, true);
       }
       break;
+    case 'needs_clarification':
+      // The guard couldn't tell whether the message was directed at the chat.
+      // Ask the user instead of silently dropping the request.
+      _systemLine('I wasn’t sure that was meant for the chat — could you confirm?', 'warn');
+      if (ev.message) {
+        _queueSpeak(`Just to confirm — did you want me to send this to the chat: ${ev.message}`, true);
+      }
+      break;
     case 'done':
       // Speech judged "still forming": once the user has been quiet for a
       // moment, decide again treating it as finished (rambling ≠ incomplete).
@@ -1205,6 +1213,8 @@ function _onPipeEvent(ev) {
       if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90), { criticality: 1 }); }
       else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
       else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 }); }
+      else if (ev.reason === 'not-directed-to-chat') { _systemLine('That didn’t look like it was meant for the chat — say it again if you want it sent.', 'info'); }
+      else if (ev.reason === 'needs-clarification') { _systemLine('I wasn’t sure that was meant for the chat — could you confirm?', 'warn'); }
       else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide', { criticality: 0.8 }); }
       break;
   }

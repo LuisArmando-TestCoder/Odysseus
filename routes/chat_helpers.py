@@ -501,6 +501,24 @@ async def build_chat_context(
     for transcript in preprocessed.youtube_transcripts:
         preface.append(untrusted_context_message("youtube transcript", transcript))
 
+    # Voice memory stratum — read-only access to the compressed conversation
+    # spine from the advanced voice mode. The voice memory is keyed by
+    # f"chat-{session_id}", so the chat can see what the voice conversation
+    # already covered and forge informed responses. Injected as untrusted
+    # DATA (read-only): the chat agent can read it while reasoning but can
+    # never mutate the memory storage.
+    try:
+        from services.voice.memory import get_voice_memory
+        _vm = get_voice_memory(user, f"chat-{session_id}")
+        _spine = _vm.spine_text(include_live=True)
+        if _spine.strip():
+            preface.append(untrusted_context_message(
+                "voice memory stratum (read-only)",
+                _spine,
+            ))
+    except Exception as _vme:
+        logger.debug(f"voice memory stratum injection skipped: {_vme}")
+
     # Normalize model ID. Prefer cached endpoint models so group chat does not
     # re-hit slow local /models endpoints on every participant turn.
     norm = _normalize_model_id_from_cache(sess) or normalize_model_id(sess.endpoint_url, sess.model)
