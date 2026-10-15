@@ -1557,6 +1557,44 @@ function _onQueueClick(e) {
 
 function _currentSid() { return window.sessionModule?.getCurrentSessionId?.() || null; }
 
+// The voice memory is keyed to `chat-{session_id}`. If the user turns on voice
+// mode with NO chat session open, the frontend falls back to an ephemeral
+// `pending-{random}` key — which the chat can never read back (it looks up
+// `chat-{session_id}`), and which vanishes on reload. That is exactly why the
+// chat answered "I have nothing saved" after the user typed context in voice.
+//
+// Fix: materialize a REAL, persisted chat session BEFORE binding, so the key
+// is always `chat-{sid}` and the conversation persists across server restarts.
+async function _ensureSession() {
+  const sm = window.sessionModule;
+  let sid = sm?.getCurrentSessionId?.() || null;
+  if (sid) return sid;
+  // A model is staged but the session is deferred until the first message —
+  // materialize it now so voice has a real, stable id to attach to.
+  if (sm?.hasPendingChat?.() && sm.materializePendingSession) {
+    try { await sm.materializePendingSession(); } catch (e) { /* best-effort */ }
+    sid = sm.getCurrentSessionId?.() || null;
+    if (sid) return sid;
+  }
+  // Nothing staged either — create a default-model chat session. This is the
+  // "turn on voice → persist the existence of the chat, even with no messages"
+  // requirement: the session row exists server-side and holds the voice memory.
+  try {
+    const dcRes = await fetch(_api('/api/default-chat'));
+    if (dcRes.ok) {
+      const dc = await dcRes.json();
+      if (dc.endpoint_url && dc.model && sm?.createDirectChat) {
+        await sm.createDirectChat(dc.endpoint_url, dc.model, dc.endpoint_id);
+        if (sm.materializePendingSession) {
+          try { await sm.materializePendingSession(); } catch (e) { /* best-effort */ }
+        }
+        sid = sm.getCurrentSessionId?.() || null;
+      }
+    }
+  } catch (e) { /* best-effort — no default model configured */ }
+  return sid;
+}
+
 function _streamActive(sid) {
   return !!(sid && window.chatModule?.hasActiveStream?.(sid));
 }
@@ -2531,7 +2569,10 @@ async function startVoice() {
   if (_active || _connecting) return;
   _connecting = true;
   _setState('connecting');
-  const sid = window.sessionModule?.getCurrentSessionId?.();
+  // Turning on voice must persist a real chat session (even with no messages),
+  // so the voice memory key is always `chat-{sid}` — which the chat can read
+  // back — and survives a server restart.
+  const sid = await _ensureSession();
   _bindVoiceToSession(sid);
 
   try {

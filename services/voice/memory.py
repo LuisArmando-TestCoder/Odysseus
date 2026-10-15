@@ -271,10 +271,15 @@ class VoiceMemory:
             self.live.append({"speaker": speaker, "text": text, "ts": time.time(), "seq": self.seq})
             self.turns_total += 1
             added += 1
-            # The permanent transcript is the full voice conversation (user +
-            # assistant) — chat feed / pasted notes live elsewhere and are not
-            # part of the spoken transcript.
-            if speaker in ("user", "assistant"):
+            # The permanent transcript is the full conversation the chat must be
+            # able to recall verbatim: user + assistant speech AND user_note (text
+            # the user typed/pasted as context — a fact, a preference, a link).
+            # user_note is NOT "spoken", but it IS real user-provided context the
+            # chat must see — omitting it is exactly why the chat answered "I have
+            # nothing saved" after the user typed "me gusta la cantante pomme".
+            # chat_user / chat_ai already live in the chat thread's own history,
+            # so they are intentionally kept OUT of the transcript.
+            if speaker in ("user", "assistant", "user_note"):
                 self.transcript.append({"speaker": speaker, "text": text, "ts": time.time()})
         if len(self.live) > _MAX_LIVE_TURNS:
             self.live = self.live[-_MAX_LIVE_TURNS:]
