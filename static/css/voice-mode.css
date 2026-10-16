@@ -452,7 +452,7 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
    by the height of that container (padding 20px + textarea 40px + gap 6px +
    action row 26px = 92px) to avoid overlapping the textarea. */
 .vx-scroll-down[data-scroll-down="vx-transcript"] {
-  bottom: 104px;
+  bottom: 110px;
 }
 .vx-scroll-down:hover {
   border-color: var(--vx-acc-a, rgba(122, 162, 255, .5));
