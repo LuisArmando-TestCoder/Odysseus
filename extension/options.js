@@ -5,7 +5,7 @@ const saveBtn = document.getElementById("save");
 const savedEl = document.getElementById("saved");
 
 async function load() {
-  const d = await chrome.storage.sync.get({ baseUrl: "http://127.0.0.1:5173" });
+  const d = await chrome.storage.sync.get({ baseUrl: "http://127.0.0.1:7860" });
   input.value = d.baseUrl || "";
 }
 

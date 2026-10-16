@@ -21,7 +21,7 @@ function logErr(...args) {
 }
 
 async function getBaseUrl() {
-  const d = await chrome.storage.sync.get({ baseUrl: "http://127.0.0.1:5173" });
+  const d = await chrome.storage.sync.get({ baseUrl: "http://127.0.0.1:7860" });
   return String(d.baseUrl || "").replace(/\/+$/, "");
 }
 

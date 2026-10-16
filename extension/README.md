@@ -43,7 +43,7 @@ real session.
    - **YouTube "Ask":** go to `youtube.com` and sign in.
 
 4. **(Optional) Set your Odysseus URL.** Right-click the extension → **Options**
-   → set the base URL if it isn't `http://127.0.0.1:5173`.
+   → set the base URL if it isn't `http://127.0.0.1:7860`.
 
 5. **Use it three ways:**
    - Click the extension icon → type a question → **Ask AI**.

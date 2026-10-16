@@ -88,7 +88,7 @@ All paths are relative to the project root:
 | `extension/background.js` | Service worker. Relays eval payloads to the active tab, posts results back to `/api/browser/eval-result`, handles popup/context-menu/shortcut "ask" actions, auto-opens a Google/YouTube tab when none exists. |
 | `extension/content.js` | Runs inside Google/YouTube tabs. The text-node walker (`findClickableByText`) + `askAI` driver with host auto-detect. Executes agent code in an **async IIFE** so `return await ...` works. |
 | `extension/popup.html` / `popup.js` | Toolbar popup with a question box and a built-in enable tutorial. |
-| `extension/options.html` / `options.js` | Set the Odysseus base URL (default `http://127.0.0.1:5173`). |
+| `extension/options.html` / `options.js` | Set the Odysseus base URL (default `http://127.0.0.1:7860`). |
 | `extension/README.md` | User-facing enable instructions. |
 | `extension/PROCEDURE.md` | This document. |
 
@@ -171,7 +171,7 @@ const fn = new Function('"use strict";\nreturn (async () => {\n' + code + '\n})(
    - **YouTube "Ask":** `youtube.com` → sign in.
 
 6. **(Optional) Set the Odysseus URL.** Right-click the extension → **Options**
-   → set the base URL if it isn't `http://127.0.0.1:5173`.
+   → set the base URL if it isn't `http://127.0.0.1:7860`.
 
 7. **Use it three ways:**
    - Click the extension icon → type a question → **Ask AI**.
