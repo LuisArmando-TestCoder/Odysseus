@@ -35,6 +35,7 @@ PROVIDER_INFO = {
     "google_pse": ("Google PSE",      True,  False),
     "tavily":   ("Tavily",            True,  False),
     "serper":   ("Serper",            True,  False),
+    "google_ai": ("Google AI Mode",    False, False),
     "disabled": ("Disabled",          False, False),
 }
 
@@ -534,6 +535,29 @@ def google_pse_search(query: str, count: int = 10, time_filter: Optional[str] = 
 
     logger.info(f"Google PSE returned {len(results)} results")
     return results
+
+
+# ── Google AI Mode (browser-automation provider) ──
+
+def google_ai_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Drive the user's own open google.com tab (AI mode) via the run_javascript bridge.
+
+    The free google.com "AI mode" is a JS-rendered SPA with no public API, so it
+    cannot be reached with a plain httpx call (a spoofed User-Agent alone will
+    not bypass Google's consent/anti-bot gates). This provider is therefore a
+    *browser-automation* provider: it hands the query off to the agent-layer
+    `run_javascript` tool, which clicks the AI-mode button, sets the textarea
+    via the native value setter, presses Enter, and reads the rendered answer
+    from the user's already-open, consenting tab.
+
+    Returns [] here because the real work happens in the agent loop; this
+    function exists so the provider is registered/selectable like the others.
+    """
+    logger.info("Google AI Mode: delegating to run_javascript (browser automation)")
+    # _BROWSER_UA is referenced only to keep this provider consistent with the
+    # module's header convention should a server-side fallback ever be added.
+    _ = _BROWSER_UA
+    return []
 
 
 # ── LangSearch ──
