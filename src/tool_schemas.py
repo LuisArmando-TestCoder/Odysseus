@@ -171,6 +171,21 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "finish_goal",
+            "description": "Signal the end of the current continuous goal. Call this ONLY when you are working under an ACTIVE GOAL (the harness injected '=== ACTIVE GOAL ===' into your context). status='done' when the objective is truly achieved (with evidence); status='blocked' when a concrete condition prevents progress (name it in `reason`). The harness owns the state transition — you just report.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["done", "blocked"], "description": "'done' = objective achieved; 'blocked' = a concrete condition prevents progress"},
+                    "reason": {"type": "string", "description": "The concrete blocking condition (required for status='blocked')"}
+                },
+                "required": ["status"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "document_append",
             "description": "Append findings to a document WITHOUT rewriting what's already there. Append-only: existing content is preserved and the new `content` is added at the end with a separator. Accumulate findings, evidence, and results here as you discover them — never rely on create_document/update_document for accumulation because those replace/rewrite. Resolution: pass `doc_id` (most precise), or omit to target the active document / most recent document, or pass `title` to match by title. If no document exists yet, it creates one titled `title` (or 'Findings').",
             "parameters": {

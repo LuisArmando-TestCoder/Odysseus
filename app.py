@@ -549,6 +549,10 @@ app.include_router(setup_skills_routes(skills_manager))
 from routes.trusted_claims_routes import setup_trusted_claims_routes
 app.include_router(setup_trusted_claims_routes())
 
+# Goals (continuous goals — versioned goal state + round driver)
+from routes.goal_routes import setup_goal_routes
+app.include_router(setup_goal_routes())
+
 # Chat
 from routes.chat_routes import setup_chat_routes
 app.include_router(setup_chat_routes(

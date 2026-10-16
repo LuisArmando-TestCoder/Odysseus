@@ -165,16 +165,26 @@ function buildAttachCards(attachments) {
       const card = document.createElement('div');
       card.className = 'attach-card';
       card.dataset.name = att.name;
-      if (att.id) {
-        card.dataset.fileId = att.id;
-        card.style.cursor = 'pointer';
-        card.addEventListener('click', () => {
-          // PDFs & text/code/markdown → open in the Documents viewer
-          // (others fall back to the raw file).
+      card.style.cursor = 'pointer';
+      card.addEventListener('click', () => {
+        if (!att.id) {
+          card.classList.add('attach-card-pending');
+          card.title = 'Subiendo… espera un momento y vuelve a intentar';
+          return;
+        }
+        card.classList.remove('attach-card-pending');
+        // Main click → lightweight inline preview (DSH sidebar-documentpreview).
+        import('./documentPreview.js').then(mod => {
+          const open = mod.openPreview || (mod.default && mod.default.openPreview);
+          if (open) open(att);
+          else if (window.chatModule?.openAttachment) window.chatModule.openAttachment(att, false);
+          else window.open(`/api/upload/${att.id}`, '_blank');
+        }).catch(() => {
           if (window.chatModule?.openAttachment) window.chatModule.openAttachment(att, false);
           else window.open(`/api/upload/${att.id}`, '_blank');
         });
-      }
+      });
+      if (att.id) card.dataset.fileId = att.id;
       const icon = _attachIcon(att.mime || att.name);
       const nameSpan = document.createElement('span');
       nameSpan.className = 'attach-card-name';
@@ -186,6 +196,20 @@ function buildAttachCards(attachments) {
         sizeSpan.className = 'attach-card-size';
         sizeSpan.textContent = _formatSize(att.size);
         card.appendChild(sizeSpan);
+      }
+      // Secondary "Editar" button → full Documents viewer (openAttachment(att, true)).
+      if (att.id) {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'attach-card-edit';
+        editBtn.title = 'Abrir en editor';
+        editBtn.textContent = 'Editar';
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (window.chatModule?.openAttachment) window.chatModule.openAttachment(att, true);
+          else window.open(`/api/upload/${att.id}`, '_blank');
+        });
+        card.appendChild(editBtn);
       }
       attachWrap.appendChild(card);
     }
@@ -204,6 +228,29 @@ export function updateMessageAttachments(msgWrap, attachments) {
   const fresh = buildAttachCards(attachments);
   if (existing) existing.replaceWith(fresh);
   else body.appendChild(fresh);
+}
+
+// Deliverable card — the equivalent of DSH's `present` tool. When the agent
+// produces a report/document, render a card with "Previsualizar" + "Abrir"
+// instead of a generic bubble. `file` is { name, id, description?, path? }.
+export function buildDeliverableCard(file) {
+  const card = document.createElement('div');
+  card.className = 'deliverable-card';
+  card.innerHTML = `
+    <span class="deliverable-icon">📄</span>
+    <div class="deliverable-meta">
+      <div class="deliverable-name"></div>
+      <div class="deliverable-desc"></div>
+    </div>
+    <button class="deliverable-btn" data-act="preview">Previsualizar</button>
+    <button class="deliverable-btn primary" data-act="open">Abrir</button>`;
+  card.querySelector('.deliverable-name').textContent = file.name || file.path?.split('/').pop() || 'Archivo';
+  card.querySelector('.deliverable-desc').textContent = file.description || '';
+  card.querySelector('[data-act="preview"]').addEventListener('click', () =>
+    window.chatModule?.openAttachment?.({ name: file.name, id: file.id }, false));
+  card.querySelector('[data-act="open"]').addEventListener('click', () =>
+    window.chatModule?.openAttachment?.({ name: file.name, id: file.id }, true));
+  return card;
 }
 
 // Quick full-size preview when the user taps a chat photo thumbnail. Just an
@@ -2199,6 +2246,13 @@ export function addMessage(role, content, modelName, metadata, _target) {
       if (_sid) _appendReportButton(b, _sid);
     }
 
+    // Deliverable cards — the agent produced report/document files (DSH `present`).
+    if (role === 'assistant' && metadata?.deliverables?.length) {
+      for (const f of metadata.deliverables) {
+        b.appendChild(buildDeliverableCard(f));
+      }
+    }
+
     // Style [Doc edit: ...] prefix in user messages
     if (role === 'user') {
       // Match compact format: [Doc edit: line X] instruction
@@ -2443,6 +2497,7 @@ const chatRenderer = {
   addMessage,
   addMessagesBatch,
   updateMessageAttachments,
+  buildDeliverableCard,
 };
 
 export default chatRenderer;

@@ -1,0 +1,95 @@
+/* Goal card — metas continuas (extrapolado de DSH) */
+.goal-card {
+  padding: 10px 12px;
+  margin: 6px 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--card-bg, #ffffff);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.goal-card-header { display: flex; justify-content: space-between; align-items: center; }
+.goal-card-title { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted, #6b7280); }
+.goal-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.goal-badge.active   { background: #dcfce7; color: #15803d; }
+.goal-badge.paused   { background: #fef3c7; color: #b45309; }
+.goal-badge.blocked  { background: #fee2e2; color: #b91c1c; }
+.goal-badge.complete { background: #dbeafe; color: #1d4ed8; }
+.goal-objective {
+  margin: 6px 0 8px; font-size: 12.5px; line-height: 1.4; color: var(--fg, #111827);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.goal-progress-row { display: flex; align-items: center; gap: 8px; }
+.goal-progress-bar { flex: 1; height: 5px; border-radius: 999px; background: var(--border, #e5e7eb); overflow: hidden; }
+.goal-progress-fill { height: 100%; width: 0%; border-radius: 999px; background: #10b981; transition: width .3s ease; }
+.goal-blocked.complete .goal-progress-fill { background: #3b82f6; }
+.goal-rounds { font-size: 10.5px; color: var(--muted, #6b7280); white-space: nowrap; }
+.goal-blocked { margin: 6px 0 0; font-size: 11px; color: #b91c1c; }
+.goal-actions { display: flex; gap: 6px; margin-top: 8px; }
+.goal-btn {
+  flex: 1; border: 1px solid var(--border, #e5e7eb); background: transparent;
+  border-radius: 7px; padding: 4px 0; font-size: 12px; cursor: pointer; color: var(--fg, #111827);
+}
+.goal-btn:hover { background: var(--hover, #f3f4f6); }
+
+/* Deliverable card — equivalente de `present` (reporte/doc entregable) */
+.deliverable-card {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
+  padding: 10px 12px; margin: 6px 0; background: var(--card-bg, #fff);
+}
+.deliverable-icon { font-size: 20px; }
+.deliverable-meta { flex: 1; min-width: 0; }
+.deliverable-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deliverable-desc { font-size: 11px; color: var(--muted, #6b7280); }
+.deliverable-btn {
+  border: 1px solid var(--border, #e5e7eb); background: transparent;
+  border-radius: 7px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+}
+.deliverable-btn.primary { background: #10b981; border-color: #10b981; color: #fff; }
+
+/* Document preview panel (DSH sidebar-documentpreview) — lightweight inline
+   preview without leaving the chat. */
+.doc-preview-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,.45);
+  display: flex; justify-content: flex-end;
+}
+.doc-preview-panel {
+  width: min(560px, 92vw); height: 100%;
+  background: var(--panel, #fff);
+  border-left: 1px solid var(--border, #e5e7eb);
+  display: flex; flex-direction: column;
+  box-shadow: -8px 0 32px rgba(0,0,0,.25);
+}
+.doc-preview-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.doc-preview-title {
+  flex: 1; min-width: 0; font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--fg, #111827);
+}
+.doc-preview-actions { display: flex; gap: 6px; }
+.doc-preview-btn {
+  border: 1px solid var(--border, #e5e7eb); background: transparent;
+  border-radius: 7px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  color: var(--fg, #111827);
+}
+.doc-preview-btn:hover { background: var(--hover, #f3f4f6); }
+.doc-preview-close { padding: 5px 8px; }
+.doc-preview-body { flex: 1; min-height: 0; overflow: auto; }
+.doc-preview-iframe { width: 100%; height: 100%; border: 0; }
+.doc-preview-pre {
+  margin: 0; padding: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  color: var(--fg, #111827);
+}
+.doc-preview-fallback {
+  padding: 24px; text-align: center; color: var(--muted, #6b7280);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}

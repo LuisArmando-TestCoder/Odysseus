@@ -893,6 +893,7 @@ async def execute_tool_block(
         do_document_append,
     )
     from src.checkpoint import do_checkpoint
+    from src.goal import finish_goal as do_finish_goal
     from src.docfind import do_docfind
     from src.registros_cr import do_registros_cr
 
@@ -1131,6 +1132,17 @@ async def execute_tool_block(
     elif tool == "checkpoint":
         desc = f"checkpoint: {content.split(chr(10))[0][:60]}"
         result = do_checkpoint(content, session_id=session_id, owner=owner)
+    elif tool == "finish_goal":
+        desc = f"finish_goal: {content.split(chr(10))[0][:60]}"
+        # The agent signals done/blocked. Content is JSON {"status": "done"|"blocked", "reason": "..."}
+        # or a bare "done"/"blocked" string. The harness owns the transition.
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        _status = _args.get("status") or content.strip().lower()
+        _reason = _args.get("reason")
+        result = do_finish_goal(session_id, _status, reason=_reason)
     elif tool == "document_append":
         desc = f"document_append: {content.split(chr(10))[0][:60]}"
         result = await do_document_append(content, session_id=session_id, owner=owner)

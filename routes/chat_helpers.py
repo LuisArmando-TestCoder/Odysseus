@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -66,6 +67,39 @@ class ChatContext:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────── #
+
+# Long user inputs are spilled to a file instead of being truncated before they
+# reach the model. The model receives a prefix + the file path and can read the
+# rest via read_file — this fixes the "only got the beginning and the end" case
+# (e.g. pasting a 100 KB document into chat).
+SPILL_THRESHOLD = 20_000
+SPILL_PREFIX_CHARS = 2_000
+
+
+def spill_long_input(message: str) -> str:
+    """Write an over-long user message to ``data/uploads/spill_<ts>.txt`` and
+    return a truncated version (prefix + path marker). Returns the message
+    unchanged when it is under the threshold or not a plain string."""
+    if not isinstance(message, str) or len(message) <= SPILL_THRESHOLD:
+        return message
+    try:
+        from src.constants import UPLOAD_DIR
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        ts = int(time.time())
+        path = os.path.join(UPLOAD_DIR, f"spill_{ts}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(message)
+        prefix = message[:SPILL_PREFIX_CHARS]
+        return (
+            prefix
+            + f"\n\n[CONTENIDO COMPLETO EN: {path}]\n"
+            + "(El mensaje original superaba el límite y fue guardado en el archivo "
+            + "indicado. Usa read_file para leer el contenido completo.)"
+        )
+    except Exception as e:
+        logger.warning(f"spill_long_input failed: {e}")
+        return message
+
 
 def _enforce_chat_privileges(request, sess) -> None:
     """Apply the per-user privilege gates (allowed_models + max_messages_per_day)
@@ -422,6 +456,10 @@ async def build_chat_context(
     This is the shared logic between /chat and /chat_stream — preset extraction,
     message preprocessing, memory/RAG/web injection, compaction, normalization.
     """
+    # Spill very long user inputs to a file so the model gets a prefix + path
+    # instead of a truncated paste (the "Yoko Sur" case).
+    message = spill_long_input(message)
+
     # Preset
     preset = extract_preset(chat_handler, preset_id)
 

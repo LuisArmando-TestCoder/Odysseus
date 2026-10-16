@@ -92,6 +92,31 @@
   color: color-mix(in srgb, var(--fg) 40%, transparent);
 }
 
+/* ── Message body typography (DSH polish) ──────────────────────────────── */
+.msg .body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg, #111827);
+  overflow-wrap: anywhere;
+}
+.msg-user .body { white-space: pre-wrap; }
+.msg-ai .body { max-width: 100%; }
+
+/* ── Action buttons (DSH hover pattern) ────────────────────────────────── */
+.msg-action-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.msg-action-btn:hover {
+  background: var(--hover, #f3f4f6);
+  color: var(--fg, #111827);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    MESSAGE FOOTER & ACTIONS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -296,6 +321,34 @@
   background: rgba(0,0,0,.2); max-height: 180px; overflow: auto; white-space: pre-wrap;
 }
 .code-pipeline-out.error pre { border-left: 2px solid var(--color-error, #ff6b7f); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATTACHMENT CARDS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Pending upload state — the card is clickable but the file isn't ready yet.
+   Dim it and append a "subiendo…" hint so the click isn't a dead end. */
+.attach-card-pending { opacity: .55; }
+.attach-card-pending::after {
+  content: "⏳ subiendo…";
+  font-size: 10px; color: var(--muted, #6b7280);
+  margin-left: auto;
+}
+.attach-card-edit {
+  border: 1px solid var(--border, #e5e7eb);
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--muted, #6b7280);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.attach-card-edit:hover {
+  background: var(--hover, #f3f4f6);
+  color: var(--fg, #111827);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    REDUCED MOTION

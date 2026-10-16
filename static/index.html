@@ -219,6 +219,7 @@
   <link rel="stylesheet" href="/static/css/anchors-dropdowns-hyper.css">
   <link rel="stylesheet" href="/static/css/modals-hyper.css">
   <link rel="stylesheet" href="/static/css/messages-hyper.css">
+  <link rel="stylesheet" href="/static/css/goals.css">
   <link rel="stylesheet" href="/static/css/voice-mode.css" id="vx-css">
   <link rel="stylesheet" href="/static/css/cinematic-ai.css">
   <link rel="modulepreload" href="/static/app.js">
@@ -697,6 +698,25 @@
            the Tasks modal (Activity + Settings tabs). The backend
            assistant session is still maintained for log_to_assistant()
            writes from scheduled tasks. -->
+
+      <!-- Goal card (metas continuas) — renderizado por static/js/goalCard.js -->
+      <section class="goal-card" id="goal-card" aria-label="Meta activa" hidden>
+        <div class="goal-card-header">
+          <span class="goal-card-title">🎯 Meta</span>
+          <span class="goal-badge" id="goal-badge">active</span>
+        </div>
+        <p class="goal-objective" id="goal-objective"></p>
+        <div class="goal-progress-row">
+          <div class="goal-progress-bar"><div class="goal-progress-fill" id="goal-progress-fill"></div></div>
+          <span class="goal-rounds" id="goal-rounds"></span>
+        </div>
+        <p class="goal-blocked" id="goal-blocked" hidden></p>
+        <div class="goal-actions">
+          <button class="goal-btn" id="goal-pause" title="Pausar">⏸</button>
+          <button class="goal-btn" id="goal-resume" title="Reanudar">▶</button>
+          <button class="goal-btn" id="goal-complete" title="Completar">✓</button>
+        </div>
+      </section>
 
       <div class="section" id="sessions-section">
         <div class="section-header-flex">

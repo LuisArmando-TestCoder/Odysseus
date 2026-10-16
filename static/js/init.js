@@ -2,6 +2,7 @@
 // ES6 module — extracted from index.html inline scripts
 
 import Storage from './storage.js';
+import { initGoalCard } from './goalCard.js';
 
 function clearFreshComposerRestore() {
   const msgInput = document.getElementById('message');
@@ -403,3 +404,14 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
   else window.addEventListener('load', release);
   setTimeout(release, 1200);  // hard fallback — never leave the splash hidden
 })();
+
+/* ── Goal card (metas continuas) ──────────────────────────────────────────
+   Renders the persistent goal card in the sidebar and wires its
+   pause/resume/complete buttons to /api/goal. The card HTML lives in
+   index.html; this just hydrates it. */
+try {
+  initGoalCard();
+} catch (_e) {
+  // The goal card is optional — never let its init break the rest of the UI.
+  console.warn('[init] goal card init failed:', _e);
+}

@@ -1640,6 +1640,29 @@ async def stream_agent_loop(
         # base system prompt and is never mistaken for a user turn.
         messages.insert(0, {"role": "system", "content": _checkpoint_msg})
 
+    # Goal auto-injection — the equivalent of DSH's <goal_round> message. The
+    # harness (not the model) owns the counter/state; each round the agent is
+    # re-told the objective + round number so it stays on-task across rounds.
+    try:
+        from src.goal import get_goal as _get_goal
+        _goal = _get_goal(session_id)
+    except Exception:
+        _goal = None
+    if _goal and _goal.get("phase") == "active":
+        _goal_msg = (
+            "=== ACTIVE GOAL (round {round}/{max}) ===\n"
+            "objective: {obj}\n"
+            "Work toward this objective NOW. Inspect the checkpoint and tool "
+            "results (do not re-derive). Make concrete progress and verify it. "
+            "When the objective is truly achieved, say clearly you are DONE; "
+            "if something concretely blocks you, name the blocking condition."
+        ).format(
+            round=_goal.get("roundsStarted", 0),
+            max=_goal.get("maxGoalRounds", 256),
+            obj=_goal.get("objective", ""),
+        )
+        messages.insert(0, {"role": "system", "content": _goal_msg})
+
     prep_timings["prompt_build"] = time.time() - _t2
 
     _t3 = time.time()

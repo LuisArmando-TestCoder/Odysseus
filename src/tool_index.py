@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 ALWAYS_AVAILABLE = frozenset({
     "bash", "python", "web_search", "web_fetch", "read_file",
     "checkpoint",
+    "finish_goal",
     "document_append",
     "docfind",
     "registros_cr",
@@ -81,6 +82,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "reddit_search": "Search Reddit (zero-login) by keyword and/or within a subreddit, returning posts with title, author, score, url, and selftext. Use when the user asks what Reddit says about a topic, to search a subreddit, or read a discussion.",
     "read_file": "Read a file from disk and return its contents. View source code, config files, logs. Documents created in the editor are saved as files under data/documents/ — read_file can open them there so a chat can reference a document another chat wrote.",
     "checkpoint": "Persistent append-only working memory for THIS task. action='append' writes a timestamped note (confirmed file paths, working API endpoints, findings index, next action) to a per-session file so you never re-derive or re-explore; action='read' returns everything already done so a nudge/continue resumes instead of restarting from a fresh `find /`. Use after every discovery, and read at the start of a new turn.",
+    "finish_goal": "Signal the end of the current continuous goal. Call this ONLY when working under an ACTIVE GOAL (the harness injected '=== ACTIVE GOAL ===' into your context). status='done' when the objective is truly achieved (with evidence); status='blocked' when a concrete condition prevents progress (name it in `reason`). The harness owns the state transition — you just report.",
     "document_append": "Append-only append findings to a living document WITHOUT rewriting. Never rewrites existing content — new content is appended with a separator, so use this to ACCUMULATE findings/evidence/results across turns. Do NOT use create_document/update_document to accumulate (they replace/rewrite). Resolve by doc_id (preferred), active document, or title; creates the document if none exists.",
     "docfind": "Fetch a PRIMARY DOCUMENT (government PDF, site REST API, sitemap) and grep it locally for an EXACT identifier (cédula, case/finca number, slug). Use this instead of web_search when you need a precise hit that a name search can't give: web_search returns homonyms; docfind greps the authoritative source. Args (JSON): {\"url\": ..., \"terms\": [...], \"context\": 2, \"json\": bool} or {\"file\": ..., \"terms\": [...]}.",
     "registros_cr": "Costa Rica public-records source catalog for local investigations. Returns HOW to search each authoritative source (TSE, La Gaceta, Registro Nacional, Poder Judicial, SURCOS, municipal actas, SICOP, CGR) and the UNIQUE KEY to use (cédula, finca, sumaria, cédula jurídica) so you avoid name-search homonyms. Args (JSON): {\"source\": \"tse\"} for one source, or {} for all.",
