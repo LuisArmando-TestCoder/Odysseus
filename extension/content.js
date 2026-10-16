@@ -6,8 +6,8 @@
 //      the code in the page, then hand the result back.
 //   2. Provide a robust "ask AI" driver that locates the AI-mode button by its
 //      *visible text label* (not a hardcoded selector), types a prompt,
-//      submits, and reads the rendered answer. Auto-detects Google vs YouTube
-//      by hostname.
+//      submits it, and reads the rendered answer. Auto-detects Google vs
+//      YouTube by hostname.
 
 // ── Text-node → nearest-clickable walker ────────────────────────────────────
 // Walk every text node, match its content against a set of labels
@@ -69,20 +69,62 @@ function setInputValue(el, s) {
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   } else {
-    el.textContent = s;
+    // contenteditable: use execCommand so the framework sees a real edit.
+    el.focus();
+    try {
+      document.execCommand("selectAll", false, null);
+      document.execCommand("insertText", false, s);
+    } catch (e) {
+      el.textContent = s;
+    }
     el.dispatchEvent(new InputEvent("input", { bubbles: true, data: s }));
   }
 }
 
-// Press Enter on an element (keydown + keyup), which is how the AI box submits.
-function pressEnter(el) {
-  const opts = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
-  el.dispatchEvent(new KeyboardEvent("keydown", opts));
-  el.dispatchEvent(new KeyboardEvent("keyup", opts));
+// Find a submit/send button near the input box.
+function findSubmitButton(box) {
+  const scope = box.closest("form") || box.parentElement || document;
+  const candidates = [
+    ...scope.querySelectorAll(
+      'button, [role="button"], [aria-label*="send" i], [aria-label*="submit" i], ' +
+      '[data-testid*="send" i], [data-testid*="submit" i], input[type="submit"]'
+    ),
+  ];
+  // Prefer a button whose label/title/aria mentions send/submit.
+  const labeled = candidates.find((b) => {
+    const s = ((b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "") + " " + (b.textContent || "")).toLowerCase();
+    return /send|submit|enviar|ask|search/i.test(s);
+  });
+  if (labeled) return labeled;
+  // Fallback: the last button in the form (often the send button).
+  const buttons = candidates.filter((b) => b.tagName === "BUTTON" || b.getAttribute("role") === "button");
+  return buttons.length ? buttons[buttons.length - 1] : null;
 }
 
-// Read the rendered answer. Prefer a scoped container; fall back to the
-// longest text block on the page.
+// Submit the input: click the send button if found, else dispatch a full
+// Enter key sequence AND try form.requestSubmit().
+function submitInput(box) {
+  const btn = findSubmitButton(box);
+  if (btn) {
+    btn.click();
+    return true;
+  }
+  // No button — dispatch a realistic Enter sequence.
+  const opts = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+  box.dispatchEvent(new KeyboardEvent("keydown", opts));
+  box.dispatchEvent(new KeyboardEvent("keypress", opts));
+  box.dispatchEvent(new KeyboardEvent("keyup", opts));
+  // Also try native form submission.
+  const form = box.closest("form");
+  if (form) {
+    try { form.requestSubmit(); return true; } catch (e) { /* ignore */ }
+  }
+  return false;
+}
+
+// Read the rendered answer, stripping <style>/<script>/<noscript> so we never
+// return CSS/JS garbage. Prefer a scoped container; fall back to the longest
+// visible text block.
 function readAnswer() {
   const sel = [
     "#ai-feature-content",
@@ -102,16 +144,19 @@ function readAnswer() {
     const el = document.querySelector(s);
     if (el && el.innerText && el.innerText.trim()) return el.innerText.trim();
   }
-  const blocks = [...document.querySelectorAll("yt-formatted-string, #content, [jsname]")]
-    .filter((n) => n.innerText && n.innerText.length > 80)
-    .sort((a, b) => b.innerText.length - a.innerText.length);
-  return blocks[0] ? blocks[0].innerText.trim() : "";
+
+  // Fallback: clone the body, strip non-content elements, read the longest
+  // visible text block.
+  const clone = document.body.cloneNode(true);
+  clone.querySelectorAll("style, script, noscript, link, svg, iframe, [aria-hidden='true']").forEach((n) => n.remove());
+  const blocks = [...clone.querySelectorAll("div, section, article, main, yt-formatted-string, #content")]
+    .map((n) => n.innerText || "")
+    .filter((t) => t.trim().length > 80)
+    .sort((a, b) => b.length - a.length);
+  return blocks[0] ? blocks[0].trim() : "";
 }
 
 // ── Google AI mode driver ───────────────────────────────────────────────────
-// Google's AI mode: click the "AI Mode" button (or the Gemini sparkle), a
-// textarea appears, type the prompt, press Enter (possibly twice), and read
-// the rendered answer.
 async function askGoogleAI(prompt) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -123,7 +168,6 @@ async function askGoogleAI(prompt) {
   ];
   let btn = findClickableByText(aiLabels);
   if (!btn) {
-    // Fallback: any button whose aria-label/title mentions AI.
     btn = [...document.querySelectorAll("button, [role=button]")].find((b) => {
       const s = ((b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "") + " " + (b.textContent || "")).toLowerCase();
       return /ai mode|ask ai|gemini|ai overview|pregunt/i.test(s);
@@ -145,15 +189,9 @@ async function askGoogleAI(prompt) {
   setInputValue(box, prompt);
   await sleep(500);
 
-  // 4. Submit — try a send button by text, else press Enter (possibly twice).
-  const sendBtn = findClickableByText(["send", "submit", "enviar", "ask"], box.closest("form") || document);
-  if (sendBtn && sendBtn !== btn) {
-    sendBtn.click();
-  } else {
-    pressEnter(box);
-    await sleep(400);
-    pressEnter(box);
-  }
+  // 4. Submit.
+  submitInput(box);
+  await sleep(500);
 
   // 5. Wait for the answer to stream in, polling until text stabilizes.
   let last = "";
@@ -168,9 +206,7 @@ async function askGoogleAI(prompt) {
       last = cur;
     }
   }
-  if (last) return last;
-  // Last resort: the user's original approach — read the whole page text.
-  return document.body.innerText.trim() || "ERROR: no answer captured";
+  return last || "ERROR: no answer captured";
 }
 
 // ── YouTube AI mode driver ──────────────────────────────────────────────────
@@ -203,14 +239,8 @@ async function askYouTubeAI(prompt) {
   setInputValue(box, prompt);
   await sleep(400);
 
-  const sendBtn = findClickableByText(["send", "submit", "enviar", "ask"], box.closest("form") || document);
-  if (sendBtn && sendBtn !== btn) {
-    sendBtn.click();
-  } else {
-    pressEnter(box);
-    await sleep(300);
-    pressEnter(box);
-  }
+  submitInput(box);
+  await sleep(500);
 
   let last = "";
   let stable = 0;
@@ -239,19 +269,16 @@ async function askAI(prompt) {
   const host = detectHost();
   if (host === "youtube") return askYouTubeAI(prompt);
   if (host === "google") return askGoogleAI(prompt);
-  // Generic fallback: just find an input and type, then read the page.
+  // Generic fallback: just find an input, type, submit, and read the page.
   const box = findAskInput();
   if (!box) return "ERROR: no input found on this page";
   setInputValue(box, prompt);
-  pressEnter(box);
+  submitInput(box);
   await new Promise((r) => setTimeout(r, 5000));
-  return readAnswer() || document.body.innerText.trim();
+  return readAnswer() || "ERROR: no answer captured";
 }
 
 // ── Expose the driver to agent-injected code ────────────────────────────────
-// The agent's run_javascript tool injects code into THIS page. Exposing these
-// on `window` lets the agent drive Google/YouTube AI mode with one line:
-//   return await window.__odyBridge.askAI("your question here");
 window.__odyBridge = {
   askAI,
   askGoogleAI,
@@ -259,7 +286,7 @@ window.__odyBridge = {
   findClickableByText,
   findAskInput,
   setInputValue,
-  pressEnter,
+  submitInput,
   readAnswer,
   detectHost,
 };

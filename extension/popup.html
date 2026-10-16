@@ -61,6 +61,8 @@
     }
     button:hover { background: var(--accent-hover); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .target-row { display: flex; gap: 16px; margin-top: 8px; }
+    .target-row label { display: flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; }
     #status { margin-top: 8px; min-height: 16px; white-space: pre-wrap; word-break: break-word; }
     #status.ok { color: var(--ok); }
     #status.err { color: var(--err); }
@@ -90,7 +92,11 @@
     <h1>Odysseus Bridge</h1>
   </header>
   <main>
-    <textarea id="prompt" placeholder="Ask AI anything… (Google or YouTube)"></textarea>
+    <textarea id="prompt" placeholder="Ask AI anything…"></textarea>
+    <div class="target-row">
+      <label><input type="radio" name="target" value="google" checked /> Google</label>
+      <label><input type="radio" name="target" value="youtube" /> YouTube</label>
+    </div>
     <button id="ask">Ask AI</button>
     <div id="status"></div>
 
