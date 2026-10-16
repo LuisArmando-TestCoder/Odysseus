@@ -81,44 +81,55 @@ function setInputValue(el, s) {
   }
 }
 
-// Find a submit/send button near the input box.
+// A button is a voice/microphone control if its label mentions voice/mic/audio.
+function isVoiceButton(b) {
+  const s = ((b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "") + " " + (b.textContent || "")).toLowerCase();
+  return /voice|microphone|mic|audio|listen|speak/i.test(s);
+}
+
+// Find a submit/send button near the input box, EXCLUDING voice/mic buttons.
 function findSubmitButton(box) {
   const scope = box.closest("form") || box.parentElement || document;
   const candidates = [
-    ...scope.querySelectorAll(
-      'button, [role="button"], [aria-label*="send" i], [aria-label*="submit" i], ' +
-      '[data-testid*="send" i], [data-testid*="submit" i], input[type="submit"]'
-    ),
-  ];
-  // Prefer a button whose label/title/aria mentions send/submit.
+    ...scope.querySelectorAll('button, [role="button"], input[type="submit"]'),
+  ].filter((b) => !isVoiceButton(b));
+  // Prefer a button whose label/title/aria mentions send/submit (NOT "search",
+  // which matches the mic's "Search by voice" label).
   const labeled = candidates.find((b) => {
     const s = ((b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "") + " " + (b.textContent || "")).toLowerCase();
-    return /send|submit|enviar|ask|search/i.test(s);
+    return /send|submit|enviar|ask/i.test(s);
   });
   if (labeled) return labeled;
-  // Fallback: the last button in the form (often the send button).
+  // Fallback: the last non-voice button in the form (often the send button).
   const buttons = candidates.filter((b) => b.tagName === "BUTTON" || b.getAttribute("role") === "button");
   return buttons.length ? buttons[buttons.length - 1] : null;
 }
 
-// Submit the input: click the send button if found, else dispatch a full
-// Enter key sequence AND try form.requestSubmit().
+// Submit the input. Order of preference:
+//   1. Native form submission (form.requestSubmit / form.submit) — this is what
+//      a REAL Enter keypress triggers, and it works for Google's standard
+//      search box where synthetic KeyboardEvents are ignored (untrusted).
+//   2. Click the send button (excluding voice/mic).
+//   3. Dispatch an Enter key sequence as a last resort.
 function submitInput(box) {
+  const form = box.closest("form");
+  if (form) {
+    try {
+      form.requestSubmit();
+      return true;
+    } catch (e) {
+      try { form.submit(); return true; } catch (e2) { /* ignore */ }
+    }
+  }
   const btn = findSubmitButton(box);
   if (btn) {
     btn.click();
     return true;
   }
-  // No button — dispatch a realistic Enter sequence.
   const opts = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
   box.dispatchEvent(new KeyboardEvent("keydown", opts));
   box.dispatchEvent(new KeyboardEvent("keypress", opts));
   box.dispatchEvent(new KeyboardEvent("keyup", opts));
-  // Also try native form submission.
-  const form = box.closest("form");
-  if (form) {
-    try { form.requestSubmit(); return true; } catch (e) { /* ignore */ }
-  }
   return false;
 }
 
