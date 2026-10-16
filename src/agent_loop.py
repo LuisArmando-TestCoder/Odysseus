@@ -1570,6 +1570,32 @@ async def stream_agent_loop(
         owner=owner,
         session_id=session_id,
     )
+
+    # Checkpoint auto-injection: load the session's durable, append-only
+    # execution state so a nudge/`go` becomes *resume* rather than *re-derive*.
+    # The model sees what it already did (confirmed paths, working endpoints,
+    # extracted/written findings) and is explicitly told NOT to re-do it.
+    try:
+        from src.checkpoint import checkpoint_read
+        _checkpoint_state = checkpoint_read(session_id, owner)
+    except Exception:
+        _checkpoint_state = ""
+    if _checkpoint_state and _checkpoint_state.strip():
+        _checkpoint_msg = (
+            "=== YOUR OWN PROGRESS SO FAR (from checkpoint) ===\n"
+            + _checkpoint_state
+            + "\n=== END CHECKPOINT ===\n\n"
+            "You ALREADY did the work recorded above. Do NOT re-run `ls`, "
+            "`find /`, re-fetch the same transcript, or re-guess endpoints/paths "
+            "that are already confirmed there. Do NOT re-extract or re-derive "
+            "anything listed above. RESUME from the last step: do the ONE next "
+            "un-done action, then append a 1-line summary to your checkpoint "
+            "via the `checkpoint` tool so the next turn keeps advancing."
+        )
+        # Prepend as a system message so it carries the same authority as the
+        # base system prompt and is never mistaken for a user turn.
+        messages.insert(0, {"role": "system", "content": _checkpoint_msg})
+
     prep_timings["prompt_build"] = time.time() - _t2
 
     _t3 = time.time()
@@ -2313,6 +2339,21 @@ async def stream_agent_loop(
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
+
+            # Force-append a 1-line summary to the durable checkpoint after
+            # every tool execution, so the next round (or a later nudge)
+            # resumes instead of re-deriving. Best-effort — never let a
+            # checkpoint write break the agent loop.
+            try:
+                from src.checkpoint import checkpoint_append
+                checkpoint_append(
+                    f"[round {round_num}] {block.tool_type}: {cmd_display[:120]}"
+                    f" -> exit_code={result.get('exit_code')}",
+                    session_id,
+                    owner,
+                )
+            except Exception:
+                pass
 
             formatted = format_tool_result(desc, result)
             tool_results.append(formatted)

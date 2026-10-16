@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # These are the most commonly needed and should never be missing.
 ALWAYS_AVAILABLE = frozenset({
     "bash", "python", "web_search", "web_fetch", "read_file",
+    "checkpoint",
     # Media/discussion scrapers — lightweight, read-only, and the agent kept
     # reporting "no YouTube tool" / "no Reddit tool" when RAG retrieval didn't
     # surface them (their keywords are absent from many phrasings like "what do
@@ -76,6 +77,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "youtube_transcript": "Fetch the transcript (captions) of a YouTube video from its URL — manual captions preferred over auto-generated ASR. Use when the user shares a YouTube link or asks what a video says.",
     "reddit_search": "Search Reddit (zero-login) by keyword and/or within a subreddit, returning posts with title, author, score, url, and selftext. Use when the user asks what Reddit says about a topic, to search a subreddit, or read a discussion.",
     "read_file": "Read a file from disk and return its contents. View source code, config files, logs. Documents created in the editor are saved as files under data/documents/ — read_file can open them there so a chat can reference a document another chat wrote.",
+    "checkpoint": "Persistent append-only working memory for THIS task. action='append' writes a timestamped note (confirmed file paths, working API endpoints, findings index, next action) to a per-session file so you never re-derive or re-explore; action='read' returns everything already done so a nudge/continue resumes instead of restarting from a fresh `find /`. Use after every discovery, and read at the start of a new turn.",
     "write_file": "Write content to a file on disk. Create new files, save output, update configs.",
     "create_document": "Create a new document in the editor panel. For code, articles, text content longer than 15 lines, unless an already-open document/email draft is the obvious target. If an email compose draft is open, edit that draft instead of creating another document.",
     "edit_document": "Preferred tool for editing an existing document — targeted find-and-replace. Use for any small change: add a function, fix a bug, tweak a section, rename things.",

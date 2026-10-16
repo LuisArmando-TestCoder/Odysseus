@@ -156,6 +156,21 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "checkpoint",
+            "description": "Persistent, append-only execution checkpoint so you NEVER re-do or re-derive work across turns. action='append' adds a timestamped note (confirmed paths, endpoints, findings index, next action) to your per-session checkpoint; action='read' returns everything you already did. Use append after every discovery and read at the start of a new turn — the harness also auto-injects your checkpoint each round.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["append", "read"], "description": "'append' to add a note, 'read' to view your full checkpoint"},
+                    "text": {"type": "string", "description": "The note to append (for action=append)"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_document",
             "description": "Create a new document in the editor panel. Use this when the user asks to write, create, build, or generate code, scripts, programs, games, apps, or any substantial content (>15 lines) AND there is no already-open document/email draft that the request refers to. If an email compose draft is open, edit that draft instead of creating another document. NEVER put large code blocks directly in chat — use this tool instead.",
             "parameters": {

@@ -891,6 +891,7 @@ async def execute_tool_block(
         do_vault_search, do_vault_get, do_vault_unlock,
         do_app_api, do_sherlock_osint, do_osint_framework,
     )
+    from src.checkpoint import do_checkpoint
 
     tool = block.tool_type
     content = block.content
@@ -1124,6 +1125,9 @@ async def execute_tool_block(
     elif tool == "osint_framework":
         desc = "osint_framework"
         result = await do_osint_framework(content, owner=owner)
+    elif tool == "checkpoint":
+        desc = f"checkpoint: {content.split(chr(10))[0][:60]}"
+        result = do_checkpoint(content, session_id=session_id, owner=owner)
     elif tool.startswith("mcp__"):
         # MCP tool dispatch
         mcp = get_mcp_manager()
