@@ -264,23 +264,28 @@ async def do_run_javascript(code: str, session_id: Optional[str] = None,
                 "exit_code": 1}
 
     token, fut = register_eval()
+    logger.info("[browser-eval] dispatching JS to browser (token=%s, %d chars)", token[:8], len(code))
     try:
         await progress_cb({"eval_request": True, "eval_token": token, "eval_code": code})
     except Exception as e:
         _pending.pop(token, None)
+        logger.warning("[browser-eval] dispatch failed: %s", e)
         return {"output": f"Failed to dispatch JavaScript to the browser: {e}", "exit_code": 1}
 
     try:
         result = await asyncio.wait_for(fut, timeout=BROWSER_TIMEOUT)
     except asyncio.TimeoutError:
         _pending.pop(token, None)
+        logger.warning("[browser-eval] timed out waiting for result (token=%s)", token[:8])
         return {"output": "Timed out waiting for the browser to run the JavaScript (no result posted back).",
                 "exit_code": 1}
 
     if result.get("error"):
+        logger.warning("[browser-eval] JS error (token=%s): %s", token[:8], result["error"])
         return {"output": f"JavaScript error: {result['error']}",
                 "error": result["error"], "exit_code": 1}
     out = result.get("output") or ""
     if not out.strip():
         out = "Executed successfully (no return value)."
+    logger.info("[browser-eval] result received (token=%s, %d chars)", token[:8], len(out))
     return {"output": out, "exit_code": 0}

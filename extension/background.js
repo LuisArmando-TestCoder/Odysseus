@@ -9,6 +9,17 @@
 //   4. Auto-open a Google/YouTube tab when none is open, so Odysseus can
 //      perform a search even without a pre-existing AI-mode window.
 
+// ── Logging ────────────────────────────────────────────────────────────────
+// Every bridge step is logged to the extension's service-worker console
+// (chrome://extensions → "Odysseus Browser Bridge" → "service worker").
+// Prefix "ODY" so it's easy to filter.
+function log(...args) {
+  console.log("[ODY]", ...args);
+}
+function logErr(...args) {
+  console.error("[ODY]", ...args);
+}
+
 async function getBaseUrl() {
   const d = await chrome.storage.sync.get({ baseUrl: "http://127.0.0.1:5173" });
   return String(d.baseUrl || "").replace(/\/+$/, "");
@@ -135,7 +146,9 @@ async function readAnswerFromTab(tabId) {
 // tab (via chrome.scripting.executeScript) until the answer stabilizes. The
 // polling survives the SPA navigation/reload Google AI mode performs.
 async function askAI(prompt, target) {
+  log("askAI start", { target, prompt: prompt.slice(0, 80) });
   const tab = await ensureTargetTab(target);
+  log("target tab", { id: tab.id, url: tab.url });
 
   // 1. Submit (content script opens AI mode, types, submits, returns).
   let submitResp;
@@ -148,8 +161,10 @@ async function askAI(prompt, target) {
       submit_only: true,
     });
   } catch (e) {
+    logErr("submit sendMessage failed", e);
     return { ok: false, error: String((e && e.message) || e) };
   }
+  log("submit response", submitResp);
   if (!submitResp || !submitResp.ok) {
     return { ok: false, error: (submitResp && submitResp.error) || "submit failed" };
   }
@@ -167,8 +182,13 @@ async function askAI(prompt, target) {
       stable = 0;
       last = cur;
     }
+    if (i % 5 === 0) log("poll", { i, len: cur.length, stable });
   }
-  if (last) return { ok: true, output: last };
+  if (last) {
+    log("answer captured", { len: last.length });
+    return { ok: true, output: last };
+  }
+  logErr("no answer captured after polling");
   return { ok: false, error: "ERROR: no answer captured" };
 }
 

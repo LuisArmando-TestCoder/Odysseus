@@ -13,6 +13,16 @@
 // can own the polling (via chrome.scripting.executeScript) and survive the
 // SPA navigation/reload that Google AI mode performs after submit.
 
+// ── Logging ────────────────────────────────────────────────────────────────
+// Logs to the page's DevTools console (F12 on the Google/YouTube tab).
+// Prefix "ODY" so it's easy to filter.
+function log(...args) {
+  console.log("[ODY]", ...args);
+}
+function logErr(...args) {
+  console.error("[ODY]", ...args);
+}
+
 // ── Text-node → nearest-clickable walker ────────────────────────────────────
 function findClickableByText(labels, root) {
   root = root || document;
@@ -201,13 +211,19 @@ async function openAIInput(host) {
 // survives the SPA navigation/reload.
 async function submitAsk(prompt) {
   const host = detectHost();
+  log("submitAsk", { host, prompt: prompt.slice(0, 80) });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (host === "google" || host === "youtube") {
     const box = await openAIInput(host);
-    if (!box) return { ok: false, error: "ERROR: no ask input found (are you logged in?)" };
+    if (!box) {
+      logErr("no ask input found", { host });
+      return { ok: false, error: "ERROR: no ask input found (are you logged in?)" };
+    }
+    log("input found", { tag: box.tagName });
     setInputValue(box, prompt);
     await sleep(500);
-    submitInput(box);
+    const submitted = submitInput(box);
+    log("submitted", { viaForm: submitted });
     return { ok: true };
   }
   const box = findAskInput();
