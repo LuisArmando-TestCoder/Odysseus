@@ -260,6 +260,7 @@ class ChatProcessor:
 
         # RAG: search if enabled and rag_manager available, inject only above threshold
         if use_rag:
+            rag_hits = []  # (filename, document, similarity) that actually made it in
             try:
                 rag_manager = getattr(self.personal_docs_manager, 'rag_manager', None)
                 if rag_manager:
@@ -282,8 +283,31 @@ class ChatProcessor:
                         if len(rag_content) > 10000:
                             rag_content = rag_content[:10000] + "\n[Truncated]"
                         preface.append(untrusted_context_message("retrieved documents", rag_content))
+                        rag_hits = [(s["filename"], r["document"], s["similarity"]) for s, r in zip(rag_sources, relevant)]
             except Exception as e:
                 logger.warning(f"RAG retrieval failed: {e}")
+
+            # Disk-first keyword fallback via the per-chat context tree. This is
+            # dependency-free (no ChromaDB/embeddings) so long pastes and
+            # attachments stay searchable even when the vector layer is offline
+            # or returns nothing above threshold.
+            if not rag_hits:
+                try:
+                    from src import context_tree
+                    _sid = getattr(session, "id", None)
+                    if _sid and owner:
+                        leaves = context_tree.retrieve(
+                            owner, str(_sid), message, k=5,
+                            rag_manager=getattr(self.personal_docs_manager, "rag_manager", None),
+                        )
+                        if leaves:
+                            kw_content = "Relevant context (exact-match from this chat):\n\n" + "\n\n---\n\n".join(
+                                f"[path: {lv['path']}]\n{lv['text']}" for lv in leaves
+                            )
+                            preface.append(untrusted_context_message("retrieved documents", kw_content))
+                            rag_hits = [(lv["path"], lv["text"], 1.0) for lv in leaves]
+                except Exception as e:
+                    logger.debug(f"context_tree fallback skipped: {e}")
 
         # Add web search if enabled
         web_sources = []

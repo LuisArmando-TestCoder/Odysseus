@@ -566,6 +566,7 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
     # extraction that can see past the wrapper.
     html_text = response.text or ""
     wait_prob = _jev_need_js_render(url, html_text)
+    jev_available = wait_prob is not None
 
     if wait_prob is None:
         # JEV unavailable — keep the deterministic framework heuristic as a
@@ -587,6 +588,7 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
     # populated client-side. Rather than leaving it half-baked (title + nav), we
     # render the page in a headless browser and re-parse the *rendered* DOM so
     # the article body is actually recoverable (this is the La Nación case).
+    did_render = False
     if js_rendered:
         rendered_html = _render_page_js(url, timeout)
         if rendered_html and len(rendered_html) > len(html_text):
@@ -594,8 +596,11 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
                 soup = BeautifulSoup(rendered_html, "html.parser")
                 html_text = rendered_html
                 js_message += f" Rendered via headless browser ({len(html_text)} chars)."
+                did_render = True
             except Exception as e:
                 logger.debug(f"[content] failed to parse rendered HTML for {url}: {e}")
+
+    THIN_CONTENT_CHARS = 600  # below this the heuristic likely missed the page
 
     # --- LLM article-body extraction (readability-style) ---------------------
     # Use the model to isolate the substantive article from nav/footer/boilerplate.
@@ -627,6 +632,41 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
                 body_text = re.sub(r"\s+", " ", body_copy.get_text(separator=" ", strip=True)).strip()
                 if len(body_text) > len(main_content):
                     main_content = body_text
+
+    # --- Last-resort JS render fallback --------------------------------------
+    # Some JS-rendered SPA shells don't carry the framework markers JEV/the
+    # heuristic look for, so the extracted content stays empty/thin even though
+    # the page renders fine in a browser. When we got a 2xx page but no useful
+    # article text (and we didn't already render), do ONE headless render and
+    # re-hydrate the body so `web_fetch` returns real content instead of
+    # "no readable text content". Fail-safe: never runs if Selenium is absent.
+    if (
+        not jev_available
+        and not did_render
+        and not (main_content and main_content.strip())
+        and html_text
+    ):
+        rendered_html = _render_page_js(url, timeout)
+        if rendered_html and len(rendered_html) > len(html_text):
+            try:
+                soup = BeautifulSoup(rendered_html, "html.parser")
+                html_text = rendered_html
+                js_message = (js_message + " " if js_message else "") + (
+                    f"Rendered via headless browser fallback ({len(html_text)} chars)."
+                )
+                js_rendered = True
+                body = soup.find("body")
+                if body:
+                    body_copy = copy.copy(body)
+                    for _noise in body_copy.find_all(
+                        ["script", "style", "noscript", "template", "nav", "header", "footer", "aside"]
+                    ):
+                        _noise.extract()
+                    body_text = re.sub(r"\s+", " ", body_copy.get_text(separator=" ", strip=True)).strip()
+                    if body_text and len(body_text) > len(main_content or ""):
+                        main_content = body_text
+            except Exception as e:
+                logger.debug(f"[content] fallback JS render failed for {url}: {e}")
 
     result = {
         "url": url,

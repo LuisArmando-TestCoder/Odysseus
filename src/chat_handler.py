@@ -229,6 +229,49 @@ class ChatHandler:
                     logger.debug("chat attachment RAG index skipped: %s", _e)
             asyncio.create_task(asyncio.to_thread(_index_attachments))
 
+            # Parallel: build/refresh the per-chat disk-first context tree so
+            # long pastes + attachment text remain keyword-searchable even when
+            # the ChromaDB/embedding layer is offline. Best-effort, own thread.
+            def _build_context_tree():
+                try:
+                    from src import context_tree
+                    try:
+                        from src.markitdown_runtime import MARKITDOWN_EXTS as _OFFICE_EXTS
+                    except Exception:
+                        _OFFICE_EXTS = (".docx", ".doc", ".pptx", ".xlsx", ".xls", ".epub")
+                    texts: List[str] = []
+                    if message and len(message) > 2000:
+                        texts.append(message)
+                    for att_id in att_ids:
+                        fi = files_by_id.get(att_id)
+                        if not fi:
+                            continue
+                        path = fi.get("path") or ""
+                        name = (fi.get("name") or fi.get("original_name") or att_id).lower()
+                        if not path:
+                            continue
+                        t = ""
+                        if name.endswith(".pdf"):
+                            from src.personal_docs import extract_pdf_text
+                            t = extract_pdf_text(path)
+                        elif any(name.endswith(e) for e in _OFFICE_EXTS):
+                            from src.personal_docs import extract_office_text
+                            t = extract_office_text(path) or ""
+                        if t and t.strip():
+                            texts.append(t)
+                    if texts:
+                        context_tree.build_tree(
+                            owner or "", str(getattr(sess, "id", None) or "chat"),
+                            texts,
+                            rag_manager=getattr(
+                                getattr(self, "chat_processor", None),
+                                "personal_docs_manager", None,
+                            ) and getattr(self.chat_processor.personal_docs_manager, "rag_manager", None),
+                        )
+                except Exception as _e:
+                    logger.debug("context_tree build skipped: %s", _e)
+            asyncio.create_task(asyncio.to_thread(_build_context_tree))
+
         if att_ids and vision_enabled:
             meta_by_id = {m["id"]: m for m in attachment_meta}
             for att_id in att_ids:

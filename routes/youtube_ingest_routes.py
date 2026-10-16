@@ -59,7 +59,7 @@ def setup_youtube_ingest_routes(upload_handler=None) -> APIRouter:
             for video_id in ids:
                 url = f"https://www.youtube.com/watch?v={video_id}"
                 try:
-                    data = fetch_youtube_transcript(url, max_chars=0, target_language=target_language)
+                    data = fetch_youtube_transcript(url, max_chars=1_000_000, target_language=target_language)
                 except Exception as e:
                     results.append({"video_id": video_id, "status": "error", "error": str(e)})
                     failed += 1
