@@ -287,12 +287,19 @@ def build_tree(
     else:
         assigned: set = set()
         for name, g in groups.items():
+            # The LLM clustering can (rarely) emit the same chunk id in multiple
+            # groups. Each leaf must belong to EXACTLY one category, so keep only
+            # the ids not already claimed by an earlier group; skip groups left
+            # empty by this dedup.
+            ids = [i for i in g["ids"] if i not in assigned]
+            if not ids:
+                continue
             node: Dict[str, Any] = {
                 "summary": g["summary"],
                 "children": {},
-                "leaf_ids": sorted(g["ids"]),
+                "leaf_ids": sorted(ids),
             }
-            assigned.update(g["ids"])
+            assigned.update(ids)
             tree["children"][name] = node
         # Any unassigned chunk goes under a catch-all.
         leftover = sorted(set(chunk_map.keys()) - assigned)
@@ -318,12 +325,37 @@ def save_tree(owner: str, chat_id: str, tree: Dict[str, Any]) -> None:
             logger.warning(f"[context_tree] save failed: {e}")
 
 
+def _normalize_tree(tree: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure every leaf id belongs to exactly one node.
+
+    Legacy/LLM-built trees can contain the same chunk id in multiple categories
+    (or a leaf in a category while also being a root leaf). Normalize so the
+    first owner in tree order wins; leftover duplicates are dropped. This keeps
+    `_path_for` unambiguous regardless of how the tree was persisted.
+    """
+    claimed: set = set()
+
+    def _fix(node: Dict[str, Any]) -> None:
+        # Root leaves claim first.
+        kept = []
+        for cid in node.get("leaf_ids", []):
+            if cid not in claimed:
+                kept.append(cid)
+                claimed.add(cid)
+        node["leaf_ids"] = kept
+        for child in node.get("children", {}).values():
+            _fix(child)
+
+    _fix(tree)
+    return tree
+
+
 def get_tree(owner: str, chat_id: str) -> Dict[str, Any]:
     try:
         with open(os.path.join(_tree_dir(owner, chat_id), "tree.json"), "r", encoding="utf-8") as f:
             d = json.load(f)
         if isinstance(d, dict):
-            return d
+            return _normalize_tree(d)
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     return {"name": None, "summary": "", "children": {}, "leaf_ids": []}
@@ -443,19 +475,19 @@ def retrieve(
         if not text:
             continue
         text = text[:max_chars]  # bound a single leaf too
-        results.append({"leaf_id": cid, "text": text, "path": _path_for(tree, cid)})
+        results.append({"leaf_id": cid, "text": text, "path": _path_for(tree, cid) or "root"})
         total += len(text)
     return results
 
 
-def _path_for(tree: Dict[str, Any], leaf_id: str, prefix: Tuple[str, ...] = ()) -> str:
+def _path_for(tree: Dict[str, Any], leaf_id: str, prefix: Tuple[str, ...] = ()) -> Optional[str]:
     if leaf_id in tree.get("leaf_ids", []):
         return "/".join(prefix) or "root"
     for name, child in tree.get("children", {}).items():
         found = _path_for(child, leaf_id, prefix + (name,))
-        if found:
+        if found is not None:
             return found
-    return "root"
+    return None
 
 
 def collect_all(owner: str, chat_id: str, max_chars: int = 12000) -> str:
