@@ -448,6 +448,12 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
   pointer-events: auto;
   transform: translateY(0);
 }
+/* The live-transcript button sits above the type/paste context box, so lift it
+   by the height of that container (padding 20px + textarea 40px + gap 6px +
+   action row 26px = 92px) to avoid overlapping the textarea. */
+.vx-scroll-down[data-scroll-down="vx-transcript"] {
+  bottom: 104px;
+}
 .vx-scroll-down:hover {
   border-color: var(--vx-acc-a, rgba(122, 162, 255, .5));
   background: rgba(0, 0, 0, .6);
