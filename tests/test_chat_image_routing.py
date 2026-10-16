@@ -1,5 +1,14 @@
 import json
+import sys
 from types import SimpleNamespace
+
+_endpoint_resolver = sys.modules.get("src.endpoint_resolver")
+if _endpoint_resolver is not None and not getattr(_endpoint_resolver, "__file__", None):
+    # Other tests stub this module during collection without build_models_url.
+    # chat_routes -> model_routes needs the real endpoint_resolver.build_models_url.
+    sys.modules.pop("src.endpoint_resolver", None)
+    sys.modules.pop("routes.model_routes", None)
+    sys.modules.pop("routes.chat_routes", None)
 
 from routes import chat_routes
 

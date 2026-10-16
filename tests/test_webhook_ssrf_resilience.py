@@ -1,6 +1,18 @@
 import sys
+
 # conftest.py stubs src.database with a fake module; webhook_manager imports
-# from it, so drop the stub here to load the real module under test.
+# `from src.database import SessionLocal, Webhook`, and src.database re-exports
+# `from core.database import *`. When run alphabetically after other tests,
+# `core.database` is left as a MagicMock stub whose auto-generated `__all__` is
+# itself a MagicMock, so `from core.database import *` raises:
+#   TypeError: Item in core.database.__all__ must be str, not MagicMock
+# A real module has `__file__` set to a str, whereas the stubs (MagicMock / bare
+# ModuleType) do not. Drop the polluted stub so the real core.database — with a
+# valid `__all__` — loads when src.database imports it.
+_core_db = sys.modules.get("core.database")
+if _core_db is not None and not isinstance(getattr(_core_db, "__file__", None), str):
+    sys.modules.pop("core.database", None)
+
 if "src.database" in sys.modules:
     del sys.modules["src.database"]
 

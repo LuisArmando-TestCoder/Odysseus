@@ -89,3 +89,11 @@ docs/windows-port/
 compound.config.json
 *.error.log
 _scratch/
+
+# Personal / experimental audio & scripts (not part of the shipped app)
+*.wav
+arpeggio_synthesis.py
+silbido_fft.py
+pure_tone.py
+open_grimes_accelerando.sh
+home.html

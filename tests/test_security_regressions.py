@@ -14,6 +14,7 @@ These are pure-function tests — no FastAPI app boot, no DB.
 import sys
 import types
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -122,7 +123,10 @@ def test_docker_compose_binds_web_ui_to_loopback_by_default():
 def test_readme_native_quickstart_uses_loopback():
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "python -m uvicorn app:app --host 127.0.0.1 --port 7000" in readme
-    assert "Use `--host 0.0.0.0` only when you intentionally want" in readme
+    # The README wraps prose; collapse whitespace so a soft line break between
+    # "when" and "you" doesn't fail the security assertion.
+    flat = re.sub(r"\s+", " ", readme)
+    assert "Use `--host 0.0.0.0` only when you intentionally want" in flat
 
 
 def test_ollama_cookbook_runner_does_not_force_public_bind():

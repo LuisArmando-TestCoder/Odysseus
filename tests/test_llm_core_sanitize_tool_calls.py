@@ -68,7 +68,14 @@ def test_sanitize_merges_consecutive_user_messages():
         {"role": "user", "content": "User message 1"},
         {"role": "user", "content": "User message 2"},
         {"role": "assistant", "content": "Assistant message 1"},
-        {"role": "assistant", "content": "Assistant message 2"},
+        {
+            "role": "assistant",
+            "content": "Assistant message 2",
+            "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}},
+                {"id": "c2", "type": "function", "function": {"name": "f", "arguments": "{}"}},
+            ],
+        },
         {"role": "tool", "content": "Tool output 1", "tool_call_id": "c1"},
         {"role": "tool", "content": "Tool output 2", "tool_call_id": "c2"},
     ]
@@ -81,7 +88,11 @@ def test_sanitize_merges_consecutive_user_messages():
     assert out[1] == {"role": "system", "content": "System message 2"}
     assert out[2] == {"role": "user", "content": "User message 1\n\nUser message 2"}
     assert out[3] == {"role": "assistant", "content": "Assistant message 1"}
-    assert out[4] == {"role": "assistant", "content": "Assistant message 2"}
+    # The assistant that owns the tool_calls keeps them (repair validates the
+    # answered ids), so it is no longer a plain content-only message.
+    assert out[4]["role"] == "assistant"
+    assert out[4]["content"] == "Assistant message 2"
+    assert {tc["id"] for tc in out[4]["tool_calls"]} == {"c1", "c2"}
     assert out[5] == {"role": "tool", "content": "Tool output 1", "tool_call_id": "c1"}
     assert out[6] == {"role": "tool", "content": "Tool output 2", "tool_call_id": "c2"}
 

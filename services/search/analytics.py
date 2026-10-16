@@ -10,8 +10,9 @@ from .cache import cache_metrics
 
 logger = logging.getLogger(__name__)
 
-# Dedicated error logger with file handler
-_error_log_path = Path(__file__).resolve().parent.parent / "search_engine_error.log"
+# Dedicated error logger with file handler (repo-root logs/, gitignored)
+_error_log_path = Path(__file__).resolve().parents[2] / "logs" / "search_engine_error.log"
+_error_log_path.parent.mkdir(parents=True, exist_ok=True)
 _error_handler = logging.FileHandler(_error_log_path, encoding="utf-8")
 _error_handler.setLevel(logging.WARNING)
 _error_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
