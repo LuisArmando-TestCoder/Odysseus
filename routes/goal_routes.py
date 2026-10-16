@@ -31,6 +31,22 @@ def setup_goal_routes() -> APIRouter:
         g = get_goal(owner)
         return {"goal": g} if g else {"goal": None}
 
+    @router.get("/queue")
+    async def goal_queue(request: Request):
+        owner = effective_user(request)
+        if not owner:
+            raise HTTPException(403, "Authentication required")
+        from src.checkpoint import checkpoint_queue_state
+        return checkpoint_queue_state(owner)
+
+    @router.get("/checkpoint")
+    async def goal_checkpoint(request: Request):
+        owner = effective_user(request)
+        if not owner:
+            raise HTTPException(403, "Authentication required")
+        from src.checkpoint import checkpoint_read
+        return {"checkpoint": checkpoint_read(owner=owner)}
+
     @router.post("/{action}")
     async def goal_update(request: Request, action: str):
         owner = effective_user(request)

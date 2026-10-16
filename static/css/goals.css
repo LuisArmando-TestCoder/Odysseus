@@ -93,3 +93,68 @@
   padding: 24px; text-align: center; color: var(--muted, #6b7280);
   display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
+
+/* Actividad: working (pulso) / idle / blocked */
+.goal-activity {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border, #e5e7eb); margin: 8px 4px 0 0;
+}
+.goal-activity[data-state="working"] { background: #10b981; animation: goalPulse 1.2s ease-in-out infinite; }
+.goal-activity[data-state="blocked"] { background: #ef4444; }
+@keyframes goalPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* Cola de items + item actual */
+.goal-queue-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.goal-queue-fill { background: #8b5cf6; }
+.goal-current {
+  margin: 6px 0 0; font-size: 11px; color: var(--muted, #6b7280);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Trail (checkpoint) */
+.goal-trail { margin-top: 8px; font-size: 11px; }
+.goal-trail summary { cursor: pointer; color: var(--muted, #6b7280); font-weight: 600; }
+.goal-trail-body {
+  max-height: 160px; overflow: auto; margin: 6px 0 0; padding: 8px;
+  background: var(--code-bg, #0b1020); color: #e5e7eb; border-radius: 8px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* Transición de fase + toast */
+.goal-card { transition: border-color .2s ease, box-shadow .2s ease; }
+.goal-card.blocked { border-color: #ef4444; box-shadow: 0 0 0 1px #ef4444; }
+.goal-card.complete { border-color: #3b82f6; }
+.goal-toast {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 20000;
+  color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.25); animation: goalToastIn .25s ease;
+}
+.goal-toast.done { background: #16a34a; }
+.goal-toast.blocked { background: #dc2626; }
+@keyframes goalToastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Banner in-chat */
+.goal-banner {
+  padding: 7px 14px; font-size: 12px; border-bottom: 1px solid var(--border, #e5e7eb);
+  background: #f0fdf4; color: #15803d; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Thumbnail + badge de deliverable */
+.deliverable-thumb {
+  width: 44px; height: 44px; border-radius: 8px; object-fit: cover;
+  border: 1px solid var(--border, #e5e7eb); background: #000;
+}
+.deliverable-badge {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 6px; border-radius: 999px; background: #ede9fe; color: #6d28d9;
+}
+
+/* Separador de rondas en el chat */
+.round-sep {
+  display: flex; align-items: center; gap: 10px; margin: 14px 0 6px;
+  color: var(--muted, #6b7280); font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.round-sep::before, .round-sep::after { content: ""; flex: 1; height: 1px; background: var(--border, #e5e7eb); }

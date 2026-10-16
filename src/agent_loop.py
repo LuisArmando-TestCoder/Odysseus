@@ -1663,6 +1663,25 @@ async def stream_agent_loop(
         )
         messages.insert(0, {"role": "system", "content": _goal_msg})
 
+    # Continuous-task cursor — if a queue is seeded, inject the NEXT item so the
+    # agent processes items one at a time without re-discovering the list.
+    try:
+        from src.checkpoint import checkpoint_next, checkpoint_queue_state
+        _next_item = checkpoint_next(session_id, owner)
+        _qstate = checkpoint_queue_state(session_id, owner)
+    except Exception:
+        _next_item = None
+        _qstate = {"remaining": [], "done": []}
+    if _next_item:
+        messages.insert(0, {"role": "system", "content": (
+            "=== CONTINUOUS TASK ===\n"
+            f"Process THIS item: {_next_item}\n"
+            f"remaining: {len(_qstate['remaining'])} · done: {len(_qstate['done'])}\n"
+            "Do NOT re-discover the list. Process this ONE item, append its "
+            "findings with document_append, then report you are done with this "
+            "item so the harness advances the cursor."
+        )})
+
     prep_timings["prompt_build"] = time.time() - _t2
 
     _t3 = time.time()

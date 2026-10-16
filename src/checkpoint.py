@@ -106,3 +106,45 @@ def do_checkpoint(content: str, session_id: Optional[str] = None,
         return {"error": f"checkpoint: unknown action '{action}' (use 'append' or 'read')", "exit_code": 1}
     except OSError as e:
         return {"error": f"checkpoint IO error: {e}", "exit_code": 1}
+
+
+def _queue_path(session_id=None, owner=None):
+    from src.constants import DATA_DIR
+    base = os.path.join(DATA_DIR, "agent_state")
+    os.makedirs(base, exist_ok=True)
+    if session_id:
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(session_id))
+        return os.path.join(base, f"{safe}.queue.json")
+    if owner:
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(owner))
+        return os.path.join(base, f"owner_{safe}.queue.json")
+    return os.path.join(base, "_default.queue.json")
+
+
+def checkpoint_set_queue(items, session_id=None, owner=None):
+    from core.atomic_io import atomic_write_json
+    atomic_write_json(_queue_path(session_id, owner),
+                      {"remaining": list(items), "done": []})
+
+
+def checkpoint_queue_state(session_id=None, owner=None):
+    p = _queue_path(session_id, owner)
+    if not os.path.exists(p):
+        return {"remaining": [], "done": []}
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def checkpoint_next(session_id=None, owner=None):
+    s = checkpoint_queue_state(session_id, owner)
+    return s["remaining"][0] if s["remaining"] else None
+
+
+def checkpoint_pop_done(item, session_id=None, owner=None):
+    from core.atomic_io import atomic_write_json
+    s = checkpoint_queue_state(session_id, owner)
+    if item in s["remaining"]:
+        s["remaining"].remove(item)
+        s["done"].append(item)
+    atomic_write_json(_queue_path(session_id, owner), s)
+    return s

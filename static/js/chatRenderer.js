@@ -233,15 +233,27 @@ export function updateMessageAttachments(msgWrap, attachments) {
 // Deliverable card — the equivalent of DSH's `present` tool. When the agent
 // produces a report/document, render a card with "Previsualizar" + "Abrir"
 // instead of a generic bubble. `file` is { name, id, description?, path? }.
+// Round separator — visual divider between goal rounds in the chat stream.
+export function addRoundSeparator(roundNum) {
+  const sep = document.createElement('div');
+  sep.className = 'round-sep';
+  sep.textContent = `ronda ${roundNum}`;
+  return sep;
+}
+
 export function buildDeliverableCard(file) {
   const card = document.createElement('div');
   card.className = 'deliverable-card';
+  const icon = file.previewUrl
+    ? `<img class="deliverable-thumb" src="${file.previewUrl}" alt="">`
+    : '<span class="deliverable-icon">📄</span>';
   card.innerHTML = `
-    <span class="deliverable-icon">📄</span>
+    ${icon}
     <div class="deliverable-meta">
       <div class="deliverable-name"></div>
       <div class="deliverable-desc"></div>
     </div>
+    <span class="deliverable-badge">deliverable</span>
     <button class="deliverable-btn" data-act="preview">Previsualizar</button>
     <button class="deliverable-btn primary" data-act="open">Abrir</button>`;
   card.querySelector('.deliverable-name').textContent = file.name || file.path?.split('/').pop() || 'Archivo';
@@ -2497,6 +2509,7 @@ const chatRenderer = {
   addMessage,
   addMessagesBatch,
   updateMessageAttachments,
+  addRoundSeparator,
   buildDeliverableCard,
 };
 

@@ -38,6 +38,12 @@ def _bump_round(session_id: str) -> Optional[Dict[str, Any]]:
     return get_goal(session_id)
 
 
+def seed_queue_from_objective(session_id, items):
+    """Seed the item queue for a continuous task."""
+    from src.checkpoint import checkpoint_set_queue
+    checkpoint_set_queue(items, session_id)
+
+
 async def run_agent_round(
     goal: Dict[str, Any],
     *,
@@ -137,6 +143,18 @@ async def goal_round_loop(
         goal = _bump_round(session_id)
         if not goal:
             break
+
+        # 2b) advance the continuous-task cursor: mark the injected item done.
+        try:
+            from src.checkpoint import checkpoint_next, checkpoint_pop_done
+            _item = checkpoint_next(session_id)
+            if _item is not None:
+                checkpoint_pop_done(_item, session_id)
+                # if that was the last item, the goal is effectively done
+                if checkpoint_next(session_id) is None:
+                    outcome["done"] = True
+        except Exception:
+            pass
 
         # 3) decide continue vs stop.
         if outcome.get("done"):

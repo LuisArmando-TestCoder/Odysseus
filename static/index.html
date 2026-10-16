@@ -710,6 +710,16 @@
           <div class="goal-progress-bar"><div class="goal-progress-fill" id="goal-progress-fill"></div></div>
           <span class="goal-rounds" id="goal-rounds"></span>
         </div>
+        <span class="goal-activity" id="goal-activity" title="Estado" data-state="idle"></span>
+        <div class="goal-queue-row" id="goal-queue-row" hidden>
+          <div class="goal-progress-bar"><div class="goal-progress-fill goal-queue-fill" id="goal-queue-fill"></div></div>
+          <span class="goal-rounds" id="goal-queue-count"></span>
+        </div>
+        <p class="goal-current" id="goal-current" hidden></p>
+        <details class="goal-trail" id="goal-trail">
+          <summary>📜 Qué ha hecho</summary>
+          <pre class="goal-trail-body" id="goal-trail-body"></pre>
+        </details>
         <p class="goal-blocked" id="goal-blocked" hidden></p>
         <div class="goal-actions">
           <button class="goal-btn" id="goal-pause" title="Pausar">⏸</button>
@@ -1000,6 +1010,7 @@
       }).catch(function(){});
     })();
     </script>
+    <div class="goal-banner" id="goal-banner" hidden></div>
     <div id="chat-history" class="chat-history" role="log" aria-live="polite"></div>
 
     <!-- Attachments strip -->
