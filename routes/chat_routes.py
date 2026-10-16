@@ -38,6 +38,7 @@ from routes.chat_helpers import (
     _enforce_chat_privileges,
 )
 from src.action_intents import message_needs_tools as _message_needs_tools
+from src.action_intents import research_needed_jev as _research_needed_jev
 
 logger = logging.getLogger(__name__)
 
@@ -439,6 +440,16 @@ def setup_chat_routes(
             if get_session_mode(session) == 'research_pending':
                 do_research = True
                 logger.info(f"Session {session} in research_pending — auto-triggering research")
+        # JEV routing: when the user hasn't explicitly toggled research, let the
+        # calibrated decision-maker classify the message as "deep research" vs
+        # "quick answer". Falls back to the regex heuristic when JEV is down.
+        if not do_research and isinstance(message, str) and message.strip():
+            try:
+                if _research_needed_jev(message):
+                    do_research = True
+                    logger.info("JEV routed message to deep research")
+            except Exception as e:
+                logger.debug(f"JEV research routing skipped: {e}")
 
         # Persist session mode (research > agent > chat)
         _effective_mode = 'research' if do_research else (chat_mode or 'chat')

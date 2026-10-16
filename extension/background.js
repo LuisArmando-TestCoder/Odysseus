@@ -13,11 +13,34 @@
 // Every bridge step is logged to the extension's service-worker console
 // (chrome://extensions → "Odysseus Browser Bridge" → "service worker").
 // Prefix "ODY" so it's easy to filter.
+//
+// Each line is ALSO forwarded to the Odysseus server's /api/browser/log
+// endpoint so the bridge's browser-side activity shows up in the SERVER's
+// tool process (the terminal running Odysseus), not just the browser console.
 function log(...args) {
+  const line = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   console.log("[ODY]", ...args);
+  _forwardLog("info", line);
 }
 function logErr(...args) {
+  const line = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   console.error("[ODY]", ...args);
+  _forwardLog("error", line);
+}
+
+// Fire-and-forget POST of a log line to the server. Never blocks or throws —
+// logging must not break the bridge.
+async function _forwardLog(level, message) {
+  try {
+    const base = await getBaseUrl();
+    await fetch(base + "/api/browser/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level, message }),
+    });
+  } catch (e) {
+    // Ignore — the server may be down or the endpoint unreachable.
+  }
 }
 
 async function getBaseUrl() {
@@ -59,8 +82,10 @@ async function findTargetTab(preferred) {
   return targets[0];
 }
 
-// Open a new tab for the requested target (default google) and wait for it to
-// finish loading so the content script is injected.
+// Open a new tab for the requested target (default google) and wait for the
+// content script to actually be ready (window.__odyBridge present), not just
+// for the tab to reach "complete" — Google's SPA hydrates after load and the
+// content script may not have injected yet.
 async function openTargetTab(target) {
   const url = TARGET_URLS[target] || TARGET_URLS.google;
   const tab = await chrome.tabs.create({ url, active: true });
@@ -75,8 +100,19 @@ async function openTargetTab(target) {
     };
     setTimeout(check, 500);
   });
-  // Small extra settle for SPA hydration.
-  await new Promise((r) => setTimeout(r, 1500));
+  // Poll for the content script's bridge to be ready (survives SPA hydration).
+  for (let i = 0; i < 20; i++) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => !!(window.__odyBridge && typeof window.__odyBridge.askAI === "function"),
+      });
+      if (results && results[0] && results[0].result) return tab;
+    } catch (e) {
+      // content script not injected yet — keep polling
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
   return tab;
 }
 
@@ -87,18 +123,45 @@ async function ensureTargetTab(target) {
   return tab;
 }
 
-// Relay {eval_token, eval_code} to a target tab's content script.
+// Relay {eval_token, eval_code} to a target tab's content script. Retries the
+// sendMessage (the content script may not be injected yet on a freshly-opened
+// tab) and falls back to injecting content.js directly if the message channel
+// never comes up.
 async function relayToTab(payload) {
   const tab = await ensureTargetTab(payload.target);
-  try {
-    return await chrome.tabs.sendMessage(tab.id, {
-      type: "ODY_EVAL",
-      eval_token: payload.eval_token,
-      eval_code: payload.eval_code,
-    });
-  } catch (e) {
-    return { ok: false, error: String((e && e.message) || e) };
+  const msg = {
+    type: "ODY_EVAL",
+    eval_token: payload.eval_token,
+    eval_code: payload.eval_code,
+  };
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const resp = await chrome.tabs.sendMessage(tab.id, msg);
+      if (resp && resp.ok) return resp;
+      // Non-ok response — surface it rather than retrying blindly.
+      return resp || { ok: false, error: "empty response from content script" };
+    } catch (e) {
+      // "Receiving end does not exist" — content script not injected yet.
+      if (attempt < 4) {
+        await new Promise((r) => setTimeout(r, 500));
+        continue;
+      }
+      // Last resort: inject content.js directly and retry once.
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ["content.js"],
+        });
+        const resp = await chrome.tabs.sendMessage(tab.id, msg);
+        if (resp && resp.ok) return resp;
+        return resp || { ok: false, error: "content script injection failed" };
+      } catch (e2) {
+        return { ok: false, error: String((e2 && e2.message) || e2) };
+      }
+    }
   }
+  return { ok: false, error: "relay failed after retries" };
 }
 
 // Read the answer from a tab by injecting a small script. This survives SPA
@@ -216,6 +279,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return sendResponse({ ok: false, error: String((e && e.message) || e) });
       }
     }
+    if (msg.type === "ODY_LOG") {
+      // content.js forwards its console lines here so they reach the server.
+      _forwardLog(msg.level || "info", String(msg.message || ""));
+      return sendResponse({ ok: true });
+    }
     sendResponse({ ok: false, error: "unknown message" });
   })();
   return true; // keep the async channel open
@@ -224,7 +292,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // External message from the Odysseus page (browserEval.js side).
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== "ODY_EVAL") return;
-  relayToTab(msg).then((r) => sendResponse(r));
+  // Always respond — even on failure — so the page's sendMessage promise
+  // settles and its watchdog can resolve the server Future. A hung
+  // sendResponse is what left the agent waiting 120s.
+  let responded = false;
+  const finish = (r) => {
+    if (responded) return;
+    responded = true;
+    try { sendResponse(r); } catch (_) {}
+  };
+  relayToTab(msg).then(finish).catch((e) => finish({ ok: false, error: String((e && e.message) || e) }));
+  // Hard timeout: if relayToTab somehow hangs, still answer.
+  setTimeout(() => finish({ ok: false, error: "relay timed out" }), 60000);
   return true;
 });
 

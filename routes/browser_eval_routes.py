@@ -23,6 +23,11 @@ class EvalResultBody(BaseModel):
     error: str = ""
 
 
+class LogBody(BaseModel):
+    level: str = "info"
+    message: str = ""
+
+
 def setup_browser_eval_routes() -> APIRouter:
     router = APIRouter(prefix="/api/browser", tags=["browser"])
 
@@ -34,5 +39,23 @@ def setup_browser_eval_routes() -> APIRouter:
         from src.browser_eval import resolve_eval
         ok = resolve_eval(body.token, {"output": body.output, "error": body.error})
         return JSONResponse({"ok": ok})
+
+    @router.post("/log")
+    async def browser_log(body: LogBody, request: Request):
+        # The extension forwards its console.log/console.error lines here so
+        # the bridge's browser-side activity is visible in the SERVER's tool
+        # process (the terminal running Odysseus), not just the browser's
+        # DevTools / service-worker console. Fire-and-forget; always 200.
+        msg = (body.message or "").strip()
+        if not msg:
+            return JSONResponse({"ok": True})
+        line = f"[ODY-BROWSER] {msg}"
+        if (body.level or "info").lower() in ("error", "warn", "warning"):
+            print(line, flush=True)
+            logger.warning(msg)
+        else:
+            print(line, flush=True)
+            logger.info(msg)
+        return JSONResponse({"ok": True})
 
     return router

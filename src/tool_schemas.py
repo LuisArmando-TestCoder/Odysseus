@@ -1220,6 +1220,35 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "google_ai_search",
+            "description": "Ask Google AI Mode (the user's own logged-in browser session, via the Odysseus Browser Bridge extension) a research question and get its answer back. This is a FIRST-CLASS search source — prefer it for open-ended research, 'look into X', 'find PDFs about Y', and any question where Google's AI overview is more useful than a keyword search. The extension opens (or reuses) a Google tab, submits the question, extracts the answer, and returns it. The prompt is automatically made contextually heavy: it requires concrete PDF titles + URLs in the answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The research question to ask Google AI Mode"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "download_pdf",
+            "description": "Download a PDF from a URL into the current chat's session folder (data/documents/<session_id>/). Use this to save PDFs that Google AI Mode (or any search) referenced, so they become part of the research corpus. Returns the absolute path of the saved file. Accepts a URL or a JSON object {\"url\": \"...\", \"title\": \"optional filename\"}.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The PDF URL to download (http/https)"},
+                    "title": {"type": "string", "description": "Optional filename stem (defaults to the URL basename)"}
+                },
+                "required": ["url"]
+            }
+        }
+    },
 ]
 
 
@@ -1390,6 +1419,10 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = args.get("model", "auto") + "\n" + args.get("problem", "")
     elif tool_type == "run_javascript":
         content = args.get("code", "")
+    elif tool_type == "google_ai_search":
+        content = args.get("query", "")
+    elif tool_type == "download_pdf":
+        content = json.dumps(args)
     elif tool_type == "youtube_transcript":
         lang = args.get("language")
         if lang:

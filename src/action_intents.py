@@ -88,3 +88,68 @@ def message_needs_tools(text: str, patterns: Iterable[Pattern[str]] = _TOOL_INTE
     if not text:
         return False
     return any(pattern.search(text) for pattern in patterns)
+
+
+# ---------------------------------------------------------------------------
+# JEV routing: quick answer vs deep research
+# ---------------------------------------------------------------------------
+# The user wants the chat and the deep-researcher to be "one in a way", with
+# smart routing between them. JEV (src.decisions) is the project's calibrated
+# decision-maker (used by the voice pipeline and the JS safety guard), so we
+# ask it a typed `noul` question: "does this request need deep research, or is
+# it answerable from context?" The regex heuristic above stays as a fast,
+# offline fallback when JEV is unavailable.
+
+_RESEARCH_HINT_RE = re.compile(
+    r"\b(?:research|deep\s+dive|look\s+into|investigate|find\s+out\s+about|"
+    r"study\s+up\s+on|report\s+on|do\s+research|look\s+up\s+everything)\b",
+    re.I,
+)
+
+
+def research_needed_jev(text: str, *, threshold: float = 0.6) -> bool:
+    """Decide whether a user message warrants deep research (vs a quick answer).
+
+    Uses JEV's calibrated `noul` answer when available; falls back to the
+    regex heuristic when JEV is disabled / unreachable / no key. Never raises —
+    routing must degrade gracefully, not break the chat.
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+
+    # Fast path: an explicit research verb is a strong signal — skip the
+    # network round-trip and route to research immediately.
+    if _RESEARCH_HINT_RE.search(text):
+        return True
+
+    try:
+        from src.decisions import jev_decide_sync, DecisionsUnavailable
+        answers = jev_decide_sync(
+            state=text,
+            questions={
+                "research_needed": {
+                    "type": "noul",
+                    "instructions": (
+                        "Does this request require deep, multi-source research "
+                        "(searching the web, gathering and synthesizing many sources, "
+                        "producing a researched report), or is it a quick question "
+                        "answerable from the assistant's own knowledge / the current "
+                        "conversation context? Answer 'yes' only for genuine research "
+                        "tasks, not for simple factual questions or chit-chat."
+                    ),
+                    "criteria": {
+                        "true": "Needs deep research",
+                        "false": "Quick answer / no research needed",
+                    },
+                }
+            },
+        )
+        ans = answers.get("research_needed", {})
+        value = ans.get("value")
+        if value is None:
+            return False
+        return float(value) >= threshold
+    except (DecisionsUnavailable, Exception):
+        # JEV unavailable — fall back to the regex heuristic.
+        return _RESEARCH_HINT_RE.search(text) is not None

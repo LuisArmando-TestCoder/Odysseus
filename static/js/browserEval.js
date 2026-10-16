@@ -33,11 +33,16 @@ function _serialize(value) {
 // to /api/browser/eval-result itself. We must NOT also POST from here, or the
 // single-use token would be double-resolved.
 
+// The extension's manifest.json now pins a stable `key`, so its ID is
+// deterministic: leabmickmdgchdpn. Fall back to it so the bridge works even
+// before the user manually registers the ID in localStorage.
+const _DEFAULT_EXT_ID = 'leabmickmdgchdpn';
+
 function _extId() {
   try {
-    return window.ODYSSEUS_EXT_ID || localStorage.getItem('ody_ext_id') || null;
+    return window.ODYSSEUS_EXT_ID || localStorage.getItem('ody_ext_id') || _DEFAULT_EXT_ID;
   } catch (e) {
-    return window.ODYSSEUS_EXT_ID || null;
+    return window.ODYSSEUS_EXT_ID || _DEFAULT_EXT_ID;
   }
 }
 
@@ -66,24 +71,50 @@ export async function handleEvalRequest(payload) {
   // External-tab path: forward to the extension when flagged + installed.
   if (_isExternal(code) && _extId() && chrome && chrome.runtime && chrome.runtime.sendMessage) {
     const stripped = code.replace(/^\s*\/\*@external\*\/\s*/, '');
-    try {
-      const resp = await chrome.runtime.sendMessage(_extId(), {
-        type: 'ODY_EVAL',
-        eval_token: token,
-        eval_code: stripped,
-      });
-      if (resp && resp.ok) {
-        // The extension already POSTed the result and resolved the Future.
-        return true;
+    const extId = _extId();
+
+    // Watchdog: the server's Future must ALWAYS resolve. If the extension
+    // never answers (MV3 cold-start, dead ID, hung relay), POST an error so
+    // the agent gets a result instead of a 120s timeout. The first successful
+    // resolution wins; the watchdog is a no-op once the token is resolved.
+    let settled = false;
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      _postResult(token, { error: 'extension did not respond in time (is the Odysseus Browser Bridge loaded?)' });
+    }, 15000);
+
+    // Retry the external sendMessage — the first call often wakes a sleeping
+    // MV3 service worker and loses the reply; a second call succeeds.
+    let resp = null;
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        resp = await chrome.runtime.sendMessage(extId, {
+          type: 'ODY_EVAL',
+          eval_token: token,
+          eval_code: stripped,
+        });
+        if (resp && resp.ok) {
+          clearTimeout(watchdog);
+          settled = true;
+          // The extension already POSTed the result and resolved the Future.
+          return true;
+        }
+        lastErr = (resp && resp.error) || 'extension reported failure';
+      } catch (e) {
+        lastErr = String((e && e.message) || e);
       }
-      // Extension responded but reported failure → surface it, never hang.
-      await _postResult(token, { error: (resp && resp.error) || 'extension reported failure' });
-      return true;
-    } catch (e) {
-      // Extension unreachable → fail loudly so the agent's Future resolves.
-      await _postResult(token, { error: 'extension unreachable: ' + String((e && e.message) || e) });
-      return true;
+      // Brief backoff before retrying (cold-start wake-up).
+      await new Promise((r) => setTimeout(r, 500));
     }
+
+    clearTimeout(watchdog);
+    if (!settled) {
+      settled = true;
+      await _postResult(token, { error: 'extension unreachable: ' + lastErr });
+    }
+    return true;
   }
 
   // In-page path (current behavior, unchanged).

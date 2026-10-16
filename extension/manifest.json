@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Odysseus Browser Bridge",
   "version": "0.2.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9HbuvXxRgFD5QWfmV9E7BCmsOFJyi76eFvVPi65pNx+oSYV7Aa3KNzzN/yaG3xncyDgoyiiAneu34iZ1300PE8RBlZm6rUUqxkNvmqz1jHYVwESIr1LQmbClgTynhuwVvcjnNTkC5OioPLGpaC+BxNzcadDr/zHgS8QsOMVnbQ391ozTLb3ssZtIcIV0r9CCb2Dwr9v4uwzfXUsLz8dqyaT8NpHC9JfM57ANQLV4aQoIZCpSc5p8IRSF9tiWTwS0h8VLiwwrWRUECmFz48pPLvHQF+GazKHkrUIAZVh5jUwXwPFCWEOt25BA5s2mhQ4FYRdbZP2eQhsVisXpzdO41QIDAQAB",
   "description": "Lets the Odysseus agent run JavaScript in the user's own active tab (Google AI mode, YouTube 'Ask', or any JS-rendered page) and read results back.",
   "permissions": ["scripting", "tabs", "activeTab", "storage", "contextMenus", "commands"],
   "host_permissions": [

@@ -27,6 +27,166 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Google AI Mode (browser-bridge search provider)
+# ---------------------------------------------------------------------------
+
+# The prompt is made contextually heavy: it explicitly demands concrete PDF
+# titles + URLs so the answer is actionable (the agent can then download them
+# into the per-session folder). This is the "enforce PDF links" requirement.
+_GOOGLE_AI_PROMPT_TEMPLATE = (
+    "Research question: {query}\n\n"
+    "Answer thoroughly and cite your sources. IMPORTANT: for every claim, "
+    "provide concrete document references — especially PDFs. For each PDF, "
+    "give its exact title and its full URL (https://...). If a relevant "
+    "academic paper, report, or official document exists as a PDF, you MUST "
+    "list its title and URL. Do not summarize without naming the underlying "
+    "PDF documents."
+)
+
+
+async def do_google_ai_search(content: str, session_id: Optional[str] = None,
+                              owner: Optional[str] = None,
+                              progress_cb=None) -> Dict:
+    """Ask Google AI Mode via the browser bridge and return its answer.
+
+    This is the first-class search provider: it drives the user's own
+    logged-in Google session (through the Odysseus Browser Bridge extension)
+    instead of a keyword API. The prompt is made contextually heavy so the
+    answer includes concrete PDF titles + URLs.
+    """
+    query = (content or "").strip()
+    if not query:
+        return {"error": "google_ai_search: a query is required", "exit_code": 1}
+
+    prompt = _GOOGLE_AI_PROMPT_TEMPLATE.format(query=query)
+
+    # Escape the prompt for safe embedding inside a JS string literal.
+    import json as _json
+    prompt_js = _json.dumps(prompt)
+
+    # The /*@external*/ marker tells browserEval.js to forward this to the
+    # extension, which opens/reuses a Google tab, submits, extracts, and
+    # posts the result back. The async IIFE wrapper is handled by content.js.
+    code = (
+        "/*@external*/\n"
+        f"return await window.__odyBridge.askAI({prompt_js});"
+    )
+
+    from src.browser_eval import do_run_javascript
+    result = await do_run_javascript(
+        code, session_id=session_id, owner=owner, progress_cb=progress_cb
+    )
+
+    # do_run_javascript returns {"output": ..., "exit_code": ...} or
+    # {"output": ..., "error": ..., "exit_code": ...}. Normalize to the
+    # standard tool result shape.
+    if result.get("error"):
+        return {"error": result["error"], "exit_code": 1}
+    return {"output": result.get("output", ""), "exit_code": result.get("exit_code", 0)}
+
+
+async def do_download_pdf(content: str, session_id: Optional[str] = None,
+                          owner: Optional[str] = None) -> Dict:
+    """Download a PDF from a URL into the current chat's session folder.
+
+    Accepts a bare URL or a JSON object {"url": "...", "title": "..."}.
+    Saves to data/documents/<session_id>/ and returns the absolute path.
+    Uses the SSRF-safe fetch from src.docfind (curl_cffi → httpx fallback).
+    """
+    import asyncio
+    from urllib.parse import urlparse, unquote
+
+    raw = (content or "").strip()
+    url = ""
+    title = ""
+    if raw.startswith("{"):
+        try:
+            args = json.loads(raw)
+            if isinstance(args, dict):
+                url = str(args.get("url") or "").strip()
+                title = str(args.get("title") or "").strip()
+        except (json.JSONDecodeError, TypeError):
+            url = raw
+    else:
+        url = raw.split("\n")[0].strip()
+
+    if not url:
+        return {"error": "download_pdf: a URL is required", "exit_code": 1}
+    if not url.lower().startswith(("http://", "https://")):
+        return {"error": f"download_pdf: unsupported URL scheme (only http/https): {url[:80]}", "exit_code": 1}
+
+    # SSRF guard: refuse private/loopback/metadata hosts.
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return {"error": "download_pdf: invalid URL", "exit_code": 1}
+    if not host:
+        return {"error": "download_pdf: invalid URL (no host)", "exit_code": 1}
+    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or host.endswith(".local"):
+        return {"error": "download_pdf: private/loopback host is not allowed", "exit_code": 1}
+    if host == "169.254.169.254" or host.endswith(".internal"):
+        return {"error": "download_pdf: metadata host is not allowed", "exit_code": 1}
+
+    # Determine the target directory: the session's own documents folder.
+    from src.document_files import _session_dir
+    sdir = _session_dir(session_id)
+
+    # Derive a filename: explicit title, else the URL basename.
+    if title:
+        stem = re.sub(r"[^\w.\- ]+", " ", title, flags=re.UNICODE)
+        stem = re.sub(r"\s+", "-", stem).strip(".-") or "document"
+    else:
+        stem = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "document"
+        stem = re.sub(r"[^\w.\-]+", "_", stem).strip("._") or "document"
+    if not stem.lower().endswith(".pdf"):
+        stem += ".pdf"
+    stem = stem[:120]
+
+    # Fetch the bytes (blocking) in a thread.
+    from src.docfind import _fetch
+    try:
+        data = await asyncio.to_thread(_fetch, url, 30)
+    except Exception as e:
+        return {"error": f"download_pdf: fetch failed: {e}", "exit_code": 1}
+
+    if not data:
+        return {"error": "download_pdf: empty response body", "exit_code": 1}
+
+    # Verify it's actually a PDF (or at least not an HTML error page).
+    if data[:5].lower() != b"%pdf-":
+        # Some servers serve PDFs without the magic header; check content-type
+        # is not available here, so just warn but still save if it looks binary.
+        if b"<!doctype html" in data[:2000].lower() or b"<html" in data[:2000].lower():
+            return {"error": "download_pdf: URL returned HTML, not a PDF", "exit_code": 1}
+
+    path = os.path.join(sdir, stem)
+    # Avoid overwriting an existing file with a different one.
+    if os.path.exists(path):
+        base, ext = os.path.splitext(stem)
+        i = 1
+        while os.path.exists(os.path.join(sdir, f"{base}-{i}{ext}")):
+            i += 1
+        path = os.path.join(sdir, f"{base}-{i}{ext}")
+
+    try:
+        def _write():
+            with open(path, "wb") as f:
+                f.write(data)
+            return len(data)
+        size = await asyncio.to_thread(_write)
+    except OSError as e:
+        return {"error": f"download_pdf: write failed: {e}", "exit_code": 1}
+
+    return {
+        "output": f"Downloaded PDF ({size} bytes) to {os.path.abspath(path)}",
+        "path": os.path.abspath(path),
+        "size": size,
+        "exit_code": 0,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------

@@ -1026,6 +1026,16 @@ async def execute_tool_block(
         result = await do_run_javascript(
             content, session_id=session_id, owner=owner, progress_cb=progress_cb
         )
+    elif tool == "google_ai_search":
+        desc = "google_ai_search: asking Google AI Mode"
+        from src.tool_implementations import do_google_ai_search
+        result = await do_google_ai_search(
+            content, session_id=session_id, owner=owner, progress_cb=progress_cb
+        )
+    elif tool == "download_pdf":
+        desc = "download_pdf: downloading PDF"
+        from src.tool_implementations import do_download_pdf
+        result = await do_download_pdf(content, session_id=session_id, owner=owner)
     elif tool == "manage_tasks":
         desc = "manage_tasks"
         result = await do_manage_tasks(content, owner=owner)

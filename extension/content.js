@@ -17,10 +17,24 @@
 // Logs to the page's DevTools console (F12 on the Google/YouTube tab).
 // Prefix "ODY" so it's easy to filter.
 function log(...args) {
+  const line = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   console.log("[ODY]", ...args);
+  _forwardLog("info", line);
 }
 function logErr(...args) {
+  const line = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   console.error("[ODY]", ...args);
+  _forwardLog("error", line);
+}
+
+// Forward a log line to the background worker, which POSTs it to the server's
+// /api/browser/log endpoint so it shows in the server's tool process.
+function _forwardLog(level, message) {
+  try {
+    chrome.runtime.sendMessage({ type: "ODY_LOG", level, message }).catch(() => {});
+  } catch (e) {
+    // Ignore — logging must never break the bridge.
+  }
 }
 
 // ── Text-node → nearest-clickable walker ────────────────────────────────────
