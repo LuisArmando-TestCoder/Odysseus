@@ -28,6 +28,12 @@
   ],
   "action": { "default_popup": "popup.html", "default_title": "Odysseus Bridge" },
   "options_page": "options.html",
+  "externally_connectable": {
+    "matches": [
+      "http://127.0.0.1/*",
+      "http://localhost/*"
+    ]
+  },
   "commands": {
     "run-ai-ask": {
       "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" },

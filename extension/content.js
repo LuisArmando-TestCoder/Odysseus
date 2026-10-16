@@ -300,9 +300,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     // Generic path: execute arbitrary eval_code in the page.
+    // The agent's external code uses `return await window.__odyBridge.askAI(...)`,
+    // so we wrap it in an async IIFE — a bare `new Function` body is NOT async
+    // and `await` at its top level is a SyntaxError.
     let result;
     try {
-      const fn = new Function('"use strict";\n' + code);
+      const fn = new Function('"use strict";\nreturn (async () => {\n' + code + '\n})();');
       let ret = fn();
       if (ret && typeof ret.then === "function") ret = await ret;
       result = { output: ret === undefined ? "" : String(ret) };
