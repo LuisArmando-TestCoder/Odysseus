@@ -21,6 +21,11 @@
 
 .msg {
   border-radius: 14px !important;
+  /* Long threads: let the browser skip layout/paint of off-screen bubbles.
+     contain-intrinsic-size gives a stable placeholder so scrollbar height
+     doesn't jump as bubbles scroll into view. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 
 /* User bubble — accent-tinted glass, right-aligned */

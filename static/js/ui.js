@@ -487,6 +487,24 @@ function _smoothScrollStep() {
 }
 
 /**
+ * True when the element is scrolled to (or near) the bottom. Shared by every
+ * surface so auto-scroll never yanks the viewport while the user is reading up.
+ */
+export function isStuckToBottom(el) {
+  if (!el) return false;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
+
+/**
+ * Only scroll to bottom if the user was already at the bottom. Use this for
+ * per-chunk streaming updates (chat feed, voice transcript) so a user who
+ * scrolled up to read isn't dragged back down.
+ */
+export function maybeScrollToBottom(el) {
+  if (isStuckToBottom(el)) el.scrollTop = el.scrollHeight;
+}
+
+/**
  * Instant scroll to bottom — use for non-streaming contexts
  * like loading history or switching sessions.
  */
@@ -852,6 +870,8 @@ const uiModule = {
   styledPrompt,
   scrollHistory,
   scrollHistoryInstant,
+  isStuckToBottom,
+  maybeScrollToBottom,
   setAutoScroll,
   getAutoScroll,
   autoResize,

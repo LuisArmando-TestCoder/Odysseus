@@ -4650,6 +4650,7 @@ import streamRouter from './streamRouter.js';
     initListeners,
     openAttachment,
     addMessage: chatRenderer.addMessage,
+    addMessagesBatch: chatRenderer.addMessagesBatch,
     displayMetrics: chatRenderer.displayMetrics,
     handleChatSubmit,
     abortCurrentRequest,

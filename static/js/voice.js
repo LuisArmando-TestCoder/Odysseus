@@ -754,7 +754,13 @@ function _newLine(who) {
 
 function _scrollTranscript() {
   const box = $('#vx-transcript');
-  if (box) box.scrollTop = box.scrollHeight;
+  if (!box) return;
+  // Sticky-scroll: only follow the live transcript if the user is already
+  // at (or near) the bottom. If they scrolled up to read, don't yank them
+  // back down on every new line.
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 48) {
+    box.scrollTop = box.scrollHeight;
+  }
 }
 
 function _systemLine(text, kind = 'info') {

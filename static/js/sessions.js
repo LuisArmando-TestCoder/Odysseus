@@ -1964,6 +1964,10 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
          <p>Messages will be routed through your OpenClaw agent. The agent has access to tools, memory, and skills configured in your OpenClaw workspace.</p>`,
         'OpenClaw');
     } else if (msgHistory.length) {
+      // Batch the whole history into a single DOM commit (one reflow instead
+      // of N) and a single scoped hljs/mermaid pass — avoids the O(n²) layout
+      // thrash and global re-scans that froze long threads on load.
+      const batch = [];
       for (const msg of msgHistory) {
         const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
         let displayContent;
@@ -1984,14 +1988,31 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
             displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
           }
         }
-        window.chatModule.addMessage(msg.role, markdownModule.renderContent(displayContent), modelName, meta);
+        batch.push({
+          role: msg.role,
+          content: markdownModule.renderContent(displayContent),
+          modelName,
+          metadata: meta,
+        });
+      }
+      if (window.chatModule && window.chatModule.addMessagesBatch) {
+        window.chatModule.addMessagesBatch(batch);
+      } else {
+        // Fallback for any path where the batch helper isn't wired yet.
+        for (const m of batch) {
+          window.chatModule.addMessage(m.role, m.content, m.modelName, m.metadata);
+        }
       }
     } else {
       if (window.chatModule && window.chatModule.showWelcomeScreen) window.chatModule.showWelcomeScreen();
       // Don't highlight empty sessions — feels like nothing is selected
       document.querySelectorAll('.list-item.active-session').forEach(el => el.classList.remove('active-session'));
     }
-    uiModule.scrollHistoryInstant();
+    // Only force-scroll to the bottom if the user was already there — don't
+    // reset a saved scroll position on every session load.
+    if (chatHistory && uiModule.isStuckToBottom && uiModule.isStuckToBottom(chatHistory)) {
+      uiModule.scrollHistoryInstant();
+    }
 
     // Fade in and re-enable message animations
     if (chatHistory) {

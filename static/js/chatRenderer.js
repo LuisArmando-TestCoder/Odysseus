@@ -1957,11 +1957,14 @@ export function displayMetrics(messageElement, metrics) {
 /**
  * Add a message to the chat history.
  */
-export function addMessage(role, content, modelName, metadata) {
+export function addMessage(role, content, modelName, metadata, _target) {
   try {
     hideWelcomeScreen();
     const box = document.getElementById('chat-history');
     if (!box) { console.error('Chat history element not found'); return; }
+    // _target lets addMessagesBatch render into a DocumentFragment so a whole
+    // history restore commits in a single reflow instead of N.
+    const target = _target || box;
 
     var esc = uiModule.esc;
     const textRaw = Array.isArray(content) ? markdownModule.renderContent(content) : content;
@@ -2022,7 +2025,7 @@ export function addMessage(role, content, modelName, metadata) {
           wrap.appendChild(body);
           wrap.dataset.raw = txt;
           if (metadata?._db_id) wrap.dataset.dbId = metadata._db_id;
-          box.appendChild(wrap);
+          target.appendChild(wrap);
           lastWrap = wrap;
           if (!firstMsgAi) firstMsgAi = wrap;
           lastMsgAi = wrap;
@@ -2039,7 +2042,7 @@ export function addMessage(role, content, modelName, metadata) {
             threadWrap.className = 'agent-thread';
             // Extend line up if there's a chat bubble above
             if (txt) threadWrap.classList.add('has-top');
-            box.appendChild(threadWrap);
+            target.appendChild(threadWrap);
           }
           for (const ev of roundTools) {
             const ok = (ev.exit_code === 0 || ev.exit_code == null);
@@ -2064,7 +2067,7 @@ export function addMessage(role, content, modelName, metadata) {
 
           for (const ev of roundTools) {
             if (ev.image_url) {
-              box.appendChild(buildImageBubble(ev.image_url, ev.image_prompt, ev.image_model, ev.image_size, ev.image_quality, ev.image_id));
+              target.appendChild(buildImageBubble(ev.image_url, ev.image_prompt, ev.image_model, ev.image_size, ev.image_quality, ev.image_id));
             }
           }
         }
@@ -2078,9 +2081,11 @@ export function addMessage(role, content, modelName, metadata) {
       }
 
       if (window.hljs) {
-        box.querySelectorAll('pre code:not(.hljs)').forEach(b => window.hljs.highlightElement(b));
+        target.querySelectorAll('pre code:not(.hljs)').forEach(b => window.hljs.highlightElement(b));
       }
-      if (markdownModule.renderMermaid) markdownModule.renderMermaid(box);
+      // Mermaid needs the nodes attached to the document to measure; when
+      // batching (target is a detached fragment) defer it to addMessagesBatch.
+      if (markdownModule.renderMermaid && target === box) markdownModule.renderMermaid(box);
       return lastWrap;
     }
 
@@ -2355,16 +2360,48 @@ export function addMessage(role, content, modelName, metadata) {
       wrap.appendChild(createUserMsgFooter(wrap));
     }
 
-    box.appendChild(wrap);
+    target.appendChild(wrap);
 
     // TTS is now part of the msg-actions system
-    if (role === 'assistant' && markdownModule.renderMermaid) {
+    if (role === 'assistant' && markdownModule.renderMermaid && target === box) {
       markdownModule.renderMermaid(wrap);
     }
     return wrap;
   } catch (error) {
     console.error('Error in addMessage:', error);
     if (uiModule) uiModule.showError('Failed to add message: ' + error.message);
+  }
+}
+
+/**
+ * Add many messages in a single DOM commit (one reflow instead of N).
+ * Renders each message into a DocumentFragment, appends the fragment once,
+ * then runs a single scoped hljs/mermaid pass over only the new nodes.
+ * Used by history restore to avoid O(n²) layout thrash and global re-scans.
+ */
+export function addMessagesBatch(messages) {
+  try {
+    hideWelcomeScreen();
+    const box = document.getElementById('chat-history');
+    if (!box) { console.error('Chat history element not found'); return; }
+
+    const frag = document.createDocumentFragment();
+    for (const m of messages) {
+      addMessage(m.role, m.content, m.modelName, m.metadata, frag);
+    }
+    const newNodes = Array.from(frag.childNodes);
+    box.appendChild(frag);
+
+    for (const node of newNodes) {
+      if (node.nodeType !== 1) continue; // skip non-element nodes
+      if (window.hljs) {
+        node.querySelectorAll('pre code:not(.hljs)').forEach(b => window.hljs.highlightElement(b));
+      }
+      if (markdownModule.renderMermaid) markdownModule.renderMermaid(node);
+    }
+  } catch (error) {
+    console.error('Error in addMessagesBatch:', error);
+    if (uiModule) uiModule.showError('Failed to add messages: ' + error.message);
   }
 }
 
@@ -2388,6 +2425,7 @@ const chatRenderer = {
   createMsgFooter,
   displayMetrics,
   addMessage,
+  addMessagesBatch,
   updateMessageAttachments,
 };
 
