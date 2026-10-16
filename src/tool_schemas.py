@@ -1210,7 +1210,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_javascript",
-            "description": "Run JavaScript in the user's own browser (the open Odysseus page) and get the stringified result back. Use for anything only the browser can do: read the current page / URL / time, control the UI, open a link. The code runs as a function body; use `return <expr>;` to return a value.",
+            "description": "Run JavaScript in the user's own browser (the open Odysseus page) and get the stringified result back. Use for anything only the browser can do: read the current page / URL / time, control the UI, open a link. The code runs as a function body; use `return <expr>;` to return a value. To ask Google AI mode or YouTube 'Ask' (when the Odysseus Browser Bridge extension is installed), prefix the code with the marker comment `/*@external*/` and call `return await window.__odyBridge.askAI(\"your question\");` — the extension runs it in the active Google/YouTube tab and returns the answer.",
             "parameters": {
                 "type": "object",
                 "properties": {

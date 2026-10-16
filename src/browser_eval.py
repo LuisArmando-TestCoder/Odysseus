@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 # is safe AND this certain it is not a prompt injection / override.
 SAFETY_MIN = 0.98
 INJECTION_MAX = 0.05
-BROWSER_TIMEOUT = 45.0   # generous enough for a tab navigation/network round trip
+BROWSER_TIMEOUT = 120.0  # generous enough for a tab navigation/network round trip;
+                         # Google/YouTube AI-mode answers stream and can exceed 45s
 
 
 # ── Result broker ───────────────────────────────────────────────────────────

@@ -2,25 +2,28 @@
 //
 // Roles:
 //   1. Relay an eval payload {eval_token, eval_code} from the Odysseus page
-//      (chrome.runtime.onMessageExternal) to the active YouTube tab.
+//      (chrome.runtime.onMessageExternal) to the active tab.
 //   2. Relay results back to Odysseus by POSTing to /api/browser/eval-result.
 //   3. Handle popup ("ODY_ASK"), context-menu and keyboard "ask" actions by
-//      delegating to the content script's walker-based askYouTubeAI driver.
+//      delegating to the content script's walker-based askAI driver.
 
 async function getBaseUrl() {
   const d = await chrome.storage.sync.get({ baseUrl: "http://127.0.0.1:5173" });
   return String(d.baseUrl || "").replace(/\/+$/, "");
 }
 
-async function findYouTubeTab() {
-  const tabs = await chrome.tabs.query({ url: "*://*.youtube.com/*" });
+// Target the currently active tab in the current window (whatever site it is),
+// rather than a hardcoded YouTube query. This is what fixes the
+// "Receiving end does not exist" crash when the user is on a Google page.
+async function findTargetTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs.length ? tabs[0] : null;
 }
 
-// Relay {eval_token, eval_code} to the YouTube tab content script.
-async function relayToYouTube(payload) {
-  const tab = await findYouTubeTab();
-  if (!tab) return { ok: false, error: "No YouTube tab open." };
+// Relay {eval_token, eval_code} to the active tab's content script.
+async function relayToTab(payload) {
+  const tab = await findTargetTab();
+  if (!tab) return { ok: false, error: "No active tab." };
   try {
     return await chrome.tabs.sendMessage(tab.id, {
       type: "ODY_EVAL",
@@ -32,11 +35,11 @@ async function relayToYouTube(payload) {
   }
 }
 
-// Ask YouTube AI directly: delegate to the content script's walker-based
-// driver (which locates the AI-mode button by its visible text label).
-async function askYouTube(prompt) {
-  const tab = await findYouTubeTab();
-  if (!tab) return { ok: false, error: "No YouTube tab open. Open youtube.com first." };
+// Ask the active tab's AI mode directly: delegate to the content script's
+// walker-based driver (which auto-detects Google vs YouTube by hostname).
+async function askAI(prompt) {
+  const tab = await findTargetTab();
+  if (!tab) return { ok: false, error: "No active tab." };
   try {
     return await chrome.tabs.sendMessage(tab.id, {
       type: "ODY_EVAL",
@@ -55,7 +58,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "ODY_ASK") {
       const prompt = String(msg.prompt || "").trim();
       if (!prompt) return sendResponse({ ok: false, error: "Empty prompt." });
-      const resp = await askYouTube(prompt);
+      const resp = await askAI(prompt);
       return sendResponse(resp);
     }
     if (msg.type === "ODY_POST_RESULT") {
@@ -81,7 +84,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // External message from the Odysseus page (browserEval.js side).
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== "ODY_EVAL") return;
-  relayToYouTube(msg).then((r) => sendResponse(r));
+  relayToTab(msg).then((r) => sendResponse(r));
   return true;
 });
 
@@ -89,7 +92,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "ody-ask",
-    title: "Ask YouTube AI (Odysseus)",
+    title: "Ask AI (Odysseus)",
     contexts: ["selection"],
   });
 });
