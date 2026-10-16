@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Odysseus Bridge</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --border: #2a2f3a;
+      --text: #e6e8ee;
+      --muted: #8b93a5;
+      --accent: #4f8cff;
+      --accent-hover: #3a76e8;
+      --ok: #2ecc71;
+      --err: #e74c3c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 360px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+    }
+    header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+    header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+    main { padding: 12px 14px; }
+    textarea {
+      width: 100%;
+      min-height: 64px;
+      resize: vertical;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font: inherit;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    button {
+      width: 100%;
+      margin-top: 8px;
+      padding: 9px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #status { margin-top: 8px; min-height: 16px; white-space: pre-wrap; word-break: break-word; }
+    #status.ok { color: var(--ok); }
+    #status.err { color: var(--err); }
+    details { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; }
+    summary {
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .tutorial { padding: 0 12px 12px; color: var(--muted); line-height: 1.5; }
+    .tutorial ol { margin: 6px 0 0; padding-left: 18px; }
+    .tutorial li { margin-bottom: 6px; }
+    .tutorial code {
+      background: var(--panel);
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .tutorial .step-title { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="dot"></span>
+    <h1>Odysseus Bridge</h1>
+  </header>
+  <main>
+    <textarea id="prompt" placeholder="Ask YouTube AI anything…"></textarea>
+    <button id="ask">Ask YouTube AI</button>
+    <div id="status"></div>
+
+    <details>
+      <summary>How to enable this extension (step-by-step)</summary>
+      <div class="tutorial">
+        <ol>
+          <li>
+            <span class="step-title">Load the extension unpacked.</span><br />
+            <b>Chrome:</b> open <code>chrome://extensions</code> → toggle
+            <b>Developer mode</b> (top-right) → click <b>Load unpacked</b> →
+            select the <code>extension/</code> folder.
+            <br />
+            <b>Firefox:</b> open <code>about:debugging#/runtime/this-firefox</code>
+            → <b>Load Temporary Add-on…</b> → select <code>manifest.json</code>.
+          </li>
+          <li>
+            <span class="step-title">Confirm it's enabled.</span><br />
+            The Odysseus Bridge icon should appear in your toolbar.
+          </li>
+          <li>
+            <span class="step-title">Open YouTube and log in.</span><br />
+            Go to <code>youtube.com</code> and make sure you're signed in —
+            the AI-mode ("Ask") button only appears for logged-in users.
+          </li>
+          <li>
+            <span class="step-title">(Optional) Set your Odysseus URL.</span><br />
+            Right-click the extension → <b>Options</b> → set the base URL if it
+            isn't <code>http://127.0.0.1:5173</code>.
+          </li>
+          <li>
+            <span class="step-title">Use it.</span><br />
+            Type a question above and click <b>Ask YouTube AI</b>, or highlight
+            text on a video → right-click → <b>Ask YouTube AI (Odysseus)</b>, or
+            press <code>Cmd+Shift+Y</code> (Mac) / <code>Ctrl+Shift+Y</code>.
+          </li>
+        </ol>
+      </div>
+    </details>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

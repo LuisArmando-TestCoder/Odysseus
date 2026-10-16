@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Odysseus Bridge — Options</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --border: #2a2f3a;
+      --text: #e6e8ee;
+      --muted: #8b93a5;
+      --accent: #4f8cff;
+      --ok: #2ecc71;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      padding: 24px;
+      max-width: 520px;
+    }
+    h1 { font-size: 18px; margin: 0 0 16px; }
+    label { display: block; margin-bottom: 6px; color: var(--muted); }
+    input {
+      width: 100%;
+      padding: 9px;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    button {
+      margin-top: 12px;
+      padding: 9px 16px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #saved { margin-top: 10px; color: var(--ok); min-height: 18px; }
+    p.hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Odysseus Bridge — Options</h1>
+  <label for="baseUrl">Odysseus base URL</label>
+  <input id="baseUrl" type="text" placeholder="http://127.0.0.1:5173" />
+  <p class="hint">
+    This is where the extension posts results back to Odysseus
+    (<code>/api/browser/eval-result</code>). Defaults to
+    <code>http://127.0.0.1:5173</code>.
+  </p>
+  <button id="save">Save</button>
+  <div id="saved"></div>
+  <script src="options.js"></script>
+</body>
+</html>
