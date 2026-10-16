@@ -1590,7 +1590,10 @@ async def stream_agent_loop(
             "that are already confirmed there. Do NOT re-extract or re-derive "
             "anything listed above. RESUME from the last step: do the ONE next "
             "un-done action, then append a 1-line summary to your checkpoint "
-            "via the `checkpoint` tool so the next turn keeps advancing."
+            "via the `checkpoint` tool so the next turn keeps advancing.\n"
+            "When you have findings/evidence/results, accumulate them into your "
+            "findings document with the `document_append` tool (append-only — "
+            "NEVER rewrite with create_document/update_document, which replace)."
         )
         # Prepend as a system message so it carries the same authority as the
         # base system prompt and is never mistaken for a user turn.

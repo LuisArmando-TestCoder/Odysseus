@@ -20,6 +20,7 @@
 
 import * as vectors from './voice_vectors.js';
 import streamRouter from './streamRouter.js';
+import wakeLock from './wakeLock.js';
 
 const BANDS = 64;
 const STATE_COLORS = {
@@ -2678,6 +2679,7 @@ async function startVoice() {
   _connecting = false;
   _active = true;
   _muted = false;
+  wakeLock.acquire('voice');
   _callStart = Date.now();
   clearInterval(_timerInt);
   _timerInt = setInterval(() => {
@@ -2719,6 +2721,7 @@ async function stopVoice(keepError = false) {
   clearTimeout(_diagT);
   _active = false;
   _connecting = false;
+  wakeLock.release('voice');
   _teardown();
   clearInterval(_timerInt);
   _root?.classList.remove('connected');

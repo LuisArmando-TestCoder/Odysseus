@@ -399,6 +399,126 @@ async def do_update_document(content: str, doc_id: Optional[str] = None, owner: 
         db.close()
 
 
+async def do_document_append(content: str, doc_id: Optional[str] = None,
+                             title: Optional[str] = None,
+                             session_id: Optional[str] = None,
+                             owner: Optional[str] = None) -> Dict:
+    """Append findings to a document. NEVER rewrites existing content.
+
+    Accepts either a plain text string (appended as-is) or a JSON object /
+    JSON string shaped like {"doc_id": ..., "title": ..., "content": ...}.
+    Resolution: by doc_id, else the active document, else by title; if none
+    matches, a new document is created (title or 'Findings'). Owner scope is
+    enforced via the existing _get_owned_document helpers.
+    """
+    import uuid
+    from src.database import SessionLocal, Document, DocumentVersion
+
+    # Parse the tool-call argument blob. Native function calls arrive here as a
+    # JSON string (function_call_to_tool_block dumps structured args to JSON),
+    # while a model may also pass bare markdown. Mirror do_checkpoint's parse.
+    text = ""
+    parsed_doc_id = doc_id
+    parsed_title = title
+    if isinstance(content, str) and content.strip():
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {"content": content}
+        if isinstance(parsed, dict):
+            parsed_doc_id = parsed_doc_id or parsed.get("doc_id")
+            parsed_title = parsed_title or parsed.get("title")
+            text = str(parsed.get("content", ""))
+        else:
+            text = str(parsed)
+    elif isinstance(content, dict):
+        parsed_doc_id = parsed_doc_id or content.get("doc_id")
+        parsed_title = parsed_title or content.get("title")
+        text = str(content.get("content", ""))
+    else:
+        text = str(content or "")
+
+    if not text.strip():
+        return {"error": "document_append requires non-empty content", "exit_code": 1}
+
+    db = SessionLocal()
+    try:
+        doc = None
+        # 1) explicit doc_id
+        if parsed_doc_id:
+            doc = _get_owned_document(db, Document, parsed_doc_id, owner)
+        # 2) active document
+        if doc is None:
+            _active_id = get_active_document()
+            if _active_id:
+                doc = _get_owned_document(db, Document, _active_id, owner)
+        # 3) by title
+        if doc is None and parsed_title:
+            q = db.query(Document).filter(Document.title == parsed_title)
+            q = _owned_document_query(q, Document, owner)
+            doc = q.order_by(Document.updated_at.desc()).first()
+        # No document resolved (no doc_id match, no active doc, no matching
+        # title) — create a fresh one so the append has a home. Deliberately
+        # NO "most-recent owned document" fallback here: that is
+        # update_document's semantics and would silently swallow a title that
+        # should have created a new findings document. Build the Document
+        # directly (owner-scoped) rather than delegating to do_create_document,
+        # whose session-ownership check would reject an append when the caller
+        # has an owner but no matching session row.
+        if not doc:
+            import uuid as _uuid
+            from src.database import Session as _DbSession
+            _owner = owner
+            _title = parsed_title or "Findings"
+            _sess = db.query(_DbSession).filter(_DbSession.id == session_id).first() if session_id else None
+            if _sess is not None:
+                _owner = _sess.owner or _owner
+            doc = Document(
+                id=str(_uuid.uuid4()),
+                # Only attach session_id when it resolves to a real row; a
+                # synthetic/unlinked id would violate the FK and abort the
+                # append (the document simply lives unlinked instead).
+                session_id=session_id if _sess is not None else None,
+                title=_title,
+                language="markdown",
+                current_content=text.strip(),
+                version_count=1,
+                is_active=True,
+                owner=_owner,
+            )
+            db.add(doc)
+            db.add(DocumentVersion(
+                id=str(_uuid.uuid4()), document_id=doc.id,
+                version_number=1, content=text.strip(),
+                summary="Appended by AI", source="ai"))
+            db.commit()
+            try:
+                set_active_document(doc.id)
+            except Exception:
+                pass
+            _sync_document_to_file(db, doc)
+            return {"action": "append", "doc_id": doc.id, "title": doc.title,
+                    "chars_appended": len(text), "version": doc.version_count}
+
+        # Append-only: concatenate, never assign/replace.
+        doc.current_content = (doc.current_content or "").rstrip() + "\n\n---\n\n" + text.strip()
+        doc.version_count = (doc.version_count or 0) + 1
+        db.add(DocumentVersion(
+            id=str(uuid.uuid4()), document_id=doc.id,
+            version_number=doc.version_count, content=text,
+            summary="Appended by AI", source="ai"))
+        db.commit()
+        _sync_document_to_file(db, doc)
+
+        return {"action": "append", "doc_id": doc.id, "title": doc.title,
+                "chars_appended": len(text), "version": doc.version_count}
+    except Exception as e:
+        db.rollback()
+        return {"error": f"Failed to append to document: {e}", "exit_code": 1}
+    finally:
+        db.close()
+
+
 def parse_edit_blocks(content: str) -> list:
     """Parse <<<FIND>>>...<<<REPLACE>>>...<<<END>>> blocks."""
     edits = []

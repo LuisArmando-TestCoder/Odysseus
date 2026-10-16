@@ -890,6 +890,7 @@ async def execute_tool_block(
         do_manage_contact,
         do_vault_search, do_vault_get, do_vault_unlock,
         do_app_api, do_sherlock_osint, do_osint_framework,
+        do_document_append,
     )
     from src.checkpoint import do_checkpoint
 
@@ -1128,6 +1129,9 @@ async def execute_tool_block(
     elif tool == "checkpoint":
         desc = f"checkpoint: {content.split(chr(10))[0][:60]}"
         result = do_checkpoint(content, session_id=session_id, owner=owner)
+    elif tool == "document_append":
+        desc = f"document_append: {content.split(chr(10))[0][:60]}"
+        result = await do_document_append(content, session_id=session_id, owner=owner)
     elif tool.startswith("mcp__"):
         # MCP tool dispatch
         mcp = get_mcp_manager()
@@ -1202,6 +1206,8 @@ def format_tool_result(description: str, result: Dict) -> str:
             parts.append(f"Document updated: \"{result.get('title', '')}\" (v{result['version']})")
         elif action == "edit":
             parts.append(f'Document edited: "{result.get("title", "")}" (v{result.get("version", "?")}, {result.get("applied", 0)} edit(s) applied)')
+        elif action == "append":
+            parts.append(f"Appended {result.get('chars_appended', 0)} chars to \"{result.get('title', '')}\" (id: {result['doc_id']}, v{result.get('version', '?')})")
     elif "error" in result:
         parts.append(f"**Error:** {result['error']}")
 

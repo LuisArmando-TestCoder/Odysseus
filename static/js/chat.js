@@ -23,6 +23,7 @@ import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handle
 import createResearchSynapse from './researchSynapse.js';
 import { handleEvalRequest } from './browserEval.js';
 import streamRouter from './streamRouter.js';
+import wakeLock from './wakeLock.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
@@ -91,6 +92,14 @@ import streamRouter from './streamRouter.js';
   /** Check if an SSE reader is still actively connected for a session. */
   function hasActiveStream(sessionId) {
     return _streamSessionId === sessionId || _backgroundStreams.has(sessionId);
+  }
+
+  // Keep the screen awake while any stream (foreground or background) is in
+  // flight. Reference-counted via wakeLock.js so it coexists with voice mode.
+  function _syncWakeLock() {
+    const busy = _streamSessionId !== null || _backgroundStreams.size > 0;
+    if (busy) wakeLock.acquire('chat');
+    else wakeLock.release('chat');
   }
 
   // Sources box builder and toggleSources are now in chatRenderer.js
@@ -503,6 +512,7 @@ import streamRouter from './streamRouter.js';
     _streamSessionId = streamSessionId;
     const streamQuery = msg;
     _lastReaderActivity = Date.now();
+    _syncWakeLock();
 
     // Acquire Web Lock to hint browser not to discard this tab while streaming
     if (navigator.locks) {
@@ -1285,6 +1295,7 @@ import streamRouter from './streamRouter.js';
               if (sessionModule && sessionModule.markStreaming) {
                 sessionModule.markStreaming(streamSessionId);
               }
+              _syncWakeLock();
             }
 
             if (data === '[DONE]') {
@@ -2759,6 +2770,7 @@ import streamRouter from './streamRouter.js';
       // session switch guards) stop treating this session as busy. Guarded so
       // a newer stream that started in the meantime keeps its own marker.
       if (_streamSessionId === streamSessionId) _streamSessionId = null;
+      _syncWakeLock();
       // Streaming done — let screen readers announce the settled response.
       const _chatLogDone = document.getElementById('chat-history');
       if (_chatLogDone) _chatLogDone.setAttribute('aria-busy', 'false');
@@ -3131,6 +3143,7 @@ import streamRouter from './streamRouter.js';
     // Hand the active-stream tracking over to the background map so the
     // foreground marker no longer claims this session is streaming.
     if (_streamSessionId === sessionId) _streamSessionId = null;
+    _syncWakeLock();
     // Reset submit button so the new chat is ready to send
     const submitBtn = document.querySelector('.send-btn');
     if (submitBtn) updateSubmitButton('idle', submitBtn);
@@ -3151,11 +3164,13 @@ import streamRouter from './streamRouter.js';
     if (entry.status === 'completed') {
       // Response is already saved to DB and will appear in history — just clean up
       _backgroundStreams.delete(sessionId);
+      _syncWakeLock();
       return;
     }
 
     if (entry.status === 'error') {
       _backgroundStreams.delete(sessionId);
+      _syncWakeLock();
       var box = document.getElementById('chat-history');
       if (box) {
         var errHolder = document.createElement('div');
@@ -3214,6 +3229,7 @@ import streamRouter from './streamRouter.js';
           spinner.destroy();
           if (holder.parentNode) holder.remove(); // Remove entire holder, not just spinner
           _backgroundStreams.delete(sessionId);
+          _syncWakeLock();
           // Reload session to show the completed response — but only if the user
           // is still on it; don't yank them back from a new chat they opened.
           if (sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId() === sessionId) {

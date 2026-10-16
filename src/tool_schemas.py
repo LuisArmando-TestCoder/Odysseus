@@ -171,6 +171,22 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "document_append",
+            "description": "Append findings to a document WITHOUT rewriting what's already there. Append-only: existing content is preserved and the new `content` is added at the end with a separator. Accumulate findings, evidence, and results here as you discover them — never rely on create_document/update_document for accumulation because those replace/rewrite. Resolution: pass `doc_id` (most precise), or omit to target the active document / most recent document, or pass `title` to match by title. If no document exists yet, it creates one titled `title` (or 'Findings').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "string", "description": "Optional document ID to append to (from manage_documents list or a previous document_append result). Omit to use the active document / most recent document."},
+                    "title": {"type": "string", "description": "Optional title — used to match an existing document by title, or to name a new document if none exists."},
+                    "content": {"type": "string", "description": "The findings to append (appended verbatim, never truncated or rewritten)."}
+                },
+                "required": ["content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_document",
             "description": "Create a new document in the editor panel. Use this when the user asks to write, create, build, or generate code, scripts, programs, games, apps, or any substantial content (>15 lines) AND there is no already-open document/email draft that the request refers to. If an email compose draft is open, edit that draft instead of creating another document. NEVER put large code blocks directly in chat — use this tool instead.",
             "parameters": {
