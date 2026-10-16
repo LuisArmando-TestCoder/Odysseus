@@ -8,11 +8,12 @@
 //      *visible text label* (not a hardcoded selector), types a prompt,
 //      submits it, and reads the rendered answer. Auto-detects Google vs
 //      YouTube by hostname.
+//
+// The submit phase and the read phase are SEPARATE so the background worker
+// can own the polling (via chrome.scripting.executeScript) and survive the
+// SPA navigation/reload that Google AI mode performs after submit.
 
 // ── Text-node → nearest-clickable walker ────────────────────────────────────
-// Walk every text node, match its content against a set of labels
-// (case-insensitive, localization-tolerant), then climb up to the nearest
-// element that is actually clickable. Survives UI changes and localization.
 function findClickableByText(labels, root) {
   root = root || document;
   const needles = labels.map((s) => String(s).toLowerCase());
@@ -69,7 +70,6 @@ function setInputValue(el, s) {
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   } else {
-    // contenteditable: use execCommand so the framework sees a real edit.
     el.focus();
     try {
       document.execCommand("selectAll", false, null);
@@ -93,22 +93,18 @@ function findSubmitButton(box) {
   const candidates = [
     ...scope.querySelectorAll('button, [role="button"], input[type="submit"]'),
   ].filter((b) => !isVoiceButton(b));
-  // Prefer a button whose label/title/aria mentions send/submit (NOT "search",
-  // which matches the mic's "Search by voice" label).
   const labeled = candidates.find((b) => {
     const s = ((b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "") + " " + (b.textContent || "")).toLowerCase();
     return /send|submit|enviar|ask/i.test(s);
   });
   if (labeled) return labeled;
-  // Fallback: the last non-voice button in the form (often the send button).
   const buttons = candidates.filter((b) => b.tagName === "BUTTON" || b.getAttribute("role") === "button");
   return buttons.length ? buttons[buttons.length - 1] : null;
 }
 
 // Submit the input. Order of preference:
-//   1. Native form submission (form.requestSubmit / form.submit) — this is what
-//      a REAL Enter keypress triggers, and it works for Google's standard
-//      search box where synthetic KeyboardEvents are ignored (untrusted).
+//   1. Native form submission (form.requestSubmit / form.submit) — what a REAL
+//      Enter keypress triggers; works where synthetic KeyboardEvents are ignored.
 //   2. Click the send button (excluding voice/mic).
 //   3. Dispatch an Enter key sequence as a last resort.
 function submitInput(box) {
@@ -143,7 +139,6 @@ function readAnswer() {
     "ytd-ai-ask-response-renderer",
     "#content #answer",
     "ytd-transcript-search-panel-renderer",
-    // Google AI mode / AI Overviews containers
     '[data-testid*="ai-overview" i]',
     '[data-testid*="ai-mode" i]',
     '[class*="ai-mode" i]',
@@ -156,8 +151,6 @@ function readAnswer() {
     if (el && el.innerText && el.innerText.trim()) return el.innerText.trim();
   }
 
-  // Fallback: clone the body, strip non-content elements, read the longest
-  // visible text block.
   const clone = document.body.cloneNode(true);
   clone.querySelectorAll("style, script, noscript, link, svg, iframe, [aria-hidden='true']").forEach((n) => n.remove());
   const blocks = [...clone.querySelectorAll("div, section, article, main, yt-formatted-string, #content")]
@@ -167,44 +160,68 @@ function readAnswer() {
   return blocks[0] ? blocks[0].trim() : "";
 }
 
-// ── Google AI mode driver ───────────────────────────────────────────────────
-async function askGoogleAI(prompt) {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  // 1. Find + click the AI-mode button by its text label.
-  const aiLabels = [
+// ── AI-mode button labels per host ──────────────────────────────────────────
+const AI_LABELS = {
+  google: [
     "ai mode", "ask ai", "ask anything", "gemini", "search labs",
     "ai overviews", "ai overview", "generative ai", "ask google",
     "modo ia", "preguntar", "pregúntale",
-  ];
-  let btn = findClickableByText(aiLabels);
+  ],
+  youtube: [
+    "ask ai", "ai mode", "ask", "search with ai", "ask youtube",
+    "gemini", "using ai", "ask about this video", "tienes preguntas",
+    "preguntar", "pregúntale", "ask anything",
+  ],
+};
+
+// Click the AI-mode button and return the input box (or null).
+async function openAIInput(host) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const labels = AI_LABELS[host] || AI_LABELS.google;
+  let btn = findClickableByText(labels);
   if (!btn) {
     btn = [...document.querySelectorAll("button, [role=button]")].find((b) => {
       const s = ((b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "") + " " + (b.textContent || "")).toLowerCase();
-      return /ai mode|ask ai|gemini|ai overview|pregunt/i.test(s);
+      return /ai mode|ask ai|gemini|ai overview|pregunt|ask/i.test(s);
     }) || null;
   }
-  if (!btn) return "ERROR: AI-mode button not found (are you logged in to Google?)";
+  if (!btn) return null;
   btn.click();
-  await sleep(2000);
-
-  // 2. Find the input box (may have appeared after clicking).
+  await sleep(host === "youtube" ? 1500 : 2000);
   let box = findAskInput();
   if (!box) {
     await sleep(1500);
     box = findAskInput();
   }
-  if (!box) return "ERROR: no ask input found after opening AI mode";
+  return box;
+}
 
-  // 3. Type the prompt.
+// Submit a prompt: open AI mode, type, submit. Returns {ok, error} WITHOUT
+// polling for the answer — the background worker owns the read phase so it
+// survives the SPA navigation/reload.
+async function submitAsk(prompt) {
+  const host = detectHost();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  if (host === "google" || host === "youtube") {
+    const box = await openAIInput(host);
+    if (!box) return { ok: false, error: "ERROR: no ask input found (are you logged in?)" };
+    setInputValue(box, prompt);
+    await sleep(500);
+    submitInput(box);
+    return { ok: true };
+  }
+  const box = findAskInput();
+  if (!box) return { ok: false, error: "ERROR: no input found on this page" };
   setInputValue(box, prompt);
-  await sleep(500);
-
-  // 4. Submit.
   submitInput(box);
-  await sleep(500);
+  return { ok: true };
+}
 
-  // 5. Wait for the answer to stream in, polling until text stabilizes.
+// In-page convenience: submit + poll (used by the agent's /*@external*/ path).
+async function askAI(prompt) {
+  const r = await submitAsk(prompt);
+  if (!r.ok) return r.error;
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   let last = "";
   let stable = 0;
   for (let i = 0; i < 40; i++) {
@@ -220,55 +237,7 @@ async function askGoogleAI(prompt) {
   return last || "ERROR: no answer captured";
 }
 
-// ── YouTube AI mode driver ──────────────────────────────────────────────────
-async function askYouTubeAI(prompt) {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  const aiLabels = [
-    "ask ai", "ai mode", "ask", "search with ai", "ask youtube",
-    "gemini", "using ai", "ask about this video", "tienes preguntas",
-    "preguntar", "pregúntale", "ask anything",
-  ];
-  let btn = findClickableByText(aiLabels);
-  if (!btn) {
-    btn = [...document.querySelectorAll("button, [role=button]")].find((b) => {
-      const s = ((b.getAttribute("aria-label") || "") + " " + (b.textContent || "")).toLowerCase();
-      return /ask|ai mode|gemini|pregunt/i.test(s);
-    }) || null;
-  }
-  if (!btn) return "ERROR: AI-mode button not found (are you logged in to YouTube?)";
-  btn.click();
-  await sleep(1500);
-
-  let box = findAskInput();
-  if (!box) {
-    await sleep(1000);
-    box = findAskInput();
-  }
-  if (!box) return "ERROR: no ask input found after opening AI mode";
-
-  setInputValue(box, prompt);
-  await sleep(400);
-
-  submitInput(box);
-  await sleep(500);
-
-  let last = "";
-  let stable = 0;
-  for (let i = 0; i < 30; i++) {
-    await sleep(1000);
-    const cur = readAnswer();
-    if (cur && cur === last) {
-      if (++stable >= 3) break;
-    } else {
-      stable = 0;
-      last = cur;
-    }
-  }
-  return last || "ERROR: no answer captured";
-}
-
-// ── Auto-detect host and dispatch ───────────────────────────────────────────
+// ── Auto-detect host ────────────────────────────────────────────────────────
 function detectHost() {
   const h = location.hostname.toLowerCase();
   if (h.includes("youtube.com")) return "youtube";
@@ -276,24 +245,11 @@ function detectHost() {
   return "generic";
 }
 
-async function askAI(prompt) {
-  const host = detectHost();
-  if (host === "youtube") return askYouTubeAI(prompt);
-  if (host === "google") return askGoogleAI(prompt);
-  // Generic fallback: just find an input, type, submit, and read the page.
-  const box = findAskInput();
-  if (!box) return "ERROR: no input found on this page";
-  setInputValue(box, prompt);
-  submitInput(box);
-  await new Promise((r) => setTimeout(r, 5000));
-  return readAnswer() || "ERROR: no answer captured";
-}
-
 // ── Expose the driver to agent-injected code ────────────────────────────────
 window.__odyBridge = {
   askAI,
-  askGoogleAI,
-  askYouTubeAI,
+  submitAsk,
+  openAIInput,
   findClickableByText,
   findAskInput,
   setInputValue,
@@ -313,8 +269,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Standalone path: the background worker sent a prompt to ask directly.
     if (token === "__standalone__" && msg.prompt !== undefined) {
       try {
-        const answer = await askAI(String(msg.prompt));
-        sendResponse({ ok: true, output: answer });
+        if (msg.submit_only) {
+          // Submit only — the background worker will poll for the answer.
+          const r = await submitAsk(String(msg.prompt));
+          sendResponse(r);
+        } else {
+          const answer = await askAI(String(msg.prompt));
+          sendResponse({ ok: true, output: answer });
+        }
       } catch (e) {
         sendResponse({ ok: false, error: String((e && e.message) || e) });
       }
@@ -332,7 +294,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       result = { error: String((err && err.message) || err) };
     }
 
-    // Post the result back to Odysseus via the background worker.
     try {
       const posted = await chrome.runtime.sendMessage({
         type: "ODY_POST_RESULT",

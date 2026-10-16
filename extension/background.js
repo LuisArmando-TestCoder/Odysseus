@@ -90,20 +90,86 @@ async function relayToTab(payload) {
   }
 }
 
-// Ask the target tab's AI mode directly: delegate to the content script's
-// walker-based driver (which auto-detects Google vs YouTube by hostname).
+// Read the answer from a tab by injecting a small script. This survives SPA
+// navigation/reload because it re-injects on every poll.
+async function readAnswerFromTab(tabId) {
+  const READ_FN = `(() => {
+    const sel = [
+      "#ai-feature-content",
+      '[data-testid*="ai-response" i]',
+      "ytd-ai-ask-response-renderer",
+      "#content #answer",
+      "ytd-transcript-search-panel-renderer",
+      '[data-testid*="ai-overview" i]',
+      '[data-testid*="ai-mode" i]',
+      '[class*="ai-mode" i]',
+      '[class*="ai-overview" i]',
+      "g-ai-overview",
+      "div[jsname*='ai']",
+    ];
+    for (const s of sel) {
+      const el = document.querySelector(s);
+      if (el && el.innerText && el.innerText.trim()) return el.innerText.trim();
+    }
+    const clone = document.body.cloneNode(true);
+    clone.querySelectorAll("style, script, noscript, link, svg, iframe, [aria-hidden='true']").forEach((n) => n.remove());
+    const blocks = [...clone.querySelectorAll("div, section, article, main, yt-formatted-string, #content")]
+      .map((n) => n.innerText || "")
+      .filter((t) => t.trim().length > 80)
+      .sort((a, b) => b.length - a.length);
+    return blocks[0] ? blocks[0].trim() : "";
+  })()`;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: new Function(READ_FN),
+    });
+    const out = results && results[0] && results[0].result;
+    return typeof out === "string" ? out : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+// Ask the target tab's AI mode: submit via the content script, then poll the
+// tab (via chrome.scripting.executeScript) until the answer stabilizes. The
+// polling survives the SPA navigation/reload Google AI mode performs.
 async function askAI(prompt, target) {
   const tab = await ensureTargetTab(target);
+
+  // 1. Submit (content script opens AI mode, types, submits, returns).
+  let submitResp;
   try {
-    return await chrome.tabs.sendMessage(tab.id, {
+    submitResp = await chrome.tabs.sendMessage(tab.id, {
       type: "ODY_EVAL",
       eval_token: "__standalone__",
       eval_code: "",
       prompt: prompt,
+      submit_only: true,
     });
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   }
+  if (!submitResp || !submitResp.ok) {
+    return { ok: false, error: (submitResp && submitResp.error) || "submit failed" };
+  }
+
+  // 2. Poll for the answer, tolerating navigation/reload.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let last = "";
+  let stable = 0;
+  for (let i = 0; i < 60; i++) {
+    await sleep(1000);
+    const cur = await readAnswerFromTab(tab.id);
+    if (cur && cur === last) {
+      if (++stable >= 3) break;
+    } else {
+      stable = 0;
+      last = cur;
+    }
+  }
+  if (last) return { ok: true, output: last };
+  return { ok: false, error: "ERROR: no answer captured" };
 }
 
 // Internal message router (popup/content-script -> worker).
