@@ -1682,6 +1682,26 @@ async def stream_agent_loop(
             "item so the harness advances the cursor."
         )})
 
+    # Session workspace + CRUD/recall guide — the agent must know WHERE its
+    # files live and HOW to read/write/recall them, every turn.
+    try:
+        import os as _os
+        from src.constants import DATA_DIR
+        _sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(session_id or owner or "shared"))
+        _ws = _os.path.join(DATA_DIR, "documents", _sid)
+    except Exception:
+        _ws = ""
+    if _ws:
+        messages.insert(0, {"role": "system", "content": (
+            "=== YOUR SESSION WORKSPACE ===\n"
+            f"path: {_ws}\n"
+            "CRUD tools: create_document / document_append / update_document (write), "
+            "read_file (read a file in your folder), manage_documents (list). "
+            "To recall past findings, use context_tree (keyword search) or read_file — "
+            "do NOT re-read everything; retrieve by keyword. Your files are yours alone: "
+            "read_file/write_file are confined to this folder."
+        )})
+
     prep_timings["prompt_build"] = time.time() - _t2
 
     _t3 = time.time()

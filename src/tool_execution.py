@@ -73,16 +73,21 @@ def _is_sensitive_path(resolved: str) -> bool:
     return False
 
 
-def _tool_path_roots() -> list[str]:
+def _tool_path_roots(owner: Optional[str] = None, session_id: Optional[str] = None) -> list[str]:
     """Return the list of directory roots that read_file / write_file
-    may touch. Default: project data/ + system temp dirs. Extra roots
-    are loaded from the ``tool_path_extra_roots`` setting.
+    may touch. Default: the session's own documents folder + system temp
+    dirs. Extra roots are loaded from the ``tool_path_extra_roots`` setting.
     """
     roots: list[str] = []
 
-    # Project data directory — the agent's primary workspace.
-    from src.constants import DATA_DIR
-    roots.append(DATA_DIR)
+    # The session's own documents folder — the agent's primary workspace.
+    # Confined per-session so one chat cannot read another chat's files.
+    import re as _re
+    from src.constants import DATA_DIR, UPLOAD_DIR
+    sid = _re.sub(r"[^A-Za-z0-9._-]", "_", str(session_id or owner or "shared"))
+    roots.append(os.path.join(DATA_DIR, "documents", sid))
+    if owner:
+        roots.append(os.path.join(UPLOAD_DIR, str(owner)))
 
     # /tmp (and its macOS realpath /private/tmp).
     roots.append("/tmp")
@@ -122,7 +127,7 @@ def _tool_path_roots() -> list[str]:
     return out
 
 
-def _resolve_tool_path(raw_path: str) -> str:
+def _resolve_tool_path(raw_path: str, owner: Optional[str] = None, session_id: Optional[str] = None) -> str:
     """Resolve and confine a model-supplied path.
 
     Order of checks:
@@ -145,7 +150,7 @@ def _resolve_tool_path(raw_path: str) -> str:
             f"(e.g. .ssh, .gnupg) or matches a sensitive filename"
         )
 
-    for root in _tool_path_roots():
+    for root in _tool_path_roots(owner, session_id):
         if resolved == root:
             return resolved
         try:
@@ -396,11 +401,13 @@ async def _call_mcp_tool(
     tool: str,
     content: str,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    owner: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> Dict:
     """Route a legacy tool call through the MCP manager, with direct fallbacks."""
     mcp = get_mcp_manager()
     if not mcp:
-        return await _direct_fallback(tool, content, progress_cb=progress_cb) or {"error": f"MCP manager not available for tool '{tool}'", "exit_code": 1}
+        return await _direct_fallback(tool, content, progress_cb=progress_cb, owner=owner, session_id=session_id) or {"error": f"MCP manager not available for tool '{tool}'", "exit_code": 1}
 
     server_id, tool_name = _MCP_TOOL_MAP[tool]
     qualified = f"mcp__{server_id}__{tool_name}"
@@ -409,7 +416,7 @@ async def _call_mcp_tool(
 
     # If MCP server not connected, try direct fallback
     if isinstance(result, dict) and result.get("exit_code") == 1 and "not connected" in result.get("error", ""):
-        fallback = await _direct_fallback(tool, content, progress_cb=progress_cb)
+        fallback = await _direct_fallback(tool, content, progress_cb=progress_cb, owner=owner, session_id=session_id)
         if fallback:
             return fallback
 
@@ -436,6 +443,8 @@ async def _direct_fallback(
     tool: str,
     content: str,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    owner: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> Optional[Dict]:
     """In-process execution path for the eight tools that used to live as
     stdio MCP servers under mcp_servers/. Those servers were deleted in
@@ -514,7 +523,7 @@ async def _direct_fallback(
         if tool == "read_file":
             raw_path = content.split("\n", 1)[0].strip()
             try:
-                path = _resolve_tool_path(raw_path)
+                path = _resolve_tool_path(raw_path, owner=owner, session_id=session_id)
             except ValueError as e:
                 return {"error": f"read_file: {e}", "exit_code": 1}
             try:
@@ -539,7 +548,7 @@ async def _direct_fallback(
             raw_path = lines[0].strip()
             body = lines[1] if len(lines) > 1 else ""
             try:
-                path = _resolve_tool_path(raw_path)
+                path = _resolve_tool_path(raw_path, owner=owner, session_id=session_id)
             except ValueError as e:
                 return {"error": f"write_file: {e}", "exit_code": 1}
             try:
@@ -982,7 +991,7 @@ async def execute_tool_block(
     if tool in _MCP_TOOL_MAP:
         first_line = content.split(chr(10))[0][:80]
         desc = f"{tool}: {first_line}"
-        result = await _call_mcp_tool(tool, content, progress_cb=progress_cb)
+        result = await _call_mcp_tool(tool, content, progress_cb=progress_cb, owner=owner, session_id=session_id)
     elif tool == "create_document":
         title = content.split("\n")[0].strip()[:60]
         desc = f"create_document: {title}"

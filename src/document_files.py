@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 
 DOCUMENTS_DIR = os.path.join(DATA_DIR, "documents")
 
+
+def _session_dir(session_id) -> str:
+    """Carpeta por sesión: data/documents/<session_id>/."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(session_id or "shared"))
+    d = os.path.join(DOCUMENTS_DIR, safe)
+    os.makedirs(d, exist_ok=True)
+    return d
+
 _EXT = {
     "markdown": "md", "text": "txt", "plain": "txt",
     "python": "py", "javascript": "js", "typescript": "ts",
@@ -78,7 +86,7 @@ def doc_file_name(doc) -> str:
     # Avoid double extensions (e.g. title "browse.py" + language python).
     base = slug if slug.lower().endswith(f".{ext}") else f"{slug}.{ext}"
 
-    if os.path.exists(os.path.join(DOCUMENTS_DIR, base)):
+    if os.path.exists(os.path.join(_session_dir(getattr(doc, "session_id", None)), base)):
         did = (getattr(doc, "id", None) or "")[:8]
         stem = slug if slug.lower().endswith(f".{ext}") else slug
         base = f"{stem}-{did}.{ext}"
@@ -109,8 +117,8 @@ def write_document_file(doc) -> str:
         if p:
             return p
 
-    os.makedirs(DOCUMENTS_DIR, exist_ok=True)
-    path = os.path.join(DOCUMENTS_DIR, doc_file_name(doc))
+    sdir = _session_dir(getattr(doc, "session_id", None))
+    path = os.path.join(sdir, doc_file_name(doc))
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(getattr(doc, "current_content", "") or "")
