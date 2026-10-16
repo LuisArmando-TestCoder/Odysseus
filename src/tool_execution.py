@@ -893,6 +893,8 @@ async def execute_tool_block(
         do_document_append,
     )
     from src.checkpoint import do_checkpoint
+    from src.docfind import do_docfind
+    from src.registros_cr import do_registros_cr
 
     tool = block.tool_type
     content = block.content
@@ -1132,6 +1134,12 @@ async def execute_tool_block(
     elif tool == "document_append":
         desc = f"document_append: {content.split(chr(10))[0][:60]}"
         result = await do_document_append(content, session_id=session_id, owner=owner)
+    elif tool == "docfind":
+        desc = f"docfind: {content.split(chr(10))[0][:60]}"
+        result = await do_docfind(content, owner=owner, session_id=session_id)
+    elif tool == "registros_cr":
+        desc = f"registros_cr: {content.split(chr(10))[0][:60]}"
+        result = await do_registros_cr(content, owner=owner, session_id=session_id)
     elif tool.startswith("mcp__"):
         # MCP tool dispatch
         mcp = get_mcp_manager()

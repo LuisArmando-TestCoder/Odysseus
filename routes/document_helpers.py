@@ -34,6 +34,9 @@ class DocumentPatch(BaseModel):
     language: Optional[str] = None
     session_id: Optional[str] = None  # link/unlink document to a session
 
+class OpenPathRequest(BaseModel):
+    path: str
+
 
 # ---- Helpers ----
 

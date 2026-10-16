@@ -385,12 +385,29 @@ async def _create_process(command: str, lang: Optional[str] = None, **kwargs):
     (``sys.executable -I -c``) via ``create_subprocess_exec`` — no shell, no
     ``python3`` PATH lookup. This matches the chat agent's ``python`` tool
     (src/tool_execution.py) exactly, so a script that runs when the agent
-    executes it also runs from the document editor's Run button. Everything
-    else falls through to the shell path.
+    executes it also runs from the document editor's Run button.
+
+    JavaScript runs via ``node -e`` and TypeScript via ``deno eval`` — both
+    with full access (matching Python's ``-I`` isolation level), since the
+    shell endpoint is already admin-gated. Everything else falls through to
+    the shell path.
     """
-    if (lang or "").lower() in ("python", "py"):
+    lang_l = (lang or "").lower()
+    if lang_l in ("python", "py"):
         return await asyncio.create_subprocess_exec(
             (sys.executable or "python"), "-I", "-c", command, **kwargs
+        )
+    if lang_l in ("javascript", "js", "node"):
+        node = shutil.which("node")
+        if not node:
+            raise RuntimeError("Node.js is not installed")
+        return await asyncio.create_subprocess_exec(node, "-e", command, **kwargs)
+    if lang_l in ("typescript", "ts", "deno"):
+        deno = shutil.which("deno")
+        if not deno:
+            raise RuntimeError("Deno is not installed")
+        return await asyncio.create_subprocess_exec(
+            deno, "eval", "--allow-all", command, **kwargs
         )
     return await _create_shell(command, **kwargs)
 

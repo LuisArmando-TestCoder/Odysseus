@@ -254,6 +254,16 @@ class ResearchHandler:
                     maximum=86400,
                 )
 
+        # Research's own per-run time budget. The old 300s (5 min) default cut
+        # long investigations short; read a setting instead. 0 = unlimited
+        # (only hard_timeout caps it).
+        try:
+            _mt = int(get_setting("research_max_time_seconds", 1800))
+        except (TypeError, ValueError):
+            _mt = 1800
+        if _mt > 0:
+            max_time = _mt
+
         # Cancel any existing research for this session
         if session_id in self._active_tasks:
             existing = self._active_tasks[session_id]

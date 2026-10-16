@@ -316,7 +316,14 @@ try {
  */
 export async function runServer(code, panel, lang) {
   showLoading(panel, 'Running on server...');
-  const isPython = lang === 'python' || lang === 'py';
+  const l = (lang || '').toLowerCase();
+  // Map the editor language to the server-side runtime hint. Python uses the
+  // same interpreter as the agent; JS runs under Node; TS runs under Deno.
+  // Anything else falls back to bash.
+  let serverLang = 'bash';
+  if (l === 'python' || l === 'py') serverLang = 'python';
+  else if (l === 'javascript' || l === 'js' || l === 'node') serverLang = 'node';
+  else if (l === 'typescript' || l === 'ts' || l === 'deno') serverLang = 'deno';
   try {
     const res = await fetch('/api/shell/stream', {
       method: 'POST',
@@ -324,7 +331,7 @@ export async function runServer(code, panel, lang) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         command: code,
-        lang: isPython ? 'python' : 'bash',
+        lang: serverLang,
         timeout: 0,   // no server-side cap — run to completion
       }),
     });
@@ -433,8 +440,10 @@ export function run(btn) {
     runServer(code, panel, 'bash');
   } else if (lang === 'python' || lang === 'py') {
     runServer(code, panel, 'python');
-  } else if (lang === 'javascript' || lang === 'js') {
-    runJavaScript(code, panel);
+  } else if (lang === 'javascript' || lang === 'js' || lang === 'node') {
+    runServer(code, panel, 'node');
+  } else if (lang === 'typescript' || lang === 'ts' || lang === 'deno') {
+    runServer(code, panel, 'deno');
   } else if (lang === 'html') {
     runHTML(code, panel);
   }

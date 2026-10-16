@@ -30,6 +30,8 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "universal_search", "y
               "read_file", "write_file",
               "checkpoint",
               "document_append",
+              "docfind",
+              "registros_cr",
               "create_document", "update_document", "edit_document",
              "search_chats",
              "chat_with_model", "create_session", "list_sessions",

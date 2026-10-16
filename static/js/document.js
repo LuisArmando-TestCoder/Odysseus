@@ -5953,6 +5953,33 @@ import * as Modals from './modalManager.js';
     }
   }
 
+  /** Open a filesystem path in the document viewer via the open-path endpoint. */
+  export async function openFileByPath(path) {
+    if (!path) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/document/open-path`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); if (j && j.detail) msg = j.detail; } catch (_) {}
+        if (uiModule) uiModule.showError(`Couldn't open file: ${msg}`);
+        return;
+      }
+      const doc = await res.json();
+      if (!doc || !doc.id) return;
+      addDocToTabs(doc, doc.session_id);
+      _ensureDocPaneMounted();
+      switchToDoc(doc.id);
+    } catch (e) {
+      console.error('Failed to open file by path:', e);
+      if (uiModule) uiModule.showError('Could not open file');
+    }
+  }
+
   export async function loadDocument(docId) {
     // If already in tabs, just switch
     if (docs.has(docId)) {
@@ -7697,12 +7724,17 @@ import * as Modals from './modalManager.js';
       return;
     }
 
-    if (lang === 'javascript' || lang === 'js') {
-      codeRunnerModule.runJavaScript(code, outputPanel);
+    if (lang === 'javascript' || lang === 'js' || lang === 'node') {
+      codeRunnerModule.runServer(code, outputPanel, 'node');
       return;
     }
 
-    outputPanel.innerHTML = '<pre class="doc-run-error">Unsupported language. Supported: bash, python, javascript, html</pre>';
+    if (lang === 'typescript' || lang === 'ts' || lang === 'deno') {
+      codeRunnerModule.runServer(code, outputPanel, 'deno');
+      return;
+    }
+
+    outputPanel.innerHTML = '<pre class="doc-run-error">Unsupported language. Supported: bash, python, javascript, typescript, html</pre>';
     setTimeout(() => { if (outputPanel) outputPanel.style.display = 'none'; }, 5000);
   }
 
@@ -9567,6 +9599,7 @@ const documentModule = {
   createDocument,
   newDocument,
   loadDocument,
+  openFileByPath,
   injectFreshDoc,
   ensurePaneMounted: _ensureDocPaneMounted,
   loadSessionDocs,

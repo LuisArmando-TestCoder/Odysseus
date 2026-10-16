@@ -1147,6 +1147,22 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// File-path links — the markdown renderer highlights filesystem paths
+// (e.g. src/settings.py, /etc/foo.conf) as `.file-path-link` anchors. Clicking
+// one opens the file in the document viewer via document.js's openFileByPath.
+document.addEventListener('click', function(e) {
+  const link = e.target && e.target.closest && e.target.closest('a.file-path-link[data-path]');
+  if (!link) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const path = link.getAttribute('data-path');
+  if (!path) return;
+  import('./document.js').then(mod => {
+    const open = mod.openFileByPath || (mod.default && mod.default.openFileByPath);
+    if (open) open(path);
+  }).catch(() => {});
+});
+
 /**
  * Build a generated-image bubble element.
  */

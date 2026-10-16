@@ -35,6 +35,17 @@ function linkHtml(text, url) {
   return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
 }
 
+// File-path detection: highlight filesystem paths in prose so they can be
+// opened in the document viewer. Requires a directory separator (or a leading
+// ~/ ./ ../ /) so bare filenames like "package.json" in prose are not falsely
+// linked. Runs AFTER HTML-escaping, so the captured text is already
+// entity-safe and must NOT be re-escaped (re-escaping would double-encode &).
+const _FILE_PATH_RE = /(^|[\s(<"'`])((?=[A-Za-z0-9._~\/-]*\/)(?:~\/|\.{1,2}\/|\/)?[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\.(?:py|ts|tsx|js|jsx|mjs|cjs|md|markdown|txt|json|yaml|yml|html|htm|css|scss|sh|bash|zsh|sql|csv|xml|rs|go|java|c|cpp|h|hpp|rb|php|toml|ini|log|pdf|docx))(?=[\s<)"'`.,;:!?]|$)/g;
+
+function filePathHtml(path) {
+  return `<a href="#" class="file-path-link" data-path="${path}">${path}</a>`;
+}
+
 /**
  * Sanitize the raw-HTML fragments that mdToHtml deliberately preserves from
  * the source text — <details> blocks (collapsible agent output) and <a> tags
@@ -562,6 +573,11 @@ export function mdToHtml(src) {
     if (code.startsWith('___CODE_BLOCK_') || code.startsWith('___ALLOWED_HTML_')) return match;
     return `<code>${code}</code>`;
   });
+
+  // Highlight filesystem paths (e.g. src/settings.py, /etc/foo.conf) as
+  // clickable links that open the file in the document viewer. Runs after
+  // inline-code so paths inside backticks stay as plain <code>.
+  s = s.replace(_FILE_PATH_RE, (match, prefix, path) => `${prefix}${filePathHtml(path)}`);
 
   // Horizontal rules (must come before bold/italic to avoid * conflicts)
   s = s.replace(/^(?:---|\*\*\*|___)\s*$/gm, '<hr>');

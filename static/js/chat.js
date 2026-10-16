@@ -536,6 +536,21 @@ import wakeLock from './wakeLock.js';
     let processingProbeTimer = null;
     let processingProbeAbort = null;
     let _renderStream = () => {};
+    // Throttle streaming markdown renders to ~12/s — full mdToHtml + innerHTML on
+    // every chunk is O(n²) and janks the UI. Coalesce; the trailing timeout always
+    // fires so the last chunk still renders.
+    let _streamRenderQueued = false;
+    let _streamRenderLast = 0;
+    function _throttleStreamRender() {
+      if (_streamRenderQueued) return;
+      const wait = Math.max(0, 80 - (performance.now() - _streamRenderLast));
+      _streamRenderQueued = true;
+      setTimeout(() => {
+        _streamRenderQueued = false;
+        _streamRenderLast = performance.now();
+        _renderStream();
+      }, wait);
+    }
     let _cancelThinkingTimer = () => {};
     let _removeThinkingSpinner = () => {};
     const clearProcessingProbe = () => {
@@ -1576,7 +1591,7 @@ import wakeLock from './wakeLock.js';
                     _liveThinkDomId = null;
                     // Fall through to normal streaming
                     if (spinner && spinner.element) spinner.destroy();
-                    _renderStream();
+                    _throttleStreamRender();
                     _scheduleThinkingSpinner();
                     continue;
                   }
@@ -1624,11 +1639,11 @@ import wakeLock from './wakeLock.js';
                   }
 
                   // Render any reply text that arrived with the closing </think> token
-                  _renderStream();
+                  _throttleStreamRender();
                 } else {
                   // Normal streaming
                   if (spinner && spinner.element) spinner.destroy();
-                  _renderStream();
+                  _throttleStreamRender();
                   _scheduleThinkingSpinner();
                   // Feed streaming TTS with accumulated text
                   if (streamingTTS) window.aiTTSManager.streamingUpdate(roundText);
@@ -1935,7 +1950,7 @@ import wakeLock from './wakeLock.js';
                   if (_liveThinkContent) _liveThinkContent.id = _thinkId2;
                   if (_liveThinkToggle) _liveThinkToggle.id = _thinkId2 + '-toggle';
                 }
-                _renderStream();
+                _throttleStreamRender();
                 // --- Finalize current text bubble (only once per round) ---
                 if (!roundFinalized) {
                   roundFinalized = true;
@@ -2189,7 +2204,7 @@ import wakeLock from './wakeLock.js';
                 if (_isBg) continue;
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
-                _renderStream();
+                _throttleStreamRender();
                 // Mark thread as connected to bubble below
                 const _activeThread = document.querySelector('.agent-thread.streaming');
                 if (_activeThread) {
@@ -2302,7 +2317,7 @@ import wakeLock from './wakeLock.js';
         throw new Error('Stream closed before completion');
       }
 
-      _renderStream();
+      _throttleStreamRender();
       _cancelThinkingTimer();
       _removeThinkingSpinner();
       // Stop any thread pulse animations
@@ -2568,7 +2583,7 @@ import wakeLock from './wakeLock.js';
       } // end if (!_isBgFinal)
 
     } catch (err) {
-      _renderStream();
+      _throttleStreamRender();
       // Clean up any active spinner (e.g. "Generating response" during tool calls)
       if (spinner && spinner.element) spinner.destroy();
       _cancelThinkingTimer();

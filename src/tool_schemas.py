@@ -187,6 +187,37 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "docfind",
+            "description": "Fetch a primary document (government PDF, site REST API, sitemap) and grep it locally for exact identifiers (cédula, case number, finca, slug). Use when you need a precise, authoritative hit that a name search can't give. Args (JSON): {\"url\": \"...\", \"terms\": [\"...\"], \"context\": 2, \"json\": false} to fetch+search, or {\"file\": \"/abs/path\", \"terms\": [...]} for an already-downloaded file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to fetch (PDF/HTML/JSON). Omit if using `file`."},
+                    "file": {"type": "string", "description": "Absolute path to a local file. Omit if using `url`."},
+                    "terms": {"type": "array", "items": {"type": "string"}, "description": "Exact identifiers to grep (case-insensitive). E.g. cédula, case number, finca, slug."},
+                    "context": {"type": "integer", "description": "Lines of context around each hit (default 2)."},
+                    "json": {"type": "boolean", "description": "Treat the fetched body as JSON (e.g. wp-json REST API)."}
+                },
+                "required": ["terms"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "registros_cr",
+            "description": "Costa Rica public-records source catalog: returns how to search each authoritative source and the unique key (cédula, finca, sumaria, cédula jurídica) to avoid homonyms. Args (JSON): {\"source\": \"tse\"} for one source, or {} for all.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Optional source id: tse, gaceta, registro_nacional, poder_judicial, surcos, municipal, sicop, cgr. Omit for all."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_document",
             "description": "Create a new document in the editor panel. Use this when the user asks to write, create, build, or generate code, scripts, programs, games, apps, or any substantial content (>15 lines) AND there is no already-open document/email draft that the request refers to. If an email compose draft is open, edit that draft instead of creating another document. NEVER put large code blocks directly in chat — use this tool instead.",
             "parameters": {

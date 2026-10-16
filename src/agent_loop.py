@@ -36,6 +36,47 @@ from src.agent_tools import (
 
 logger = logging.getLogger(__name__)
 
+_HEARTBEAT = ": heartbeat\n\n"
+
+
+async def _await_with_heartbeat(awaitable, interval: float = 15.0):
+    """Await `awaitable`; while it blocks, yield an SSE heartbeat every
+    `interval` seconds so proxies don't kill the stream. On completion the
+    generator yields a final `(True, result)` tuple; heartbeats are yielded
+    as `(False, ": heartbeat\\n\\n")`.
+
+    Usage:
+        hb = _await_with_heartbeat(execute_tool_block(...))
+        async for is_result, value in hb:
+            if is_result:
+                result = value
+            else:
+                yield value          # a heartbeat
+    """
+    q: asyncio.Queue = asyncio.Queue(maxsize=1)
+
+    async def _run():
+        try:
+            r = await awaitable
+            await q.put(("ok", r))
+        except BaseException as e:
+            await q.put(("err", e))
+
+    task = asyncio.create_task(_run())
+    try:
+        while True:
+            try:
+                kind, payload = await asyncio.wait_for(q.get(), timeout=interval)
+                if kind == "ok":
+                    yield (True, payload)
+                    return
+                raise payload
+            except asyncio.TimeoutError:
+                yield (False, _HEARTBEAT)
+    finally:
+        if not task.done():
+            task.cancel()
+
 
 def _load_mcp_disabled_map() -> Dict[str, set]:
     """Load per-server disabled tool sets from the database."""
@@ -1936,10 +1977,15 @@ async def stream_agent_loop(
                             "what you have and note what's missing in one short line."
                         ),
                     }]
-                    _raw = await llm_call_async(
+                    _hb = _await_with_heartbeat(llm_call_async(
                         url=endpoint_url, model=model, messages=_synth_messages,
                         headers=headers, temperature=0.3, max_tokens=max_tokens, timeout=60,
-                    )
+                    ))
+                    async for _is_result, _hb_val in _hb:
+                        if _is_result:
+                            _raw = _hb_val
+                        else:
+                            yield _hb_val
                     _synth = _THINK_RE.sub("", strip_tool_blocks(_raw or "")).strip()
                 except Exception as _e:
                     logger.warning(f"[agent] grace synthesis failed: {_e}")

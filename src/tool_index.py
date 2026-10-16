@@ -25,6 +25,8 @@ ALWAYS_AVAILABLE = frozenset({
     "bash", "python", "web_search", "web_fetch", "read_file",
     "checkpoint",
     "document_append",
+    "docfind",
+    "registros_cr",
     # Media/discussion scrapers — lightweight, read-only, and the agent kept
     # reporting "no YouTube tool" / "no Reddit tool" when RAG retrieval didn't
     # surface them (their keywords are absent from many phrasings like "what do
@@ -80,6 +82,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "read_file": "Read a file from disk and return its contents. View source code, config files, logs. Documents created in the editor are saved as files under data/documents/ — read_file can open them there so a chat can reference a document another chat wrote.",
     "checkpoint": "Persistent append-only working memory for THIS task. action='append' writes a timestamped note (confirmed file paths, working API endpoints, findings index, next action) to a per-session file so you never re-derive or re-explore; action='read' returns everything already done so a nudge/continue resumes instead of restarting from a fresh `find /`. Use after every discovery, and read at the start of a new turn.",
     "document_append": "Append-only append findings to a living document WITHOUT rewriting. Never rewrites existing content — new content is appended with a separator, so use this to ACCUMULATE findings/evidence/results across turns. Do NOT use create_document/update_document to accumulate (they replace/rewrite). Resolve by doc_id (preferred), active document, or title; creates the document if none exists.",
+    "docfind": "Fetch a PRIMARY DOCUMENT (government PDF, site REST API, sitemap) and grep it locally for an EXACT identifier (cédula, case/finca number, slug). Use this instead of web_search when you need a precise hit that a name search can't give: web_search returns homonyms; docfind greps the authoritative source. Args (JSON): {\"url\": ..., \"terms\": [...], \"context\": 2, \"json\": bool} or {\"file\": ..., \"terms\": [...]}.",
+    "registros_cr": "Costa Rica public-records source catalog for local investigations. Returns HOW to search each authoritative source (TSE, La Gaceta, Registro Nacional, Poder Judicial, SURCOS, municipal actas, SICOP, CGR) and the UNIQUE KEY to use (cédula, finca, sumaria, cédula jurídica) so you avoid name-search homonyms. Args (JSON): {\"source\": \"tse\"} for one source, or {} for all.",
     "write_file": "Write content to a file on disk. Create new files, save output, update configs.",
     "create_document": "Create a new document in the editor panel. For code, articles, text content longer than 15 lines, unless an already-open document/email draft is the obvious target. If an email compose draft is open, edit that draft instead of creating another document.",
     "edit_document": "Preferred tool for editing an existing document — targeted find-and-replace. Use for any small change: add a function, fix a bug, tweak a section, rename things.",

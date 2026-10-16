@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 from routes.document_helpers import (
-    DocumentCreate, DocumentUpdate, DocumentPatch,
+    DocumentCreate, DocumentUpdate, DocumentPatch, OpenPathRequest,
     _doc_to_dict, _version_to_dict,
     _verify_doc_owner, _owner_session_filter,
     _slug, _resolve_user_upload_path, _assert_pdf_marker_upload_owned, _derive_title,
@@ -286,6 +286,193 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 db.refresh(doc)
             _async_index_doc(doc)
             return _doc_to_dict(doc)
+        finally:
+            db.close()
+
+    # ---- POST /api/document/open-path ----
+    @router.post("/api/document/open-path")
+    async def open_path(request: Request, req: OpenPathRequest) -> Dict[str, Any]:
+        """Open a filesystem path in the document viewer.
+
+        Resolves + confines the path (same allowlist as the agent's read_file
+        tool), then returns the matching Document — creating one on first open.
+        Text/code/markdown are read directly; PDFs are routed through the
+        upload + import-pdf flow (page viewer); DOCX is converted to markdown
+        via markitdown (preview + raw toggle).
+        """
+        import os
+        from src.auth_helpers import require_privilege
+        from src.tool_execution import _resolve_tool_path
+        from src.tool_implementations import _sniff_doc_language
+
+        user = require_privilege(request, "can_use_documents")
+
+        raw_path = (req.path or "").strip()
+        if not raw_path:
+            raise HTTPException(400, "path is required")
+
+        try:
+            resolved = _resolve_tool_path(raw_path)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+        if not os.path.exists(resolved):
+            raise HTTPException(404, f"File not found: {raw_path}")
+        if os.path.isdir(resolved):
+            raise HTTPException(400, "Path is a directory, not a file")
+
+        # Reuse an existing document already backed by this exact file.
+        db = SessionLocal()
+        try:
+            existing = db.query(Document).filter(Document.file_path == resolved).first()
+            if existing:
+                return _doc_to_dict(existing)
+        finally:
+            db.close()
+
+        ext = os.path.splitext(resolved)[1].lower()
+        title = os.path.splitext(os.path.basename(resolved))[0]
+
+        # ---- PDF: route through the upload + import-pdf flow ----
+        if ext == ".pdf":
+            if upload_handler is None:
+                raise HTTPException(500, "Upload handler not configured")
+            from src.pdf_forms import has_form_fields, extract_fields
+            from src.pdf_form_doc import (
+                save_field_sidecar,
+                create_form_markdown_document,
+                create_plain_pdf_document,
+            )
+            from src.document_processor import _process_pdf, strip_pdf_content_marker
+
+            # Wrap the on-disk file as an UploadFile for save_upload.
+            class _DiskUpload:
+                def __init__(self, path):
+                    self.filename = os.path.basename(path)
+                    self.file = open(path, "rb")
+            _u = _DiskUpload(resolved)
+            try:
+                client_ip = request.client.host if request.client else "unknown"
+                meta = upload_handler.save_upload(_u, client_ip, owner=user)
+            finally:
+                _u.file.close()
+
+            upload_id = meta["id"]
+            pdf_path = _locate_current_user_upload(request, upload_id, user)
+            if not pdf_path:
+                raise HTTPException(500, "Saved PDF could not be located")
+
+            try:
+                body_text = strip_pdf_content_marker(_process_pdf(pdf_path))
+            except Exception:
+                body_text = None
+
+            is_form = False
+            try:
+                is_form = has_form_fields(pdf_path)
+            except Exception as e:
+                logger.warning(f"has_form_fields failed for {pdf_path}: {e}")
+
+            if is_form:
+                fields = extract_fields(pdf_path)
+                save_field_sidecar(pdf_path, fields)
+                doc_id = create_form_markdown_document(
+                    session_id=None, fields=fields, upload_id=upload_id,
+                    title=title, intro_text=body_text,
+                )
+            else:
+                doc_id = create_plain_pdf_document(
+                    session_id=None, upload_id=upload_id,
+                    title=title, body_text=body_text,
+                )
+            if not doc_id:
+                raise HTTPException(500, "Failed to create document for PDF")
+
+            db = SessionLocal()
+            try:
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if not doc:
+                    raise HTTPException(500, "Created document not found")
+                if not doc.owner and user:
+                    doc.owner = user
+                    db.commit()
+                    db.refresh(doc)
+                _async_index_doc(doc)
+                return _doc_to_dict(doc)
+            finally:
+                db.close()
+
+        # ---- DOCX: convert to markdown via markitdown ----
+        if ext == ".docx":
+            from src.markitdown_runtime import convert_to_markdown
+            markdown = convert_to_markdown(resolved)
+            if not markdown or not markdown.strip():
+                raise HTTPException(400, "Could not extract text from DOCX")
+            content = markdown
+            language = "markdown"
+        else:
+            # ---- Text / code / markdown ----
+            try:
+                with open(resolved, "rb") as f:
+                    raw_data = f.read()
+                try:
+                    content = raw_data.decode("utf-8")
+                except UnicodeDecodeError:
+                    from charset_normalizer import detect
+                    encoding = (detect(raw_data) or {}).get("encoding") or "utf-8"
+                    content = raw_data.decode(encoding, errors="replace")
+            except Exception as e:
+                raise HTTPException(500, f"Failed to read file: {e}")
+
+            _EXT_LANG = {
+                ".py": "python", ".js": "javascript", ".ts": "typescript",
+                ".tsx": "typescript", ".jsx": "javascript", ".md": "markdown",
+                ".markdown": "markdown", ".txt": "text", ".json": "json",
+                ".yaml": "yaml", ".yml": "yaml", ".html": "html", ".htm": "html",
+                ".css": "css", ".scss": "css", ".sh": "bash", ".bash": "bash",
+                ".sql": "sql", ".csv": "csv", ".xml": "xml", ".rs": "rust",
+                ".go": "go", ".java": "java", ".c": "c", ".cpp": "cpp",
+                ".h": "c", ".hpp": "cpp", ".rb": "ruby", ".php": "php",
+                ".toml": "toml", ".ini": "ini", ".log": "text",
+            }
+            language = _EXT_LANG.get(ext)
+            if not language:
+                language = _sniff_doc_language(content)
+
+        # Create the document (text/code/md/docx path).
+        doc_id = str(uuid.uuid4())
+        ver_id = str(uuid.uuid4())
+        db = SessionLocal()
+        try:
+            doc = Document(
+                id=doc_id,
+                session_id=None,
+                title=title,
+                language=language,
+                current_content=content,
+                version_count=1,
+                is_active=True,
+                owner=user,
+                file_path=resolved,
+            )
+            ver = DocumentVersion(
+                id=ver_id,
+                document_id=doc_id,
+                version_number=1,
+                content=content,
+                summary="Opened from file",
+                source="user",
+            )
+            db.add(doc)
+            db.add(ver)
+            db.commit()
+            db.refresh(doc)
+            _async_index_doc(doc)
+            return _doc_to_dict(doc)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to create document from path: {e}")
+            raise HTTPException(500, f"Failed to open file: {e}")
         finally:
             db.close()
 

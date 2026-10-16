@@ -70,6 +70,28 @@ a.chat-link:hover {
   text-decoration: none;
 }
 
+/* Filesystem-path links — highlighted in chat markdown so a path like
+   src/settings.py can be clicked to open the file in the document viewer.
+   Monospace + subtle underline to read as a "file" affordance. */
+a.file-path-link {
+  font-family: var(--ad-mono);
+  font-size: 0.92em;
+  color: var(--ad-acc);
+  background: var(--ad-acc-soft);
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--ad-line);
+  text-decoration: none;
+  text-shadow: none;
+  white-space: nowrap;
+}
+a.file-path-link:hover {
+  color: color-mix(in srgb, var(--ad-acc) 80%, #fff);
+  background: var(--ad-acc-s);
+  border-color: var(--ad-acc);
+  text-decoration: none;
+}
+
 /* Accent links (setup trigger, etc.) */
 .accent-link {
   color: var(--ad-acc);
