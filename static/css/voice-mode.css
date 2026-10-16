@@ -393,7 +393,7 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 
 /* ── Left column: Live Transcript (top) + Chat Feed (bottom) ───────────── */
 .vx-left { padding: 0; }
-.vx-pane { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.vx-pane { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .vx-pane-chat { border-top: 1px solid var(--vx-line); background: rgba(0, 0, 0, .12); }
 
 .vx-chat-state {
@@ -417,6 +417,40 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
   mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
   user-select: text;
+}
+
+/* ── Scroll-to-bottom buttons (transcript + chat feed) ──────────────────── */
+/* Appears when the user scrolls up; hidden (non-interactive) at the bottom. */
+.vx-scroll-down {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--vx-line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .45);
+  color: var(--vx-acc, #7aa2ff);
+  font-size: 13px; line-height: 1;
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity .2s, transform .25s cubic-bezier(.25, 1, .5, 1), border-color .15s, background .15s;
+  transform: translateY(8px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.vx-scroll-down.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.vx-scroll-down:hover {
+  border-color: var(--vx-acc-a, rgba(122, 162, 255, .5));
+  background: rgba(0, 0, 0, .6);
 }
 .vx-cmsg .vx-who { margin-bottom: 4px; }
 .vx-cmsg .vx-who em {

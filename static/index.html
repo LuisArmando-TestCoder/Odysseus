@@ -1236,7 +1236,7 @@
     function update() {
       reposition();
       const scrollable = container.scrollHeight > container.clientHeight + 10;
-      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 300;
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
       if (scrollable && !atBottom) {
         bottomBtn.classList.remove('slide-out');
         bottomBtn.classList.add('show');

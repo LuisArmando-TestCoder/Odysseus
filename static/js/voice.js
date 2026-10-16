@@ -613,6 +613,7 @@ function _buildHUD() {
         <div class="vx-transcript" id="vx-transcript">
           <div class="vx-empty">Conversation appears here in real time.<br><kbd>Space</kbd> connect · <kbd>M</kbd> mute · <kbd>⏎</kbd> send now · <kbd>Esc</kbd> close</div>
         </div>
+        <button class="vx-scroll-down" data-scroll-down="vx-transcript" title="Scroll to bottom" aria-label="Scroll to bottom">▼</button>
         <div class="vx-inject">
           <textarea id="vx-inject-ta" rows="2" placeholder="Type or paste — an article, a quote, a note…" aria-label="Type or paste text for the voice assistant"></textarea>
           <div class="vx-inject-acts">
@@ -627,6 +628,7 @@ function _buildHUD() {
         <div class="vx-chatlog" id="vx-chatlog" aria-live="polite">
           <div class="vx-empty">What the chat agent receives and answers appears here live.</div>
         </div>
+        <button class="vx-scroll-down" data-scroll-down="vx-chatlog" title="Scroll to bottom" aria-label="Scroll to bottom">▼</button>
       </div>
     </section>
 
@@ -2831,6 +2833,34 @@ async function _refreshStatus() {
 //  OPEN / CLOSE
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ── Scroll-to-bottom buttons (transcript + chat feed) ─────────────────────
+// Each scrollable pane has a "▼" button that appears when the user scrolls up
+// and hides when they're at the bottom. Clicking it smooth-scrolls to the
+// bottom and re-arms auto-follow.
+function _initScrollDownButtons() {
+  _root.querySelectorAll('.vx-scroll-down').forEach((btn) => {
+    const targetId = btn.dataset.scrollDown;
+    const box = document.getElementById(targetId);
+    if (!box) return;
+
+    const update = () => {
+      const scrollable = box.scrollHeight > box.clientHeight + 10;
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+      btn.classList.toggle('show', scrollable && !atBottom);
+    };
+
+    box.addEventListener('scroll', update, { passive: true });
+    // Re-check when content changes (new lines / feed rebuilds).
+    const obs = new MutationObserver(update);
+    obs.observe(box, { childList: true, subtree: true, characterData: true });
+
+    btn.addEventListener('click', () => {
+      box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+    });
+    update();
+  });
+}
+
 function _bind() {
   _root.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
@@ -2878,6 +2908,7 @@ function _bind() {
     else if (e.key === 'Enter') { e.preventDefault(); if (_active) _forceSend(); }
   };
   document.addEventListener('keydown', _keyHandler, true);
+  _initScrollDownButtons();
 }
 
 async function _resetMemory() {

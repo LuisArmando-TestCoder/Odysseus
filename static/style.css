@@ -5076,6 +5076,8 @@ body.bg-pattern-sparkles {
       cursor:pointer;
       opacity:0;
       pointer-events:none;
+      user-select:none;
+      -webkit-user-select:none;
       transition: opacity .2s, transform .3s cubic-bezier(0.25, 1, 0.5, 1), background .15s;
       z-index:100;
       transform: translateY(0);
