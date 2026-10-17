@@ -41,7 +41,7 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "universal_search", "y
              "manage_session", "manage_memory", "list_models",
              "ui_control", "generate_image",
                "manage_tasks", "api_call", "ask_teacher", "manage_skills",
-               "run_javascript", "google_ai_search", "download_pdf",
+               "run_javascript", "google_ai_search", "download_pdf", "scrapebadger",
               "suggest_document",
              "manage_endpoints", "manage_mcp", "manage_webhooks",
              "manage_tokens", "manage_documents", "manage_settings",

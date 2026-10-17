@@ -34,6 +34,11 @@ ALWAYS_AVAILABLE = frozenset({
     # people say about her online"). Always available so the agent can reach for
     # them directly instead of flailing through app_api endpoint discovery.
     "youtube_transcript", "reddit_search",
+    # ScrapeBadger — the unified scraper surface (web + Google + Reddit +
+    # YouTube + TikTok + LinkedIn + Instagram + Facebook + Twitter/X). Always
+    # available so the agent can reach for it directly for any "scrape X" /
+    # "search <platform> for Y" request without RAG keyword luck.
+    "scrapebadger",
     # Browser-side execution — the user can ask to open a link, read the page,
     # or run JS in their own browser at any time, so it must always be in reach
     # (otherwise the model narrates "I can't run JavaScript" instead of acting).
@@ -80,6 +85,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "web_fetch": "Fetch and read the text content of a specific URL/website the user names (e.g. 'check example.com', 'open this link'). Use when you have a concrete URL; for open-ended lookups use web_search instead.",
     "youtube_transcript": "Fetch the transcript (captions) of a YouTube video from its URL — manual captions preferred over auto-generated ASR. Use when the user shares a YouTube link or asks what a video says.",
     "reddit_search": "Search Reddit (zero-login) by keyword and/or within a subreddit, returning posts with title, author, score, url, and selftext. Use when the user asks what Reddit says about a topic, to search a subreddit, or read a discussion.",
+    "scrapebadger": "Scrape any website or pull structured data from a platform via the ScrapeBadger API. Sources: web (scrape any URL with anti-bot bypass, or detect protection), google (search, ai_mode, images, videos, autocomplete, lens, maps, news, hotels, trends, jobs, shopping, patents, scholar, finance, products), reddit (search posts/subreddits/users, subreddit posts, post comments, user posts/comments), youtube (search, video detail, transcript, comments, channel videos, playlists), tiktok (user, videos, comments, transcript, search, hashtags, trending), linkedin (jobs search, company, profile, post, article), instagram (user, posts, media, comments), facebook (marketplace, page, group, post, ads), twitter (search, user, tweets, followers, tweet, trending). Args (JSON): {\"source\": \"<platform>\", \"endpoint\": \"<action>\", \"params\": {...}}. Use for 'scrape X', 'search Reddit/YouTube/TikTok for Y', 'get <platform> profile Z', or any structured-data pull.",
     "read_file": "Read a file from disk and return its contents. View source code, config files, logs. Documents created in the editor are saved as files under data/documents/ — read_file can open them there so a chat can reference a document another chat wrote.",
     "checkpoint": "Persistent append-only working memory for THIS task. action='append' writes a timestamped note (confirmed file paths, working API endpoints, findings index, next action) to a per-session file so you never re-derive or re-explore; action='read' returns everything already done so a nudge/continue resumes instead of restarting from a fresh `find /`. Use after every discovery, and read at the start of a new turn.",
     "finish_goal": "Signal the end of the current continuous goal. Call this ONLY when working under an ACTIVE GOAL (the harness injected '=== ACTIVE GOAL ===' into your context). status='done' when the objective is truly achieved (with evidence); status='blocked' when a concrete condition prevents progress (name it in `reason`). The harness owns the state transition — you just report.",
@@ -369,7 +375,17 @@ class ToolIndex:
         # Reddit intent — "what does reddit say", search a subreddit, read a discussion
         frozenset({"reddit", "r/", "subreddit", "what does reddit", "reddit says",
                    "reddit thinks", "on reddit"}):
-            {"reddit_search"},
+            {"reddit_search", "scrapebadger"},
+        # ScrapeBadger / structured-scraping intent — "scrape X", "search
+        # <platform> for Y", "get <platform> profile Z", marketplace, jobs, etc.
+        frozenset({"scrape", "scraper", "scrapebadger", "scrap badger",
+                   "tiktok", "linkedin", "instagram", "facebook", "twitter", "x.com",
+                   "marketplace", "job listings", "jobs on", "google maps",
+                   "google news", "google shopping", "google scholar", "google trends",
+                   "youtube search", "youtube channel", "youtube comments",
+                   "reddit comments", "reddit user", "subreddit posts",
+                   "tweet", "tweets", "tweet replies", "twitter profile"}):
+            {"scrapebadger"},
         # OSINT framework browsing / tool discovery intent
         frozenset({"osint", "osint framework", "osint tools", "what tools",
                    "username search", "email osint", "domain osint",

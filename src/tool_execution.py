@@ -1036,6 +1036,10 @@ async def execute_tool_block(
         desc = "download_pdf: downloading PDF"
         from src.tool_implementations import do_download_pdf
         result = await do_download_pdf(content, session_id=session_id, owner=owner)
+    elif tool == "scrapebadger":
+        desc = "scrapebadger: scraping via ScrapeBadger"
+        from src.tool_implementations import do_scrapebadger
+        result = await do_scrapebadger(content, session_id=session_id, owner=owner)
     elif tool == "manage_tasks":
         desc = "manage_tasks"
         result = await do_manage_tasks(content, owner=owner)

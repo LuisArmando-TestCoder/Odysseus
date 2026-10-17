@@ -1249,6 +1249,22 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "scrapebadger",
+            "description": "Scrape any website or pull structured data from a platform via the ScrapeBadger API (web scraping with anti-bot bypass, plus dedicated scrapers for Google, Reddit, YouTube, TikTok, LinkedIn, Instagram, Facebook, and Twitter/X). Args (JSON): {\"source\": \"<platform>\", \"endpoint\": \"<action>\", \"params\": {...}}. Sources: web (scrape, detect), google (search, ai_mode, images, videos, autocomplete, lens, maps, news, hotels, trends, jobs, shopping, patents, scholar, finance, products), reddit (search_posts, search_subreddits, search_users, trending, subreddit, subreddit_posts, subreddit_rules, post, post_comments, user, user_posts, user_comments), youtube (search, autocomplete, trending, video, video_comments, transcript, related, channel, channel_videos, channel_shorts, playlist, playlist_items), tiktok (user, user_videos, video, video_comments, transcript, search, search_users, search_videos, hashtag, hashtag_videos, trending), linkedin (jobs_search, job, company, company_jobs, school, profile, post, article, course, geo_suggest), instagram (user, user_posts, media, comments), facebook (marketplace, marketplace_item, page, page_posts, profile, group, group_posts, post, post_comments, ads, ad), twitter (search, advanced_search, user, user_tweets, user_followers, user_following, tweet, tweet_replies, trending). Path params (e.g. subreddit, video_id, username, post_id) go inside `params` and are interpolated into the URL; everything else is sent as query/body.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Platform key: web, google, reddit, youtube, tiktok, linkedin, instagram, facebook, or twitter"},
+                    "endpoint": {"type": "string", "description": "Action within the source (e.g. search, user, video, ai_mode, transcript, marketplace)"},
+                    "params": {"type": "object", "description": "Query/body/path params as a JSON object (e.g. {\"q\": \"...\", \"subreddit\": \"python\", \"video_id\": \"...\"})"}
+                },
+                "required": ["source", "endpoint"]
+            }
+        }
+    },
 ]
 
 
@@ -1422,6 +1438,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "google_ai_search":
         content = args.get("query", "")
     elif tool_type == "download_pdf":
+        content = json.dumps(args)
+    elif tool_type == "scrapebadger":
         content = json.dumps(args)
     elif tool_type == "youtube_transcript":
         lang = args.get("language")

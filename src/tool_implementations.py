@@ -5,6 +5,7 @@ Extracted tool implementation functions (do_* and helpers) from agent_tools.py.
 These handle the actual execution logic for each tool type.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -49,17 +50,35 @@ _GOOGLE_AI_PROMPT_TEMPLATE = (
 async def do_google_ai_search(content: str, session_id: Optional[str] = None,
                               owner: Optional[str] = None,
                               progress_cb=None) -> Dict:
-    """Ask Google AI Mode via the browser bridge and return its answer.
+    """Ask Google AI Mode and return its answer.
 
-    This is the first-class search provider: it drives the user's own
-    logged-in Google session (through the Odysseus Browser Bridge extension)
-    instead of a keyword API. The prompt is made contextually heavy so the
+    Primary path: the ScrapeBadger REST API (`GET /v1/google/ai-mode/search`),
+    which returns Google's generative answer as structured text blocks +
+    source references + a compact Markdown rendering. This is deterministic
+    and headless-capable — no logged-in browser tab required.
+
+    Fallback path: when the ScrapeBadger key is absent, drive the user's own
+    logged-in Google session through the Odysseus Browser Bridge extension
+    (the legacy approach). The prompt is made contextually heavy so the
     answer includes concrete PDF titles + URLs.
     """
     query = (content or "").strip()
     if not query:
         return {"error": "google_ai_search: a query is required", "exit_code": 1}
 
+    # ── Primary: ScrapeBadger REST API ──
+    try:
+        from src.scrapebadger import google_ai_mode_markdown, is_configured
+        if is_configured():
+            md, err = await asyncio.to_thread(google_ai_mode_markdown, query)
+            if err is None and md:
+                return {"output": md, "exit_code": 0}
+            if err:
+                logger.warning("google_ai_search: ScrapeBadger failed (%s); falling back to browser bridge", err)
+    except Exception as e:
+        logger.warning("google_ai_search: ScrapeBadger unavailable (%s); falling back to browser bridge", e)
+
+    # ── Fallback: browser bridge ──
     prompt = _GOOGLE_AI_PROMPT_TEMPLATE.format(query=query)
 
     # Escape the prompt for safe embedding inside a JS string literal.
@@ -85,6 +104,63 @@ async def do_google_ai_search(content: str, session_id: Optional[str] = None,
     if result.get("error"):
         return {"error": result["error"], "exit_code": 1}
     return {"output": result.get("output", ""), "exit_code": result.get("exit_code", 0)}
+
+
+async def do_scrapebadger(content: str, session_id: Optional[str] = None,
+                          owner: Optional[str] = None) -> Dict:
+    """Dispatch a generic ScrapeBadger scraper call.
+
+    Args (JSON):
+      source:   "web" | "google" | "reddit" | "youtube" | "tiktok" |
+                "linkedin" | "instagram" | "facebook" | "twitter"
+      endpoint: action within that source (e.g. "search", "user", "video",
+                "ai_mode", "transcript", "marketplace", ...)
+      params:   dict of query/body params. Path params (subreddit, video_id,
+                username, etc.) are interpolated into the URL; the rest are
+                sent as query string (GET) or JSON body (POST).
+
+    Returns the raw structured JSON payload (truncated to MAX_OUTPUT_CHARS).
+    """
+    import asyncio as _asyncio
+    try:
+        args = _parse_tool_args(content)
+    except ValueError:
+        return {"error": "Invalid JSON arguments", "exit_code": 1}
+
+    source = (args.get("source") or "").strip().lower()
+    endpoint = (args.get("endpoint") or "").strip().lower()
+    params = args.get("params") or {}
+
+    if not source or not endpoint:
+        return {"error": "scrapebadger: 'source' and 'endpoint' are required", "exit_code": 1}
+    if not isinstance(params, dict):
+        return {"error": "scrapebadger: 'params' must be a JSON object", "exit_code": 1}
+
+    try:
+        from src.scrapebadger import scrape, list_sources
+    except Exception as e:
+        return {"error": f"ScrapeBadger client unavailable: {e}", "exit_code": 1}
+
+    data, err = await _asyncio.to_thread(scrape, source, endpoint, params)
+    if err:
+        # Help the model recover: include the available sources/endpoints.
+        try:
+            catalog = list_sources()
+            hint = f" Available sources: {', '.join(catalog.keys())}."
+            if source in catalog:
+                hint = f" Available '{source}' endpoints: {', '.join(catalog[source])}."
+        except Exception:
+            hint = ""
+        return {"error": f"scrapebadger: {err}{hint}", "exit_code": 1}
+
+    # Serialize the structured payload for the model.
+    try:
+        body = json.dumps(data, indent=2, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        body = str(data)
+    if len(body) > MAX_OUTPUT_CHARS:
+        body = body[:MAX_OUTPUT_CHARS] + f"\n... (truncated, {len(body)} chars total)"
+    return {"output": body, "exit_code": 0}
 
 
 async def do_download_pdf(content: str, session_id: Optional[str] = None,
@@ -1818,7 +1894,8 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
         _SECRET_KEYS = {
             "langsearch_api_key",
             "brave_api_key", "google_pse_key", "google_pse_cx",
-            "tavily_api_key", "serper_api_key", "app_public_url",
+            "tavily_api_key", "serper_api_key", "scrapebadger_api_key",
+            "app_public_url",
         }
         def _is_secret(k):
             # `token` must be a suffix, not a substring: otherwise the int

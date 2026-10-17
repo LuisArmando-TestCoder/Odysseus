@@ -114,7 +114,16 @@ def _build_provider_chain(primary: str) -> List[str]:
         chain.append("langsearch")
     if _get_provider_key("brave"):
         chain.append("brave")
-    if primary and primary not in ("langsearch", "brave") and primary not in chain and primary != "disabled":
+    # Google AI Mode (ScrapeBadger-backed) is a first-class provider when its
+    # key is configured — it returns a generative answer + cited sources, which
+    # is strictly better than a keyword SERP for open-ended questions.
+    try:
+        from src.scrapebadger import is_configured as _sb_configured
+        if _sb_configured():
+            chain.append("google_ai")
+    except Exception:
+        pass
+    if primary and primary not in ("langsearch", "brave", "google_ai") and primary not in chain and primary != "disabled":
         chain.append(primary)
     user_chain = settings.get("search_fallback_chain") or []
     if isinstance(user_chain, str):

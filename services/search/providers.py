@@ -537,27 +537,60 @@ def google_pse_search(query: str, count: int = 10, time_filter: Optional[str] = 
     return results
 
 
-# ── Google AI Mode (browser-automation provider) ──
+# ── Google AI Mode (ScrapeBadger REST provider) ──
 
 def google_ai_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
-    """Drive the user's own open google.com tab (AI mode) via the run_javascript bridge.
+    """Ask Google AI Mode (udm=50) via the ScrapeBadger REST API.
 
-    The free google.com "AI mode" is a JS-rendered SPA with no public API, so it
-    cannot be reached with a plain httpx call (a spoofed User-Agent alone will
-    not bypass Google's consent/anti-bot gates). This provider is therefore a
-    *browser-automation* provider: it hands the query off to the agent-layer
-    `run_javascript` tool, which clicks the AI-mode button, sets the textarea
-    via the native value setter, presses Enter, and reads the rendered answer
-    from the user's already-open, consenting tab.
+    ScrapeBadger exposes Google's generative AI answers as a plain REST
+    endpoint (`GET /v1/google/ai-mode/search?q=...`), returning structured
+    text blocks, source references, and a compact Markdown rendering. This
+    replaces the old browser-automation approach (which required the user's
+    logged-in Google tab + the Odysseus Browser Bridge extension) with a
+    deterministic, headless-capable call.
 
-    Returns [] here because the real work happens in the agent loop; this
-    function exists so the provider is registered/selectable like the others.
+    The answer is mapped into the standard `[{title, url, snippet}]` result
+    shape so it slots into the existing provider chain. The full Markdown
+    answer is carried in the first result's `snippet`; each cited source
+    becomes its own result entry.
     """
-    logger.info("Google AI Mode: delegating to run_javascript (browser automation)")
-    # _BROWSER_UA is referenced only to keep this provider consistent with the
-    # module's header convention should a server-side fallback ever be added.
-    _ = _BROWSER_UA
-    return []
+    try:
+        from src.scrapebadger import google_ai_mode
+    except Exception as e:
+        logger.warning("ScrapeBadger client unavailable: %s", e)
+        return []
+
+    data, err = google_ai_mode(query)
+    if err:
+        logger.warning("Google AI Mode (ScrapeBadger) failed: %s", err)
+        return []
+
+    results: List[dict] = []
+    markdown = (data.get("markdown") or "").strip()
+    refs = data.get("references") or []
+
+    # The AI answer itself is the primary "result".
+    if markdown:
+        results.append({
+            "title": f"Google AI Mode: {query[:80]}",
+            "url": "",
+            "snippet": markdown,
+        })
+
+    # Each cited source becomes a follow-up result.
+    for r in refs:
+        link = r.get("link") or ""
+        title = r.get("title") or ""
+        snippet = r.get("snippet") or ""
+        if link or title:
+            results.append({
+                "title": title or link,
+                "url": link,
+                "snippet": snippet,
+            })
+
+    logger.info("Google AI Mode (ScrapeBadger) returned %d results for: %s", len(results), query)
+    return results
 
 
 # ── LangSearch ──
