@@ -1442,6 +1442,13 @@ def _empty_response_fallback(
     return _error_msg, f'data: {json.dumps({"delta": _error_msg})}\n\n'
 
 
+def _self_ping_delta(reason: str) -> str:
+    """Visible chat notice that the agent detected a stall (timeout / no
+    completion) and is continuing rather than leaving the chat hanging."""
+    msg = f"\n\n_[self-ping] {reason} — continuing._\n\n"
+    return f'data: {json.dumps({"delta": msg})}\n\n'
+
+
 async def stream_agent_loop(
     endpoint_url: str,
     model: str,
@@ -1785,8 +1792,14 @@ async def stream_agent_loop(
     _recent_call_sigs = collections.deque(maxlen=6)
     _stuck_rounds = 0
     _tool_type_counts: collections.Counter = collections.Counter()
-    _THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
+    _THINK_RE = re.compile(r' thinking.*? response', re.DOTALL | re.IGNORECASE)
     _force_answer = False  # set by loop-breaker → next round runs with NO tools
+    # Self-ping / completion-detection state. When a round ends with no
+    # completion (stream timed out, or the model returned no answer and no
+    # tool calls), we emit a self-ping notice and re-invoke the model so the
+    # chat keeps going instead of hanging. Capped to avoid infinite loops.
+    _self_ping_count = 0
+    _MAX_SELF_PINGS = 3
 
     # Document streaming state (persists across rounds)
     _doc_acc = ""          # accumulated tool-call JSON arguments
@@ -1797,6 +1810,7 @@ async def stream_agent_loop(
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
+        _round_timed_out = False  # set when the wall-clock stream deadline trips
         # Reset doc streaming state per round
         _doc_acc = ""
         _doc_opened = False
@@ -1869,6 +1883,7 @@ async def stream_agent_loop(
         ):
             if time.time() > _round_deadline:
                 logger.warning(f"[agent] round {round_num} stream exceeded wall-clock deadline; cutting off")
+                _round_timed_out = True
                 break
             # Forward error events from stream_llm to the frontend
             if chunk.startswith("event: error"):
@@ -2140,7 +2155,45 @@ async def stream_agent_loop(
                     # never re-verify an unchanged state in a loop.
                     _effectful_used = False
                     continue
+
+            # ── Self-ping / completion detection ───────────────────────
+            # A round with no tool calls AND no answer text is a "no
+            # completion" state: the stream may have timed out, the model
+            # went silent, or a lock/error swallowed the output. Instead of
+            # ending the turn and leaving the chat hanging, emit a self-ping
+            # notice and re-invoke the model (capped) so it keeps going with
+            # the context of what happened.
+            _no_completion = _round_timed_out or not _claimed_done
+            if _no_completion and _self_ping_count < _MAX_SELF_PINGS and not _force_answer:
+                _self_ping_count += 1
+                _reason = (
+                    "the model stream timed out before producing an answer"
+                    if _round_timed_out
+                    else "the model returned no answer and no tool calls"
+                )
+                logger.warning(
+                    f"[agent] self-ping on round {round_num}: {_reason} "
+                    f"(ping {_self_ping_count}/{_MAX_SELF_PINGS})"
+                )
+                yield _self_ping_delta(_reason)
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "Your previous turn ended without a completed answer "
+                        f"({_reason}). Do NOT stop here. Continue the task: "
+                        "either produce the final answer now, or take the next "
+                        "concrete step with a tool. If you are genuinely blocked, "
+                        "say plainly what is blocking you."
+                    ),
+                })
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
             break  # no tools — done
+
+        # Made progress (tool calls) — reset the self-ping streak so a later
+        # no-completion round gets a fresh set of recovery pings.
+        _self_ping_count = 0
 
         # ── Loop-breaker (Terminus-style stall detector) ──────────────
         # Stall detector for repeated no-progress tool loops.
@@ -2406,6 +2459,11 @@ async def stream_agent_loop(
                 img = result["images"][0]
                 tool_output_data["screenshot"] = f"data:{img['mimeType']};base64,{img['data']}"
             yield f'data: {json.dumps(tool_output_data)}\n\n'
+
+            # Self-ping notice on tool timeout — the chat sees the stall and
+            # the model is re-invoked with the timeout context next round.
+            if result.get("exit_code") == 124:
+                yield _self_ping_delta(f"tool '{block.tool_type}' timed out")
 
             # Native document tools open in the editor + carry the REAL doc id.
             # Emit a doc_update so the frontend opens/activates it and sends it

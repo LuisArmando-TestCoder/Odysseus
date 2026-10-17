@@ -176,6 +176,25 @@ def _resolve_tool_path(raw_path: str, owner: Optional[str] = None, session_id: O
 DEFAULT_BASH_TIMEOUT = 60 * 60     # 1 hour
 DEFAULT_PYTHON_TIMEOUT = 60 * 60
 
+
+def _tool_timeout_seconds() -> float:
+    """Resolve the configurable per-tool execution timeout.
+
+    Reads `agent_tool_timeout_seconds` (default 90s — "over a minute").
+    0 or negative means unlimited (falls back to the generous 1h cap so a
+    runaway process still eventually frees the worker). The chat can change
+    this via manage_settings ("tool timeout").
+    """
+    try:
+        from src.settings import get_setting
+        val = get_setting("agent_tool_timeout_seconds", 90)
+        val = float(val)
+    except (TypeError, ValueError):
+        val = 90.0
+    if val <= 0:
+        return DEFAULT_BASH_TIMEOUT  # unlimited → generous cap
+    return val
+
 # How often to push a progress event while a long-running subprocess
 # is still in flight. The frontend cares about "alive" more than
 # "every-byte" — 2s is the sweet spot.
@@ -480,13 +499,14 @@ async def _direct_fallback(
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
             )
+            _bash_timeout = _tool_timeout_seconds()
             stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
                 proc,
-                timeout=DEFAULT_BASH_TIMEOUT,
+                timeout=_bash_timeout,
                 progress_cb=progress_cb,
             )
             if timed_out:
-                return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
+                return {"error": f"bash: timed out after {_bash_timeout:g}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
             output = stdout.rstrip()
             err = stderr.rstrip()
             if err:
@@ -506,13 +526,14 @@ async def _direct_fallback(
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
             )
+            _py_timeout = _tool_timeout_seconds()
             stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
                 proc,
-                timeout=DEFAULT_PYTHON_TIMEOUT,
+                timeout=_py_timeout,
                 progress_cb=progress_cb,
             )
             if timed_out:
-                return {"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
+                return {"error": f"python: timed out after {_py_timeout:g}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
             output = stdout.rstrip()
             err = stderr.rstrip()
             if err:

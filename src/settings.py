@@ -108,6 +108,12 @@ DEFAULT_SETTINGS = {
     # `compute_input_token_budget` in src/context_budget.py.
     "agent_input_token_hard_max": 200_000,
     "agent_stream_timeout_seconds": 300,
+    # Default wall-clock timeout for a single tool execution (bash/python
+    # subprocesses). "Over a minute" by default so real work isn't killed
+    # mid-flight, but bounded so a runaway/hung command frees the worker and
+    # the chat can self-ping + keep going instead of hanging. The chat can
+    # change it via manage_settings ("tool timeout"). 0 = unlimited.
+    "agent_tool_timeout_seconds": 90,
     # Extra directory roots that read_file / write_file may access, in
     # addition to the built-in project data/ and system temp dirs. Each
     # entry is an absolute path. Sensitive subpaths (.ssh, .gnupg, shell
