@@ -38,7 +38,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from src.decisions import DecisionsUnavailable, jev_available, jev_decide
 from src.endpoint_resolver import resolve_endpoint
 from src.llm_core import llm_call_async
-from services.voice.memory import chat_summary_spine, get_voice_memory
+from services.voice.memory import chat_summary_spine, get_voice_memory, session_documents_spine
 
 logger = logging.getLogger(__name__)
 
@@ -736,6 +736,7 @@ async def _forge_and_emit(
     yield _ev(type="stage", stage="guard", status="running")
     spine = mem.spine()
     chat_txt = chat_summary_spine(chat_session_id, owner)
+    docs_txt = session_documents_spine(chat_session_id, owner)
     guard_ctx = {
         "speaker_legend": SPEAKER_LEGEND,
         "message": message,
@@ -745,6 +746,7 @@ async def _forge_and_emit(
         "already_sent_to_chat": spine["recently_sent"],
         "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),
         "chat_thread_summary": chat_txt[:2000],
+        "session_documents": docs_txt[:2000],
     }
     try:
         from src.cost_ledger import cost_scope
@@ -831,6 +833,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         yield _ev(type="stage", stage="compress", status="running")
         spine = mem.spine()
         chat_txt = chat_summary_spine(chat_session_id, owner)
+        docs_txt = session_documents_spine(chat_session_id, owner)
         yield _ev(type="stage", stage="compress", status="done", ms=int((time.time() - t0) * 1000),
                   depth=len(spine["layers"]), live=len(spine["current_batch"]))
 
@@ -852,6 +855,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 "already_sent_to_chat": spine["recently_sent"],
                 "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),
                 "chat_thread_summary": chat_txt[:2000],
+                "session_documents": docs_txt[:2000],
             }
             try:
                 from src.cost_ledger import cost_scope
@@ -915,7 +919,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # the chat", "ask the chat") — they want the chat agent to do the work,
         # not the voice to answer from its own chatter.
         if send and decision.get("answerable", 0) >= 0.7 and not decision.get("directed_to_chat", 0) >= 0.7:
-            context = (chat_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
+            context = (chat_txt or "") + "\n\n" + (docs_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
             answer = await _extract_answer(owner, new_text, context)
             if answer:
                 yield _ev(type="answer_from_context", answer=answer, question=new_text[:300])
@@ -932,6 +936,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 f"=== Recent context ===\n{_fmt(mem.recent_turns(8))}\n\n"
                 f"=== Memory ===\n{mem.spine_text(include_live=False)[:4000] or '(none)'}\n\n"
                 f"=== Chat thread so far ===\n{chat_txt[:3000] or '(empty)'}\n\n"
+                f"=== Documents in this chat ===\n{docs_txt[:3000] or '(none)'}\n\n"
                 f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")
             )
             async for ev in _forge_and_emit(mem, owner, chat_session_id, FORGER_PROMPT,
@@ -949,6 +954,7 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                     f"=== Live transcript (the whole voice conversation) ===\n{mem.transcript_text(60)}\n\n"
                     f"=== Recent context ===\n{_fmt(mem.recent_turns(10))}\n\n"
                     f"=== Chat thread so far ===\n{chat_txt[:3000] or '(empty)'}\n\n"
+                    f"=== Documents in this chat ===\n{docs_txt[:3000] or '(none)'}\n\n"
                     f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")
                 )
                 cdecision = {"engine": "commitment", "should_send": 1.0, "ready": 1.0, "already_sent": 0.0,

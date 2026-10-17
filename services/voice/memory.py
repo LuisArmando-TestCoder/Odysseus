@@ -612,3 +612,43 @@ def chat_summary_spine(session_id: Optional[str], owner: Optional[str] = None) -
     if recent:
         parts.append("[Chat — last turns]\n" + "\n".join(recent[-6:]))
     return "\n\n".join(parts)
+
+
+def session_documents_spine(session_id: Optional[str], owner: Optional[str] = None,
+                            max_docs: int = 6, max_chars: int = 4000) -> str:
+    """Compact record of the documents belonging to a chat session, so the
+    voice assistant can contextually reference the files the user is working
+    on in THIS chat. Returns a text block (title + a head of content per doc),
+    or "" when there are none / the session is unknown / ownership mismatches.
+
+    Scoped to the session AND the owner: a document from another user's chat
+    must never leak into the voice pipeline.
+    """
+    if not session_id:
+        return ""
+    try:
+        from core.database import SessionLocal, Document
+        db = SessionLocal()
+        try:
+            q = db.query(Document).filter(
+                Document.session_id == session_id,
+                Document.is_active == True,  # noqa: E712
+                Document.archived == False,  # noqa: E712
+            )
+            if owner:
+                q = q.filter((Document.owner == owner) | (Document.owner.is_(None)))
+            docs = q.order_by(Document.updated_at.desc()).limit(max_docs).all()
+        finally:
+            db.close()
+    except Exception:
+        return ""
+    if not docs:
+        return ""
+    parts = []
+    for d in docs:
+        title = (d.title or "Untitled").strip()
+        lang = (d.language or "").strip()
+        body = (d.current_content or "").strip()
+        head = body[:600] + (" …" if len(body) > 600 else "")
+        parts.append(f"[Document: {title}" + (f" ({lang})" if lang else "") + f"]\n{head}")
+    return "\n\n".join(parts)

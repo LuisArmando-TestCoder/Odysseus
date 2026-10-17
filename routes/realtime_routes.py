@@ -88,6 +88,11 @@ VOICE_CONTRACT = (
     "(username search, email lookup, domain recon, etc.) — and find the right tool for a purpose. When the "
     "user asks 'what OSINT tools exist for X' or 'find me a tool to look up a username/email/domain', forward "
     "it to the chat agent (it navigates the framework and reports the matching tool + its URL)."
+    "CONTEXT: you are always given the current chat thread and the documents of THIS chat session. Reference "
+    "them FIRST and always: when the user asks about something already discussed in the chat, or about a file "
+    "they are working on, answer from that context — do not re-ask what is already there. Only ask the user "
+    "for information when it is genuinely NOT available in the chat thread or the session's documents. Never "
+    "ask the user to repeat something the context already contains."
 )
 
 
@@ -149,6 +154,27 @@ def setup_realtime_routes() -> APIRouter:
                 instructions = instructions + "\n\n" + _trusted_block
         except Exception as _tce:
             logger.debug(f"voice trusted-claims injection skipped: {_tce}")
+
+        # Inject the CURRENT chat thread + this session's documents so the
+        # voice assistant can contextually reference them while speaking. This
+        # is the "always reference the context at hand" requirement: the
+        # assistant answers from what's already in the chat/documents and only
+        # asks the user for what is genuinely missing.
+        try:
+            from services.voice.memory import chat_summary_spine, session_documents_spine
+            _chat_sid = (body.get("chat_session_id") or None)
+            _owner = effective_user(request)
+            _chat_ctx = chat_summary_spine(_chat_sid, _owner)
+            _docs_ctx = session_documents_spine(_chat_sid, _owner)
+            _ctx_parts = []
+            if _chat_ctx:
+                _ctx_parts.append("=== CURRENT CHAT THREAD ===\n" + _chat_ctx[:4000])
+            if _docs_ctx:
+                _ctx_parts.append("=== DOCUMENTS IN THIS CHAT ===\n" + _docs_ctx[:4000])
+            if _ctx_parts:
+                instructions = instructions + "\n\n" + "\n\n".join(_ctx_parts)
+        except Exception as _ctx_err:
+            logger.debug(f"voice chat/document context injection skipped: {_ctx_err}")
 
         session_cfg = {"model": model, "instructions": instructions}
         voice = (settings.get("voice_assistant_voice") or "").strip()
