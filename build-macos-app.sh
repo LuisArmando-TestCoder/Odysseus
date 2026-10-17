@@ -78,6 +78,15 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 UVICORN="$INSTALL_DIR/venv/bin/uvicorn"
 LOG="$INSTALL_DIR/logs/odysseus-app.log"
 
+# Keep the Mac awake (display + system) while Odysseus runs, the same way a
+# video does. `caffeinate` holds a power assertion only for the lifetime of the
+# process it wraps, so the assertion is released automatically when the server
+# stops. Opt out with ODYSSEUS_KEEP_AWAKE=0. Override the flags (default
+# `-dimsu`: display, idle, disk, system) with ODYSSEUS_KEEP_AWAKE_FLAGS.
+KEEP_AWAKE=1
+[ "${ODYSSEUS_KEEP_AWAKE:-1}" = "0" ] && KEEP_AWAKE=0
+KEEP_AWAKE_FLAGS="${ODYSSEUS_KEEP_AWAKE_FLAGS:--dimsu}"
+
 notify() { /usr/bin/osascript -e "display notification \"$1\" with title \"Odysseus\"" >/dev/null 2>&1; }
 die_gui() {
   /usr/bin/osascript -e "display dialog \"$1\" with title \"Odysseus\" buttons {\"OK\"} default button 1 with icon stop" >/dev/null 2>&1
@@ -119,10 +128,18 @@ fi
 
 notify "Starting…"
 cd "$INSTALL_DIR" || die_gui "Install folder not found: $INSTALL_DIR"
-if [ "$(uname -m)" = "arm64" ]; then
-  arch -arm64 "$UVICORN" app:app --host 127.0.0.1 --port "$PORT" >>"$LOG" 2>&1 &
+if [ "$KEEP_AWAKE" = "1" ] && command -v caffeinate >/dev/null 2>&1; then
+  if [ "$(uname -m)" = "arm64" ]; then
+    caffeinate $KEEP_AWAKE_FLAGS arch -arm64 "$UVICORN" app:app --host 127.0.0.1 --port "$PORT" >>"$LOG" 2>&1 &
+  else
+    caffeinate $KEEP_AWAKE_FLAGS "$UVICORN" app:app --host 127.0.0.1 --port "$PORT" >>"$LOG" 2>&1 &
+  fi
 else
-  "$UVICORN" app:app --host 127.0.0.1 --port "$PORT" >>"$LOG" 2>&1 &
+  if [ "$(uname -m)" = "arm64" ]; then
+    arch -arm64 "$UVICORN" app:app --host 127.0.0.1 --port "$PORT" >>"$LOG" 2>&1 &
+  else
+    "$UVICORN" app:app --host 127.0.0.1 --port "$PORT" >>"$LOG" 2>&1 &
+  fi
 fi
 SERVER_PID=$!
 

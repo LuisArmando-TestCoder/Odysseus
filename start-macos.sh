@@ -196,4 +196,15 @@ if [ -n "$TAILSCALE_URL" ]; then
 fi
 echo "  (this takes a few seconds; press Ctrl+C here to stop)"
 echo
-"$VENV_PY" -m uvicorn app:app --host "$HOST" --port "$PORT"
+
+# Keep the Mac awake (display + system) while Odysseus runs, the same way a
+# video does. `caffeinate` holds a power assertion only for the lifetime of the
+# process it wraps, so the assertion is released automatically when the server
+# stops. Opt out with ODYSSEUS_KEEP_AWAKE=0. Override the flags (default
+# `-dimsu`: display, idle, disk, system) with ODYSSEUS_KEEP_AWAKE_FLAGS.
+KEEP_AWAKE_FLAGS="${ODYSSEUS_KEEP_AWAKE_FLAGS:--dimsu}"
+if [ "${ODYSSEUS_KEEP_AWAKE:-1}" != "0" ] && command -v caffeinate >/dev/null 2>&1; then
+  caffeinate $KEEP_AWAKE_FLAGS "$VENV_PY" -m uvicorn app:app --host "$HOST" --port "$PORT"
+else
+  "$VENV_PY" -m uvicorn app:app --host "$HOST" --port "$PORT"
+fi

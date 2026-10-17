@@ -89,6 +89,17 @@ let _narratedFinal = false;  // final summary already spoken by narration
 let _narrateEl = null;       // bubble currently being narrated (agent runs span several)
 let _stallSpoken = false;    // "let me research more" already said for the current pause
 
+// ── Live context streaming → GPT-Live ──────────────────────────────────────
+// While the chat agent is generating (agent runs stream for a while), its
+// growing output is pushed into GPT-Live's thinking context in real time —
+// not just spoken as commentary and not just folded into memory after it
+// finishes. This is what makes "all the chat files and context" always
+// available to the voice assistant, so the user can ask about any part of the
+// in-progress work and ALFRED can answer from the same current material.
+let _ctxEl = null;           // chat bubble currently being streamed into GPT-Live context
+let _ctxLen = 0;             // chars already pushed into GPT-Live context for the current run
+let _ctxLastAt = 0;          // last context-injection timestamp (throttle)
+
 // ── Event diagnostics ───────────────────────────────────────────────────────
 const _eventTypes = new Map();   // type → count
 let _transcriptSeen = false, _diagT = 0;
@@ -2064,6 +2075,7 @@ function _chatTick() {
   if (_costTick === 0 || sid !== _costSid) { _costSid = sid; _refreshHudCost(); }
   _ingestChat(busy);
   _narrateStream(busy);
+  _streamContext(busy);
   _drainSay();
   _renderChatFeed();          // no-op unless something changed (signature check)
 }
@@ -2178,6 +2190,7 @@ function _resetNarration() {
   _narratedFinal = false;
   _narrateEl = null;
   _stallSpoken = false;
+  _ctxEl = null; _ctxLen = 0; _ctxLastAt = 0;
 }
 
 // Said at most once per pause in new findings; re-armed when text grows again.
@@ -2340,6 +2353,67 @@ function _narrateStream(busy) {
     if (rest.trim()) _queueSpeak(rest, true);
     else _sayQueue.push('[Chat agent — FINISHED] Everything was already told. In one short line, tell the user it is done.');
   }
+}
+
+// ── Live context streaming → GPT-Live ──────────────────────────────────────
+// While the chat agent is generating, push its growing output into GPT-Live's
+// thinking context in near-real-time. This is separate from narration (spoken
+// commentary) and from memory ingest (which waits for a finished turn). The
+// goal: the voice assistant always has the chat's current material — the
+// request being worked on and every file / fact the chat produces — so the
+// user can interrupt and ask about anything mid-run and ALFRED can answer from
+// the same current context instead of only after the run completes.
+function _streamContext(busy) {
+  if (!_active || !_injectOK) return;
+  const now = Date.now();
+  const el = _lastAIEl();
+  if (!el) return;
+
+  // Finished run: flush the final tail of the last streaming bubble.
+  if (!busy) {
+    if (_ctxEl) {
+      const rest = _msgText(_ctxEl, 12000).slice(_ctxLen);
+      if (rest.trim()) _brief(rest.slice(0, _BRIEF_MAX - 40), false);
+    }
+    _ctxEl = null; _ctxLen = 0; _ctxLastAt = 0;
+    return;
+  }
+
+  // A new streaming bubble (agent runs open one per tool round): push the
+  // previous round's tail, then start a fresh watermark for the new one.
+  if (el !== _ctxEl) {
+    if (_ctxEl) {
+      const rest = _msgText(_ctxEl, 12000).slice(_ctxLen);
+      if (rest.trim()) _brief(rest.slice(0, _BRIEF_MAX - 40), false);
+    }
+    _ctxEl = el;
+    _ctxLen = 0;
+    _ctxLastAt = 0;
+  }
+
+  // Only the bubble that is actually streaming carries live context.
+  if (!el.classList.contains('streaming')) return;
+
+  const text = _msgText(el, 12000);   // raw text — never _speakable (that strips content)
+  let delta = text.slice(_ctxLen);
+  if (!delta.length) return;
+
+  // Throttle: push substantial batches, or smaller ones once settled a while.
+  const enough = delta.length >= 700;
+  const settled = delta.length >= 160 && now - _ctxLastAt >= 7000;
+  if (!enough && !settled) return;
+
+  // Cut on a line / sentence boundary so the voice context stays coherent.
+  let cut = delta.lastIndexOf('\n');
+  if (cut < 40) {
+    const s = delta.lastIndexOf('. ');
+    cut = s >= 40 ? s + 1 : (settled ? delta.length : -1);
+  }
+  if (cut <= 0) return;
+  const chunk = delta.slice(0, cut);
+  _ctxLen += cut;
+  _ctxLastAt = now;
+  _brief(chunk.slice(0, _BRIEF_MAX - 40), false);
 }
 
 function _speakResult(item, el) {
@@ -2553,6 +2627,7 @@ function _bindVoiceToSession(sid) {
   _seenKeys.clear();
   _spokenKeys.clear();
   _resetNarration();
+  _ctxEl = null; _ctxLen = 0; _ctxLastAt = 0;
   // The old chat's in-flight turn belongs to that chat, not this one.
   _awaiting = null;
   // Restore the NEW chat's transcript trail + queue (empty for a brand-new chat).
