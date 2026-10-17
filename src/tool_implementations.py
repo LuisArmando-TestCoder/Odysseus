@@ -106,6 +106,55 @@ async def do_google_ai_search(content: str, session_id: Optional[str] = None,
     return {"output": result.get("output", ""), "exit_code": result.get("exit_code", 0)}
 
 
+def _detect_pagination(data: Any) -> str:
+    """Build a concise pagination hint from a ScrapeBadger list payload.
+
+    Most scraper list endpoints wrap results in a recognizable container and
+    carry a continuation token. Detect the common shapes and tell the model
+    exactly which value to pass back as `params` to fetch the next page —
+    instead of leaving it to guess from a truncated half-object.
+    """
+    if not isinstance(data, dict):
+        return ""
+    continue_keys = {
+        "continuation": "continuation",
+        "continuation_token": "continuation",
+        "next_cursor": "cursor",
+        "cursor": "cursor",           # a next-cursor value, not a cursor echo
+        "next_page_token": "page_token",
+        "after": "after",
+        "end_cursor": "after",
+    }
+    for k, param in continue_keys.items():
+        v = data.get(k)
+        if v in (None, "", 0, False):
+            continue
+        import json as _json
+        return (
+            "To page further: repeat this call with "
+            f"params={_json.dumps({param: v})}. The value returned under "
+            f'"{k}" is the next-page token.'
+        )
+    # Has-more flag without an obvious token — just tell it to walk `after`/cursor.
+    if data.get("has_more") or data.get("has_next_page"):
+        return (
+            "This listing is paginated (has_more=true). Re-call with the "
+            "appropriate continuation/cursor/after value from the response to "
+            "get the next page."
+        )
+    # items/posts/listings array present but no token — the field is probably
+    # inside the container rather than top-level; hint generically.
+    for container in ("items", "posts", "listings", "results", "products", "comments"):
+        v = data.get(container)
+        if isinstance(v, list) and v:
+            return (
+                "Only the first page of results was returned. Look for a "
+                "continuation/cursor/after field in the response and pass it "
+                "back as params to fetch the next page."
+            )
+    return ""
+
+
 async def do_scrapebadger(content: str, session_id: Optional[str] = None,
                           owner: Optional[str] = None) -> Dict:
     """Dispatch a generic ScrapeBadger scraper call.
@@ -158,8 +207,21 @@ async def do_scrapebadger(content: str, session_id: Optional[str] = None,
         body = json.dumps(data, indent=2, default=str, ensure_ascii=False)
     except (TypeError, ValueError):
         body = str(data)
-    if len(body) > MAX_OUTPUT_CHARS:
-        body = body[:MAX_OUTPUT_CHARS] + f"\n... (truncated, {len(body)} chars total)"
+
+    # ScrapeBadger list endpoints (e.g. a YouTube channel's 182-video listing)
+    # return large structured payloads. The shared 10K cap chopped these
+    # mid-object, so the model reported "the response was truncated" and then
+    # couldn't paginate. Give scraper payloads a much larger budget and, when
+    # we DO have to cut, tell the model exactly how to continue via the
+    # pagination token rather than leaving it dangling on a half-parsed field.
+    _SB_MAX = 60_000
+    if len(body) > _SB_MAX:
+        pagination_hint = _detect_pagination(data)
+        body = body[:_SB_MAX] + (
+            f"\n... (truncated at {_SB_MAX} chars of {len(body)} total)"
+        )
+        if pagination_hint:
+            body += f"\n{pagination_hint}"
     return {"output": body, "exit_code": 0}
 
 

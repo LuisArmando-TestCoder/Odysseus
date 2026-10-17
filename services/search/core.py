@@ -31,6 +31,7 @@ from .providers import (
     tavily_search,
     serper_search,
     google_ai_search,
+    scrapebadger_search,
     _get_search_settings,
     _get_provider_key,
     _get_result_count,
@@ -89,6 +90,8 @@ def _call_provider(provider_name: str, query: str, count: int, time_filter: str 
         return serper_search(query, count, time_filter)
     elif provider_name == "google_ai":
         return google_ai_search(query, count, time_filter)
+    elif provider_name == "scrapebadger":
+        return scrapebadger_search(query, count, time_filter)
     return []
 
 
@@ -114,6 +117,11 @@ def _build_provider_chain(primary: str) -> List[str]:
         chain.append("langsearch")
     if _get_provider_key("brave"):
         chain.append("brave")
+    # ScrapeBadger SERP — first-class provider when its key is configured. It
+    # returns real, fetchable organic URLs (ideal for deep research's
+    # fetch-and-extract loop) plus Google's AI overview when present.
+    if _get_provider_key("scrapebadger"):
+        chain.append("scrapebadger")
     # Google AI Mode (ScrapeBadger-backed) is a first-class provider when its
     # key is configured — it returns a generative answer + cited sources, which
     # is strictly better than a keyword SERP for open-ended questions.

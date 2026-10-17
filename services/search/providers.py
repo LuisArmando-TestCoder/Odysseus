@@ -36,6 +36,7 @@ PROVIDER_INFO = {
     "tavily":   ("Tavily",            True,  False),
     "serper":   ("Serper",            True,  False),
     "google_ai": ("Google AI Mode",    False, False),
+    "scrapebadger": ("ScrapeBadger",   True,  False),
     "disabled": ("Disabled",          False, False),
 }
 
@@ -69,6 +70,7 @@ def _get_provider_key(provider: str) -> str:
         "google_pse": "google_pse_key",
         "tavily": "tavily_api_key",
         "serper": "serper_api_key",
+        "scrapebadger": "scrapebadger_api_key",
     }
     field = key_map.get(provider, "")
     if field:
@@ -85,6 +87,7 @@ def _get_provider_key(provider: str) -> str:
         "google_pse": "GOOGLE_API_KEY",
         "tavily": "TAVILY_API_KEY",
         "serper": "SERPER_API_KEY",
+        "scrapebadger": "SCRAPEBADGER_API_KEY",
     }
     env_name = env_map.get(provider, "")
     return (os.environ.get(env_name) or "").strip() if env_name else ""
@@ -590,6 +593,66 @@ def google_ai_search(query: str, count: int = 10, time_filter: Optional[str] = N
             })
 
     logger.info("Google AI Mode (ScrapeBadger) returned %d results for: %s", len(results), query)
+    return results
+
+
+# ── ScrapeBadger (Google SERP provider) ──
+
+def scrapebadger_search(query: str, count: int = 10, time_filter: Optional[str] = None) -> List[dict]:
+    """Search Google via the ScrapeBadger SERP endpoint.
+
+    Returns structured `organic_results` (title / link / snippet) mapped into
+    the standard `[{title, url, snippet}]` shape. This is the ideal ScrapeBadger
+    provider for deep research — unlike AI Mode (a single generative answer
+    with no fetchable URLs), the SERP returns real, source-backed URLs that the
+    DeepResearcher can then fetch and extract. Also folds in any AI overview
+    the SERP surfaces, as a leading snippet-only result.
+    """
+    try:
+        from src.scrapebadger import scrape
+    except Exception as e:
+        logger.warning("ScrapeBadger client unavailable: %s", e)
+        return []
+
+    data, err = scrape("google", "search", {"q": query, "num": count})
+    if err:
+        logger.warning("ScrapeBadger SERP search failed: %s", err)
+        return []
+
+    results: List[dict] = []
+
+    # Organic results — the fetchable backbone for deep research.
+    for item in (data.get("organic_results") or [])[:count]:
+        url = item.get("link") or ""
+        if not url:
+            continue
+        results.append({
+            "title": item.get("title", "") or url,
+            "url": url,
+            "snippet": item.get("snippet", "") or item.get("description", ""),
+        })
+
+    # Fold in Google's AI overview (when present) as a leading snippet.
+    ai = data.get("ai_overview") or {}
+    if isinstance(ai, dict):
+        blocks = ai.get("text_blocks") or []
+        parts = []
+        for b in blocks:
+            if b.get("snippet"):
+                parts.append(b["snippet"])
+            for li in (b.get("list_items") or []):
+                lead = li.get("title") or ""
+                body = li.get("snippet") or ""
+                if lead or body:
+                    parts.append(f"{lead}: {body}".strip(": "))
+        if parts:
+            results.insert(0, {
+                "title": f"Google AI overview: {query[:80]}",
+                "url": "",
+                "snippet": "\n".join(parts),
+            })
+
+    logger.info("ScrapeBadger SERP returned %d results for: %s", len(results), query)
     return results
 
 
