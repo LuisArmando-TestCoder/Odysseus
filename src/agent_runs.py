@@ -124,6 +124,13 @@ def _schedule_evict(session_id: str) -> None:
     run.evict_task = asyncio.create_task(_evict(run))
 
 
+def current_run(session_id: str):
+    """The live _Run for a session, or None. Used by the queued follower
+    stream to wait for the current run to finish before subscribing to the
+    queued turn."""
+    return _RUNS.get(session_id)
+
+
 def is_active(session_id: str) -> bool:
     r = _RUNS.get(session_id)
     return bool(r and r.status == "running")

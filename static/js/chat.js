@@ -244,6 +244,197 @@ import wakeLock from './wakeLock.js';
     setTimeout(() => document.addEventListener('click', dismiss, true), 0);
   }
 
+  // ── I1: queue-don't-cancel (send side + compact queued-turn renderer) ────
+  let _queuePending = false;
+  let _queuedRendererActive = false;
+  const _escQ = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  async function _sendQueuedMessage(sessionId, submitBtn, msg) {
+    const el = uiModule.el;
+    // Render the user bubble immediately (same helper as the normal path).
+    addMessage('user', msg, null, null);
+    el('message').value = '';
+    if (uiModule.autoResize) uiModule.autoResize(el('message'));
+    if (window._syncModelPickerAutohide) window._syncModelPickerAutohide();
+    _queuePending = true;
+    _setQueueChip(1);
+    // POST — the backend persists the message and queues it behind the live
+    // run; its response is the follower stream (quiet until `turn_resumed`).
+    try {
+      const fd = new FormData();
+      fd.append('message', msg);
+      if (fileHandlerModule.getPendingFiles) {
+        const _pf = fileHandlerModule.getPendingFiles();
+        _pf.forEach(f => fd.append('files', f));
+        if (fileHandlerModule.clearPendingFiles) fileHandlerModule.clearPendingFiles();
+      }
+      if (el('incognito-toggle') && el('incognito-toggle').checked) fd.append('incognito', 'true');
+      const res = await fetch(`${API_BASE}/api/chat_stream`, { method: 'POST', body: fd, credentials: 'same-origin' });
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          if (raw.startsWith('data: ')) {
+            let j = null;
+            try { j = JSON.parse(raw.slice(6)); } catch (_) {}
+            if (j && j.type === 'turn_resumed') {
+              _renderQueuedTurn(sessionId);
+              return;  // the compact renderer re-fetches /resume and renders
+            }
+          }
+        }
+      }
+    } catch (_) { /* run is detached server-side; the dots still show it */ }
+  }
+
+  // Compact renderer for queued turns — re-fetches /api/chat/resume until the
+  // queued run is live, renders the full agent stream, and chains the NEXT
+  // queued turn (drain chain) until the session is idle again.
+  async function _renderQueuedTurn(sessionId) {
+    if (_queuedRendererActive) return;   // one renderer per session
+    _queuedRendererActive = true;
+    const submitBtn = document.querySelector('.send-btn');
+    const _hist = () => document.getElementById('chat-history');
+    updateSubmitButton('streaming', submitBtn);
+    let holder = null, acc = '', lastRender = 0;
+    const render = () => {
+      if (!holder) return;
+      holder.querySelector('.body').innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(acc));
+      if (window.hljs) holder.querySelectorAll('pre code').forEach(b => window.hljs.highlightElement(b));
+      uiModule.scrollHistory();
+    };
+    try {
+      for (;;) {
+        // Wait for the queued run to be live (drain chain: each [DONE] is
+        // followed by the next queued turn).
+        let res = null;
+        for (let i = 0; i < 100; i++) {
+          res = await fetch(`${API_BASE}/api/chat/resume/${encodeURIComponent(sessionId)}`, { credentials: 'same-origin' });
+          if (res.ok) break;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        if (!res || !res.ok) break;
+        // New turn: reset per-run state.
+        holder = null; acc = '';
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        let sawResumed = false;
+        let runDone = false;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n\n')) >= 0) {
+            const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+            if (!raw.startsWith('data: ')) continue;
+            const data = raw.slice(6);
+            if (data === '[DONE]') { runDone = true; break; }
+            let j = null;
+            try { j = JSON.parse(data); } catch (_) { continue; }
+            if (j.type === 'turn_resumed') {
+              sawResumed = true;
+              _setQueueChip(0);
+              const n = document.createElement('div');
+              n.className = 'status-note queue-resumed-note';
+              n.setAttribute('role', 'status');
+              n.textContent = '▶ queued message now running';
+              _hist().appendChild(n);
+              continue;
+            }
+            if (!sawResumed) continue;
+            if (j.type === 'agent_step') {
+              const sep = chatRenderer.addRoundSeparator(j.round, j.round_ms);
+              if (sep) _hist().appendChild(sep);
+              holder = document.createElement('div');
+              holder.className = 'msg msg-ai msg-continuation streaming';
+              const role = document.createElement('div');
+              role.className = 'role';
+              holder.appendChild(role);
+              const body = document.createElement('div');
+              body.className = 'body';
+              holder.appendChild(body);
+              _hist().appendChild(holder);
+              acc = '';
+            } else if (j.type === 'delta') {
+              if (!holder || j.thinking) continue;
+              acc += (j.delta || '');
+              const now = performance.now();
+              if (now - lastRender > 80) { lastRender = now; render(); }
+            } else if (j.type === 'tool_start') {
+              const n = document.createElement('div');
+              n.className = 'status-note queued-tool-note';
+              n.setAttribute('role', 'status');
+              n.textContent = `🛠 ${j.tool || 'tool'}…`;
+              _hist().appendChild(n);
+            } else if (j.type === 'tool_output') {
+              const n = document.createElement('div');
+              n.className = 'status-note queued-tool-note';
+              n.setAttribute('role', 'status');
+              const _ok = (j.exit_code === 0 || j.exit_code == null);
+              n.innerHTML = `${_ok ? '✓' : '✗'} ${_escQ(j.tool || 'tool')} — ${_escQ(j.output ? String(j.output).slice(0, 220) : '')}`;
+              _hist().appendChild(n);
+            } else if (j.type === 'file_diff') {
+              const _fd = j.data || {};
+              if (_fd.lines && _fd.lines.length && holder) {
+                const chip = document.createElement('button');
+                chip.className = 'agent-diff-open';
+                chip.textContent = `diff +${_fd.added ?? '?'}/−${_fd.removed ?? '?'}`;
+                chip.dataset.diff = JSON.stringify(_fd);
+                holder.querySelector('.body').appendChild(chip);
+              }
+            } else if (j.type === 'present') {
+              const files = j.data?.files || [];
+              const edited = j.data?.edited || [];
+              if (edited.length) {
+                const line = document.createElement('div');
+                line.className = 'status-note edited-files-note';
+                line.setAttribute('role', 'status');
+                line.textContent = `✏️ edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${edited.join(', ')}`;
+                _hist().appendChild(line);
+              }
+              const build = chatRenderer.buildDeliverableCard;
+              if (build) files.forEach(f => { const c = build(f); if (c) _hist().appendChild(c); });
+            } else if (j.type === 'metrics') {
+              if (holder) {
+                render();
+                const rt = j.metrics && (j.metrics.response_time ?? j.metrics.response_time_ms);
+                if (typeof rt === 'number') chatRenderer.setMsgDuration(holder, rt / 1000);
+              }
+            }
+          }
+          if (runDone) break;
+        }
+        // [DONE] for this run: freeze what we rendered.
+        if (holder) { render(); holder.classList.remove('streaming'); }
+        // Next queued turn (drain chain) or exit?
+        let stillActive = false;
+        try {
+          const act = await fetch(`${API_BASE}/api/chat/active`, { credentials: 'same-origin' }).then(r => r.json());
+          stillActive = (act.runs || []).some(r => r.session_id === sessionId);
+        } catch (_) {}
+        if (!stillActive) break;
+        await new Promise(r => setTimeout(r, 150));
+      }
+    } catch (e) {
+      console.warn('queued turn renderer failed:', e);
+    } finally {
+      _queuedRendererActive = false;
+      _queuePending = false;
+      _setQueueChip(0);
+      if (submitBtn) updateSubmitButton('idle', submitBtn);
+      const inp = uiModule.el('message');
+      if (inp) { inp.disabled = false; inp.focus(); }
+    }
+  }
+
   // ── Composer draft indicator ────────────────────────────────────────────
   function _draftIndicator(msg) {
     let el = document.getElementById('draft-indicator');
@@ -365,129 +556,18 @@ import wakeLock from './wakeLock.js';
       return;
     }
 
-    // If currently streaming, stop it
+    // ── I1: queue-don't-cancel ─────────────────────────────────────────────
+    // A new message while a turn is live is QUEUED, not a cancel. The live
+    // run keeps streaming on its own connection; this send renders the user
+    // bubble and attaches a follower reader that only starts rendering once
+    // the queued turn begins (the primary reader hands over at its end).
     if (isStreaming) {
-      // Cancel server-side research if in progress
-      const _cancelSid = sessionModule.getCurrentSessionId();
-      if (_cancelSid && _researchingStreamIds.has(_cancelSid)) {
-        fetch(`${API_BASE}/api/research/cancel/${_cancelSid}`, { method: 'POST' }).catch(e => console.warn('Research cancel failed:', e));
-        _researchingStreamIds.delete(_cancelSid);
-        _clearResearchTimer();
-      }
-      abortCurrentRequest(true);  // explicit user Stop → also cancel the detached server run
-
-      // Clean up any running agent thread nodes (stop wave animation, remove "running" state)
-      document.querySelectorAll('.agent-thread-node.running').forEach(node => {
-        if (node._waveInterval) { clearInterval(node._waveInterval); node._waveInterval = null; }
-        if (node._elapsedTicker) { clearInterval(node._elapsedTicker); node._elapsedTicker = null; }
-        node.classList.remove('running');
-        const wave = node.querySelector('.agent-thread-wave');
-        if (wave) wave.textContent = '';
-        const icon = node.querySelector('.agent-thread-icon');
-        if (icon) icon.textContent = '\u25A0'; // stop square
-        const statusEl = node.querySelector('.agent-thread-status');
-        if (!statusEl) {
-          const header = node.querySelector('.agent-thread-header');
-          if (header) {
-            const s = document.createElement('span');
-            s.className = 'agent-thread-status';
-            s.textContent = 'stopped';
-            header.appendChild(s);
-          }
-        }
-      });
-      document.querySelectorAll('.agent-thread.streaming').forEach(t => t.classList.remove('streaming'));
-
-      // Clean up any thinking spinners
-      document.querySelectorAll('.agent-thinking-dots').forEach(el => {
-        if (el._spinner) el._spinner.destroy();
-        el.remove();
-      });
-      // No text accumulated — remove the empty holder with spinner
-      if (currentHolder && !currentAccumulated) {
-        if (currentSpinner) { currentSpinner.destroy(); currentSpinner = null; }
-        // Empty cancel — keep the assistant bubble around with a "Cancelled
-        // by user" indicator and persist a placeholder server-side so the
-        // turn survives a refresh instead of vanishing without a trace.
-        _renderCancelledBubble(currentHolder);
-        currentHolder = null;
-        updateSubmitButton('idle', submitBtn);
-        const messageInput = uiModule.el('message');
-        if (messageInput) messageInput.disabled = false;
-        currentAccumulated = '';
-        return;
-      }
-      // Render whatever was accumulated so far
-      if (currentHolder && currentAccumulated) {
-        // Store accumulated in a closure variable before it gets cleared
-        const stoppedContent = currentAccumulated;
-        
-        // Store raw content in dataset for consistency with other messages
-        currentHolder.dataset.raw = stoppedContent;
-        
-        currentHolder.querySelector('.body').innerHTML = markdownModule.processWithThinking(
-          markdownModule.squashOutsideCode(stoppedContent)
-        );
-        
-        // Highlight code blocks
-        if (window.hljs) {
-          currentHolder.querySelectorAll('pre code').forEach((block) => {
-            window.hljs.highlightElement(block);
-          });
-        }
-        
-        // Add the stopped indicator with continue button
-        const stoppedIndicator = document.createElement('div');
-        stoppedIndicator.className = 'stopped-indicator';
-        const stoppedLabel = document.createElement('span');
-        stoppedLabel.textContent = '[Message interrupted]';
-        stoppedIndicator.appendChild(stoppedLabel);
-        const continueBtn = document.createElement('button');
-        continueBtn.className = 'continue-btn';
-        continueBtn.title = 'Continue';
-        continueBtn.textContent = '\u25B8';
-        const _stoppedHolder = currentHolder; // capture before it gets cleared
-        continueBtn.addEventListener('click', () => {
-          stoppedIndicator.remove();
-          _hideUserBubble = true;
-          _pendingContinue = _stoppedHolder;
-          const cutoff = stoppedContent;
-          const msgInput = uiModule.el('message');
-          if (msgInput) {
-            msgInput.value = 'Your previous response was interrupted. It ended with:\n\n' + cutoff.slice(-500) + '\n\nDo NOT repeat what you already said. Continue exactly from where you were cut off.';
-            const sb = document.querySelector('.send-btn');
-            if (sb) sb.click();
-          }
-        });
-        stoppedIndicator.appendChild(continueBtn);
-        currentHolder.querySelector('.body').appendChild(stoppedIndicator);
-
-        // Tell server to mark this message as stopped
-        const _sid = sessionModule.getCurrentSessionId();
-        if (_sid) fetch(`${API_BASE}/api/session/${_sid}/mark-stopped`, { method: 'POST' }).catch(e => console.warn('mark-stopped failed:', e));
-
-        // Add footer with copy/regen if not already present
-        if (!currentHolder.querySelector('.msg-footer')) {
-          currentHolder.dataset.raw = stoppedContent;
-          currentHolder.appendChild(createMsgFooter(currentHolder));
-        }
-
-        uiModule.scrollHistory();
-      }
-      
-      // Reset button state
-      updateSubmitButton('idle', submitBtn);
-      
-      // Re-enable message input
-      const messageInput = uiModule.el('message');
-      if (messageInput) messageInput.disabled = false;
-      
-      // Clear tracking variables
-      currentAccumulated = '';
-      currentHolder = null;
-
+      const _qmsg = uiModule.el('message').value;
+      if (!_qmsg.trim()) return;
+      await _sendQueuedMessage(sessionId, submitBtn, _qmsg);
       return;
     }
+
 
     // --- Send-path entry: block re-clicks between submit and stream start ---
     if (_sendInFlight) return;
@@ -3070,8 +3150,9 @@ import wakeLock from './wakeLock.js';
       // Phase 6 — never leave the duration ticker running past this turn.
       if (_durationTicker) { clearInterval(_durationTicker); _durationTicker = null; }
       // Queue chip — hide once this turn's stream ends (a new turn_queued
-      // event re-shows it with the live count).
-      if (typeof _setQueueChip === 'function') _setQueueChip(0);
+      // event re-shows it with the live count). I1: when a queued message is
+      // pending, the compact renderer owns the chip.
+      if (!_queuePending && typeof _setQueueChip === 'function') _setQueueChip(0);
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {
@@ -3083,8 +3164,16 @@ import wakeLock from './wakeLock.js';
       const _isBgFinally = (sessionModule.getCurrentSessionId() !== streamSessionId) || _backgroundStreams.has(streamSessionId);
 
       if (!_isBgFinally) {
-        // Reset button to idle state
-        updateSubmitButton('idle', submitBtn);
+        // Reset button to idle state — I1: with a queued message pending the
+        // compact renderer keeps the streaming state until the drain chain ends.
+        if (!_queuePending) updateSubmitButton('idle', submitBtn);
+
+        // I1 — hand over to the compact renderer for the queued turn(s). Only
+        // while the user is viewing this session; background sessions get the
+        // persisted answer on the next select.
+        if (_queuePending && !_queuedRendererActive && sessionModule.getCurrentSessionId() === streamSessionId) {
+          _renderQueuedTurn(streamSessionId);
+        }
 
         // Re-enable message input; on mobile blur to dismiss keyboard
         if (messageInput) {

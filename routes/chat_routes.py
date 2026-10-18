@@ -1107,7 +1107,12 @@ def setup_chat_routes(
                 session,
                 f'data: {json.dumps({"type": "turn_queued", "data": _q})}\n\n',
             )
-            return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
+            # I1 queue UX — the queued message's OWN response is a follower
+            # stream: heartbeats (implicit) while the current run drains, then
+            # the queued turn's full stream (replay-safe from its own start).
+            # This keeps ONE connection per queued message that survives the
+            # handover, so the frontend never needs to re-subscribe.
+            return StreamingResponse(_queued_follower_stream(session), media_type="text/event-stream")
 
         # Run the stream as a DETACHED background task so it survives the client
         # closing the tab / navigating away (true terminal-agent behavior). The
@@ -1417,6 +1422,12 @@ def setup_chat_routes(
             pass
         _msgs = sess.get_context_messages()
         _msgs.append({"role": "user", "content": message or ""})
+        # I1 queue UX — mark the queued-turn boundary so frontends can hand the
+        # renderer over from the finished turn to this one.
+        agent_runs.publish(
+            session_id,
+            f'data: {json.dumps({"type": "turn_resumed", "data": {"session_id": session_id}})}\n\n',
+        )
         yield f'data: {json.dumps({"type": "model_info", "model": sess.model})}\n\n'
         full = ""
         try:
@@ -1461,6 +1472,31 @@ def setup_chat_routes(
         except Exception:
             owner = None
         return (_queued_turn_stream(session_id, message), owner)
+
+    # ── I1: follower stream for a queued message's own POST ─────────────────
+    # The current run is already streaming on the primary connection, so this
+    # stream stays quiet while it drains, then hands over to the queued turn's
+    # own stream. The frontend discards everything before `turn_resumed`.
+    async def _queued_follower_stream(session: str):
+        import asyncio
+        _run = agent_runs.current_run(session)
+        try:
+            # Phase 1 — wait for the current run to finish (no events: the
+            # primary connection already renders it; SSE idle is fine here).
+            while _run is not None and getattr(_run, "status", None) == "running":
+                await asyncio.sleep(0.2)
+            # Phase 2 — drain_on_finish starts the queued turn; wait for it.
+            while not agent_runs.is_active(session):
+                await asyncio.sleep(0.05)
+            # Phase 3 — stream the queued turn from its own start
+            # (turn_resumed → model_info → full agent stream → [DONE]).
+            async for chunk in agent_runs.subscribe(session):
+                yield chunk
+        except (asyncio.CancelledError, GeneratorExit):
+            raise
+        except Exception as e:
+            logger.warning(f"queued follower stream failed for {session}: {e}")
+            yield "data: [DONE]\n\n"
 
     try:
         from src import turn_inbox
