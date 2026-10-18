@@ -3111,7 +3111,20 @@ import wakeLock from './wakeLock.js';
             const _p = _resumeDetachedRun(holder, streamSessionId);
             Promise.resolve(_p).then((tookOver) => {
               if (tookOver) return;   // detached run resumed — reload will render it
-              // No detached run to resume → genuine death. Handshake, capped.
+              // The run is no longer active. If we already rendered content,
+              // the server FINISHED the turn and only the [DONE] marker raced
+              // the connection close — finalize silently. NEVER re-run a
+              // completed answer through the interrupt/continue handshake
+              // (that was the source of duplicated messages).
+              if (accumulated && accumulated.trim()) {
+                try {
+                  if (sessionModule.getCurrentSessionId() === streamSessionId) {
+                    sessionModule.selectSession(streamSessionId);
+                  }
+                } catch (_) {}
+                return;
+              }
+              // Genuine death with nothing rendered — handshake, capped.
               if (!_tryAutoRecover(holder, accumulated, streamSessionId)) {
                 const errorHolder = document.querySelector('.msg-ai:last-of-type .body');
                 if (errorHolder) {

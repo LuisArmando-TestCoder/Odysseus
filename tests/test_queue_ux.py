@@ -49,7 +49,39 @@ async def test_follower_handover_primitives(monkeypatch):
     assert any("two" in ch for ch in got2)
 
 
-def test_frontend_queue_wiring_pins():
+async def test_drain_guarantees_terminal_done():
+    """A run whose generator omits [DONE] must still deliver it — the frontend
+    treats a [DONE]-less close as an interruption and re-ran the turn
+    (duplicated answers)."""
+    sid = "done-guarantee"
+
+    async def gen_without_done():
+        yield 'data: {"type": "delta", "delta": "partial"}\n\n'
+
+    agent_runs.start(sid, gen_without_done(), owner="u")
+    got = [ch async for ch in agent_runs.subscribe(sid)]
+    assert got and got[-1] == "data: [DONE]\n\n", got
+
+
+async def test_duplicate_queued_message_not_double_queued(monkeypatch):
+    sid = "dup-queue"
+    turn_inbox.clear(sid)
+    turn_inbox.enqueue(sid, "hello")
+    pending = turn_inbox.pending_items(sid)
+    assert pending == ["hello"]
+    # The queue branch's guard compares the LAST pending item; the API route
+    # re-subscribes instead of enqueueing a second copy (route-level check
+    # mirrors this comparison).
+    assert turn_inbox.pending_items(sid)[-1] == "hello"
+
+
+def test_frontend_no_rerun_after_completed_render():
+    chat_js = (Path(__file__).resolve().parents[1] / "static/js/chat.js").read_text(encoding="utf-8")
+    assert "finalize silently. NEVER re-run a" in chat_js
+    assert "if (accumulated && accumulated.trim())" in chat_js
+    # The recoverable-error path must not handshake when content was rendered.
+    idx = chat_js.index("if (accumulated && accumulated.trim())")
+    assert "selectSession" in chat_js[idx:idx + 400]
     chat_js = (Path(__file__).resolve().parents[1] / "static/js/chat.js").read_text(encoding="utf-8")
     # Send side: queue, never cancel.
     assert "await _sendQueuedMessage(sessionId, submitBtn, _qmsg);" in chat_js

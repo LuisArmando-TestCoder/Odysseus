@@ -208,6 +208,11 @@ async def _drain(session_id: str, agen: AsyncGenerator[str, None],
             _publish(run, ev)
         if run.status == "running":
             run.status = "done"
+            # Guarantee a terminal marker so clients NEVER mistake a clean end
+            # for an interruption: the frontend treats "stream closed before
+            # [DONE]" as recoverable and re-runs the turn (duplicate answers).
+            if not run.buffer or run.buffer[-1] != "data: [DONE]\n\n":
+                _publish(run, "data: [DONE]\n\n")
     except asyncio.CancelledError:
         run.status = "stopped"
         # Let the wrapped generator's own CancelledError handler run (it saves

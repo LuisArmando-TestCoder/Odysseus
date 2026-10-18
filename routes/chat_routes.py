@@ -1102,6 +1102,11 @@ def setup_chat_routes(
         # finishes (turn_inbox.drain_on_finish → the registered factory).
         if agent_runs.is_active(session):
             from src import turn_inbox
+            _pending = turn_inbox.pending_items(session)
+            if _pending and _pending[-1] == (message or ""):
+                # Fast double-send that beat the persistence guard — this exact
+                # message is already queued. Don't queue it twice.
+                return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
             _q = turn_inbox.enqueue(session, message or "")
             agent_runs.publish(
                 session,
