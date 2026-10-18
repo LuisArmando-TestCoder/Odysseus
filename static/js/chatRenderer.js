@@ -234,10 +234,12 @@ export function updateMessageAttachments(msgWrap, attachments) {
 // produces a report/document, render a card with "Previsualizar" + "Abrir"
 // instead of a generic bubble. `file` is { name, id, description?, path? }.
 // Round separator — visual divider between goal rounds in the chat stream.
-export function addRoundSeparator(roundNum) {
+export function addRoundSeparator(roundNum, roundMs) {
   const sep = document.createElement('div');
   sep.className = 'round-sep';
-  sep.textContent = `ronda ${roundNum}`;
+  // DSH deep-dive: per-round elapsed time.
+  const t = (roundMs != null && isFinite(roundMs)) ? ` · ${(roundMs / 1000).toFixed(1)}s` : '';
+  sep.textContent = `ronda ${roundNum}${t}`;
   return sep;
 }
 

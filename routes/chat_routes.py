@@ -1190,6 +1190,33 @@ def setup_chat_routes(
             return {"runs": []}
 
     # ------------------------------------------------------------------ #
+    # GET /api/spill/{owner}/{session_id}/{filename} — B6 tool-bubble expand:
+    # serve a spilled tool output so the frontend can show the FULL text of a
+    # clipped bubble. Owner-scoped + session-verified.
+    # ------------------------------------------------------------------ #
+    @router.get("/api/spill/{owner}/{session_id}/{filename}")
+    async def spill_read(request: Request, owner: str, session_id: str, filename: str):
+        _verify_session_owner(request, session_id)
+        import re as _re
+        if not _re.fullmatch(r"[A-Za-z0-9._-]+", filename or ""):
+            raise HTTPException(400, "bad filename")
+        from src.constants import DATA_DIR
+        import os as _os
+        base = _os.path.join(DATA_DIR, "spills")
+        safe_owner = _re.sub(r"[^A-Za-z0-9._-]", "_", owner or "shared")
+        safe_sid = _re.sub(r"[^A-Za-z0-9._-]", "_", session_id or "unknown")
+        path = _os.path.join(base, safe_owner, safe_sid, filename)
+        real = _os.path.realpath(path)
+        if not real.startswith(_os.path.realpath(base) + _os.sep):
+            raise HTTPException(403, "path outside spills")
+        if not _os.path.exists(path):
+            raise HTTPException(404, "spill not found")
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(text, media_type="text/plain")
+
+    # ------------------------------------------------------------------ #
     # POST /api/inject_context
     # ------------------------------------------------------------------ #
     @router.post("/api/inject_context/{session_id}")

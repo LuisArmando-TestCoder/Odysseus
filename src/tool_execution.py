@@ -632,6 +632,13 @@ async def _direct_fallback(
             from src.spill import spill_or_truncate
             data = spill_or_truncate(data, tool="read_file", session_id=session_id,
                                      owner=owner, limit=MAX_READ_CHARS)
+            # File-guard: remember this read so write_file can warn on unread
+            # edits (DSH read-before-write guard, src/file_guard.py).
+            try:
+                from src.file_guard import mark_read
+                mark_read(session_id, path)
+            except Exception:
+                pass
             return {"output": data, "exit_code": 0}
 
         if tool == "write_file":
@@ -1398,6 +1405,27 @@ async def execute_tool_block(
             _args = {}
         from src import subagents as _subs
         result = _subs.interrupt(_args.get("job_id") or "", owner or "")
+    elif tool == "todo_write":
+        desc = f"todo_write: {content.split(chr(10))[0][:60]}"
+        # DSH todo parity: maintain the expandable task list shown with the
+        # ongoing goal (the goal panel renders /api/goal/queue live).
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        _items = _args.get("items")
+        if not isinstance(_items, list) or not _items:
+            if content.strip().startswith("{"):
+                result = {"error": "todo_write requires {\"items\": [...]}", "exit_code": 1}
+            else:
+                _items = [l.strip() for l in content.strip().splitlines() if l.strip()]
+        if isinstance(_items, list) and _items:
+            from src.checkpoint import checkpoint_set_queue
+            _items = [str(i) for i in _items]
+            checkpoint_set_queue(_items, session_id)
+            result = {"output": f"todo list set ({len(_items)} items)", "exit_code": 0, "items": _items}
+        else:
+            result = {"error": "todo_write requires a non-empty items list", "exit_code": 1}
     elif tool == "sinalevi_search":
         desc = f"sinalevi_search: {content.split(chr(10))[0][:60]}"
         # L4 — targeted Costa Rican legislation query; results always cite the

@@ -46,6 +46,40 @@ export function renderGoal(goal, extra = {}) {
     cur.hidden = true;
   }
 
+  // ── Expandable todo list (DSH parity: the goal's item list is visible
+  //    and expandable, fed live by /api/goal/queue). ──
+  let todo = document.getElementById('goal-todo-list');
+  if (!todo) {
+    todo = document.createElement('details');
+    todo.id = 'goal-todo-list';
+    todo.className = 'goal-todo';
+    const sum = document.createElement('summary');
+    sum.textContent = 'Task list';
+    todo.appendChild(sum);
+    const body = document.createElement('div');
+    body.className = 'goal-todo-body';
+    todo.appendChild(body);
+    if (cur && cur.parentNode) cur.parentNode.insertBefore(todo, cur);
+    else card.appendChild(todo);
+  }
+  const todoBody = todo.querySelector('.goal-todo-body');
+  if (todoBody) {
+    todoBody.innerHTML = '';
+    (queue.remaining || []).forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'goal-todo-item';
+      row.textContent = '☐ ' + item;
+      todoBody.appendChild(row);
+    });
+    (queue.done || []).forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'goal-todo-item done';
+      row.textContent = '☑ ' + item;
+      todoBody.appendChild(row);
+    });
+  }
+  todo.hidden = total === 0;
+
   // ── GAP 2: actividad ──
   setGoalActivity(extra.activity || (goal.phase === 'blocked' ? 'blocked' : 'idle'));
 

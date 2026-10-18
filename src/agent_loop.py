@@ -1867,12 +1867,15 @@ async def stream_agent_loop(
     # H3 — deliverable registry: files this turn produced (fed to the H1
     # `present` event at turn end; presentation-only, never model context).
     deliverables: List[dict] = []
+    # DSH "edited N files" summary — files this turn modified/created.
+    edited_files: List[str] = []
 
     for round_num in range(1, max_rounds + 1):
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
         _round_timed_out = False  # set when the wall-clock stream deadline trips
+        _round_t0 = time.time()  # DSH deep-dive timing — agent_step carries round_ms
         # Reset doc streaming state per round
         _doc_acc = ""
         _doc_opened = False
@@ -2192,7 +2195,7 @@ async def stream_agent_loop(
                     # effectful turn. Opt-in via setting for strong models.
                     and get_setting("agent_verifier_subagent", False)):
                 # Brief "working" indicator while the verifier runs.
-                yield f'data: {json.dumps({"type": "agent_step", "round": round_num})}\n\n'
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
                 _vfail = await _run_verifier_subagent(
                     _verifier_instruction,
                     _build_actions_snapshot(tool_events),
@@ -2265,7 +2268,7 @@ async def stream_agent_loop(
                     "content": _instruction,
                 })
                 full_response += "\n\n"
-                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
                 continue
             break  # no tools — done
 
@@ -2325,7 +2328,7 @@ async def stream_agent_loop(
                 ),
             })
             full_response += "\n\n"
-            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
             continue
 
         # Pre-stream document content for fenced tool blocks (non-native path)
@@ -2643,8 +2646,23 @@ async def stream_agent_loop(
             elif "error" in result:
                 output_text = result["error"][:2000]
 
+            # B6 — tool bubble expand: carry the spill locator so the frontend
+            # can offer "show full output" for spilled tool results.
+            _spill_locator = None
+            _spill_ref = None
+            if "FULL OUTPUT SPILLED TO:" in (output_text or ""):
+                _spill_locator = output_text.split("FULL OUTPUT SPILLED TO:", 1)[1].split(" — ", 1)[0].strip()
+                _spill_parts = _spill_locator.replace("\\", "/").rstrip("/").split("/")
+                if len(_spill_parts) >= 3:
+                    _spill_ref = {"owner": _spill_parts[-3], "session": _spill_parts[-2], "file": _spill_parts[-1]}
+
             # Emit tool_output (include ui_event data if present)
-            tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code")}
+            tool_output_data = {
+                "type": "tool_output", "tool": block.tool_type, "command": cmd_display,
+                "output": output_text, "exit_code": result.get("exit_code"),
+                **({"spill_locator": _spill_locator} if _spill_locator else {}),
+                **({"spill_ref": _spill_ref} if _spill_ref else {}),
+            }
             if "ui_event" in result:
                 tool_output_data["ui_event"] = result["ui_event"]
                 for k in ("toggle_name", "state", "mode", "model", "endpoint_url", "theme_name", "colors"):
@@ -2724,6 +2742,18 @@ async def stream_agent_loop(
                         "path": _path,
                         "description": "",
                     })
+                    _base = _path.replace("\\", "/").rsplit("/", 1)[-1]
+                    if _base not in edited_files:
+                        edited_files.append(_base)
+
+            # DSH "edited N files" + diff picker: write_file edits carry a
+            # unified diff (src/file_guard.py post-hook) — surface it to the
+            # frontend as a file_diff event for the smart diff popover.
+            if result.get("diff"):
+                _d = result["diff"]
+                yield (
+                    f'data: {json.dumps({"type": "file_diff", "data": _d})}\n\n'
+                )
 
             # Force-append a 1-line summary to the durable checkpoint after
             # every tool execution, so the next round (or a later nudge)
@@ -2795,7 +2825,7 @@ async def stream_agent_loop(
 
         # Emit agent_step event
         yield (
-            f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            f'data: {json.dumps({"type": "agent_step", "round": round_num + 1, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
         )
 
         # Separator in accumulated response
@@ -2805,7 +2835,7 @@ async def stream_agent_loop(
     # emitted once at turn end so the frontend renders one card per file.
     if deliverables:
         yield (
-            f'data: {json.dumps({"type": "present", "data": {"files": deliverables}})}\n\n'
+            f'data: {json.dumps({"type": "present", "data": {"files": deliverables, "edited": edited_files}})}\n\n'
         )
 
     # If the response is completely empty and no tools were executed,

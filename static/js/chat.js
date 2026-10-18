@@ -174,6 +174,18 @@ import wakeLock from './wakeLock.js';
       const ta = document.getElementById('message');
       if (ta && mod.initSlashAutocomplete) mod.initSlashAutocomplete(ta);
     }).catch(() => {});
+    // Composer draft save — debounced localStorage per session (DSH parity:
+    // a sudden close never loses the draft).
+    const _draftTa = document.getElementById('message');
+    if (_draftTa && !window.__odysseus_draft_bound) {
+      window.__odysseus_draft_bound = true;
+      let _draftT = null;
+      _draftTa.addEventListener('input', () => {
+        clearTimeout(_draftT);
+        _draftT = setTimeout(_saveDraftNow, 500);
+      });
+      restoreDraft(sessionModule.getCurrentSessionId());
+    }
   }
 
   // addMessage, createMsgFooter, displayMetrics, hideWelcomeScreen, showWelcomeScreen
@@ -184,6 +196,95 @@ import wakeLock from './wakeLock.js';
   var displayMetrics = chatRenderer.displayMetrics;
   var hideWelcomeScreen = chatRenderer.hideWelcomeScreen;
   var showWelcomeScreen = chatRenderer.showWelcomeScreen;
+
+  // ── Queue chip (DSH message-queue visibility in normal chat) ────────────
+  function _setQueueChip(n) {
+    let chip = document.getElementById('queue-chip');
+    if (!n || n <= 0) {
+      if (chip) chip.hidden = true;
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.id = 'queue-chip';
+      chip.className = 'queue-chip';
+      const anchor = document.getElementById('message');
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(chip, anchor);
+      else return;
+    }
+    chip.textContent = `⏳ ${n} message${n === 1 ? '' : 's'} queued — runs when the current turn finishes`;
+    chip.hidden = false;
+  }
+
+  // ── Diff popover (DSH pick-diff UI for edited files) ────────────────────
+  function _showDiffPopover(anchorEl, data) {
+    document.querySelectorAll('.agent-diff-popover').forEach(el => el.remove());
+    const pop = document.createElement('div');
+    pop.className = 'agent-diff-popover';
+    const head = document.createElement('div');
+    head.className = 'agent-diff-head';
+    head.textContent = `${data.path || 'file'}  (+${data.added ?? 0} / −${data.removed ?? 0})`;
+    const pre = document.createElement('pre');
+    pre.className = 'agent-diff-body';
+    pre.textContent = (data.lines || []).join('\n');
+    const close = document.createElement('button');
+    close.className = 'agent-diff-close';
+    close.textContent = '✕';
+    close.addEventListener('click', () => pop.remove());
+    head.appendChild(close);
+    pop.appendChild(head);
+    pop.appendChild(pre);
+    document.body.appendChild(pop);
+    const r = anchorEl.getBoundingClientRect();
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.left = Math.min(r.left, window.innerWidth - 480) + 'px';
+    const dismiss = (ev) => {
+      if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', dismiss, true); }
+    };
+    setTimeout(() => document.addEventListener('click', dismiss, true), 0);
+  }
+
+  // ── Composer draft indicator ────────────────────────────────────────────
+  function _draftIndicator(msg) {
+    let el = document.getElementById('draft-indicator');
+    if (!el) {
+      el = document.createElement('span');
+      el.id = 'draft-indicator';
+      el.className = 'draft-indicator';
+      const anchor = document.getElementById('message');
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(el, anchor);
+      else return;
+    }
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+
+  // ── Draft save (DSH parity: survives a sudden close) ────────────────────
+  function _saveDraftNow() {
+    const ta = document.getElementById('message');
+    const sid = sessionModule.getCurrentSessionId();
+    if (!ta || !sid) return;
+    const v = ta.value || '';
+    if (v.trim()) {
+      localStorage.setItem('odysseus-draft-' + sid, v);
+      _draftIndicator('💾 draft saved locally');
+      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === '💾 draft saved locally') el.hidden = true; }, 2500);
+    } else {
+      localStorage.removeItem('odysseus-draft-' + sid);
+    }
+  }
+
+  export function restoreDraft(sessionId) {
+    if (!sessionId) return;
+    let v = '';
+    try { v = localStorage.getItem('odysseus-draft-' + sessionId) || ''; } catch (_) {}
+    const ta = document.getElementById('message');
+    if (ta && v) {
+      ta.value = v;
+      _draftIndicator('💾 draft restored');
+      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === '💾 draft restored') el.hidden = true; }, 2500);
+    }
+  }
 
   /**
    * Update submit button state
@@ -2119,7 +2220,11 @@ import wakeLock from './wakeLock.js';
                   // bottom of file) so no per-node listener needed.
                   const _wasOpen = currentToolBubble.classList.contains('open');
                   currentToolBubble.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
-                  currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}</div>`;
+                  // B6 — "show full output" button when the result was spilled.
+                  const _spillBtn = json.spill_ref
+                    ? `<button class="agent-spill-open" data-owner="${esc(json.spill_ref.owner)}" data-session="${esc(json.spill_ref.session)}" data-file="${esc(json.spill_ref.file)}">Show full output</button>`
+                    : '';
+                  currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${_spillBtn}</div>`;
                   // Reset so thinking spinner between tools says "Thinking" not the old tool's label
                   _lastToolName = '';
                   uiModule.scrollHistory();
@@ -2218,6 +2323,12 @@ import wakeLock from './wakeLock.js';
                 if (_isBg) continue;
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
+                // DSH deep-dive — per-round separator with elapsed time.
+                const _sepEl = chatRenderer.addRoundSeparator(json.round, json.round_ms);
+                if (_sepEl) {
+                  const _histBox = document.getElementById('chat-history');
+                  if (_histBox) _histBox.appendChild(_sepEl);
+                }
                 _throttleStreamRender();
                 // Mark thread as connected to bubble below
                 const _activeThread = document.querySelector('.agent-thread.streaming');
@@ -2276,6 +2387,7 @@ import wakeLock from './wakeLock.js';
                 const _qpos = json.data?.position ?? '?';
                 qd.textContent = `⏳ message queued (position ${_qpos}) — it runs automatically when the current turn finishes.`;
                 document.getElementById('chat-history').appendChild(qd);
+                _setQueueChip(_qpos);
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_timeout') {
@@ -2349,14 +2461,38 @@ import wakeLock from './wakeLock.js';
                 document.getElementById('chat-history').appendChild(dd);
                 uiModule.scrollHistory();
 
+              } else if (json.type === 'file_diff') {
+                // DSH diff picker — a write_file edit produced a unified diff;
+                // attach a chip to the tool bubble that just rendered it.
+                const _fd = json.data || {};
+                if (!_isBg && currentToolBubble && _fd.lines && _fd.lines.length) {
+                  const contentEl = currentToolBubble.querySelector('.agent-thread-content');
+                  if (contentEl && !contentEl.querySelector('.agent-diff-open')) {
+                    const chip = document.createElement('button');
+                    chip.className = 'agent-diff-open';
+                    chip.textContent = `diff +${_fd.added ?? '?'}/−${_fd.removed ?? '?'}`;
+                    chip.title = 'view diff';
+                    chip.dataset.diff = JSON.stringify(_fd);
+                    contentEl.appendChild(chip);
+                  }
+                }
+
               } else if (json.type === 'present') {
-                // H1 — deliverable cards for the files this turn produced.
+                // H1 — deliverable cards for the files this turn produced,
+                // plus the DSH "edited N files" summary line.
                 import('./chatRenderer.js').then(mod => {
                   const files = json.data?.files || [];
-                  if (!files.length) return;
+                  const edited = json.data?.edited || [];
                   const build = mod.buildDeliverableCard || (mod.default && mod.default.buildDeliverableCard);
                   const box = document.getElementById('chat-history');
                   if (!build || !box) return;
+                  if (edited.length) {
+                    const line = document.createElement('div');
+                    line.className = 'status-note edited-files-note';
+                    line.setAttribute('role', 'status');
+                    line.textContent = `✏️ edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${edited.join(', ')}`;
+                    box.appendChild(line);
+                  }
                   files.forEach(f => {
                     const card = build(f);
                     if (card) box.appendChild(card);
@@ -2933,6 +3069,9 @@ import wakeLock from './wakeLock.js';
       if (_chatLogDone) _chatLogDone.setAttribute('aria-busy', 'false');
       // Phase 6 — never leave the duration ticker running past this turn.
       if (_durationTicker) { clearInterval(_durationTicker); _durationTicker = null; }
+      // Queue chip — hide once this turn's stream ends (a new turn_queued
+      // event re-shows it with the live count).
+      if (typeof _setQueueChip === 'function') _setQueueChip(0);
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {
@@ -4842,6 +4981,7 @@ import wakeLock from './wakeLock.js';
     setPendingContinue,
     regenerateFrom,
     forkFrom,
+    restoreDraft,
     editUserMessage,
     editAIMessage,
     resendUserMessage,
@@ -4867,6 +5007,33 @@ import wakeLock from './wakeLock.js';
       node.classList.toggle('open');
     });
     window.__odysseus_thread_click_bound = true;
+  }
+  // Port delegated handlers: spill "show full output" + edit-diff popover.
+  if (!window.__odysseus_port_click_bound) {
+    document.body.addEventListener('click', (e) => {
+      const sp = e.target.closest('.agent-spill-open');
+      if (sp) {
+        e.stopPropagation();
+        const url = `${API_BASE}/api/spill/${encodeURIComponent(sp.dataset.owner || '')}/${encodeURIComponent(sp.dataset.session || '')}/${encodeURIComponent(sp.dataset.file || '')}`;
+        const pre = document.createElement('pre');
+        pre.className = 'agent-spill-full';
+        pre.textContent = 'Loading full output…';
+        sp.replaceWith(pre);
+        fetch(url, { credentials: 'same-origin' })
+          .then(r => (r.ok ? r.text() : Promise.reject(r.status)))
+          .then(t => { pre.textContent = t || '(empty output)'; })
+          .catch(() => { pre.textContent = 'Could not load the full output (spill may have expired after the run finished).'; });
+        return;
+      }
+      const df = e.target.closest('.agent-diff-open');
+      if (df && df.dataset.diff) {
+        e.stopPropagation();
+        let data;
+        try { data = JSON.parse(df.dataset.diff); } catch (_) { return; }
+        _showDiffPopover(df, data);
+      }
+    });
+    window.__odysseus_port_click_bound = true;
   }
 
   export default chatModule;

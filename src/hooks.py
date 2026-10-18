@@ -54,6 +54,7 @@ def register_stream_hook(point: HookPoint, fn: Callable[..., Any]) -> None:
 async def run_hooks(point: HookPoint, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run every registered dict hook in order; each may transform the payload.
     Hook failures are logged and skipped (the original payload passes through)."""
+    register_builtins()  # idempotent — ensures file-guard hooks are mounted
     for fn in list(_REGISTRY.get(point, ())):
         try:
             out = fn(payload)
@@ -67,8 +68,9 @@ async def run_hooks(point: HookPoint, payload: Dict[str, Any]) -> Dict[str, Any]
 
 
 def register_builtins() -> None:
-    """Register the built-in POST_RESPONSE hook (the middleman guard).
-    Idempotent; called lazily by run_post_response_stream."""
+    """Register the built-in POST_RESPONSE hook (the middleman guard) plus the
+    file-edit guardrails (read-before-write + edit diff, src/file_guard.py).
+    Idempotent; called lazily by run_hooks / run_post_response_stream."""
     global _builtins_done
     if _builtins_done:
         return
@@ -79,6 +81,10 @@ def register_builtins() -> None:
         return _guard_stream(agen, url=url, model=model, headers=headers)
 
     register_stream_hook(HookPoint.POST_RESPONSE, _post_response)
+
+    from src.file_guard import post_tool_use_hook, pre_tool_use_hook
+    register_hook(HookPoint.PRE_TOOL_USE, pre_tool_use_hook)
+    register_hook(HookPoint.POST_TOOL_USE, post_tool_use_hook)
 
 
 async def run_post_response_stream(agen, *, url, model, headers):

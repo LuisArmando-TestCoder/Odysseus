@@ -2076,6 +2076,10 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
       const fn = m.restorePendingQuestions || (m.default && m.default.restorePendingQuestions);
       if (fn) fn(id);
     }).catch(() => {});
+    // DSH parity — restore the composer draft saved for this session.
+    if (window.chatModule && typeof window.chatModule.restoreDraft === 'function') {
+      window.chatModule.restoreDraft(id);
+    }
     // Restore group chat state if this is a group session
     if (window.groupModule && window.groupModule.restoreState && window.groupModule.restoreState(id)) {
       if (window._syncGroupIndicator) window._syncGroupIndicator(true);

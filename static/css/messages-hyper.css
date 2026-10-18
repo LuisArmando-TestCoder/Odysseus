@@ -461,3 +461,83 @@
   from { opacity: 0; transform: translateX(10px); }
   to   { opacity: 1; transform: translateX(0); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DSH PARITY UI (queue chip, draft indicator, spill expand, diff popover,
+   edited-files note, goal todo list)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.queue-chip {
+  font-size: 11.5px;
+  color: #6d28d9;
+  background: #ede9fe;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin: 0 0 6px;
+  display: inline-block;
+}
+.draft-indicator {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  margin-right: 8px;
+}
+.agent-spill-open, .agent-diff-open {
+  font-size: 10.5px;
+  border: 1px solid var(--border, #334155);
+  background: transparent;
+  color: var(--fg, #e2e8f0);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin: 6px 8px 2px 0;
+  cursor: pointer;
+}
+.agent-spill-open:hover, .agent-diff-open:hover { border-color: var(--accent, #e06c75); }
+.agent-spill-full {
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg2, #1e2228);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 6px 0 0;
+}
+.agent-diff-popover {
+  position: fixed;
+  z-index: 400;
+  width: min(480px, calc(100vw - 24px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #111);
+  border: 1px solid var(--border, #355a66);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.45);
+}
+.agent-diff-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #355a66);
+}
+.agent-diff-close { background: none; border: none; color: inherit; cursor: pointer; }
+.agent-diff-body {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.agent-diff-body .diff-line-add { color: #50fa7b; }
+.agent-diff-body .diff-line-del { color: #e06c75; }
+.edited-files-note { font-style: normal; }
+.goal-todo { font-size: 11.5px; margin-top: 6px; }
+.goal-todo summary { cursor: pointer; opacity: .85; }
+.goal-todo-body { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.goal-todo-item.done { opacity: .55; text-decoration: line-through; }

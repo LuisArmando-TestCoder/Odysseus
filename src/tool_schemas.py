@@ -421,6 +421,20 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "todo_write",
+            "description": "Maintain the expandable task list shown with the ongoing goal: set the ordered list of remaining sub-tasks (replaces the queue). The harness marks items done when you advance the goal's item cursor; the user watches the list live in the goal panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array", "items": {"type": "string"}, "description": "Ordered list of remaining task items."}
+                },
+                "required": ["items"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "docfind",
             "description": "Fetch a primary document (government PDF, site REST API, sitemap) and grep it locally for exact identifiers (cédula, case number, finca, slug). Use when you need a precise, authoritative hit that a name search can't give. Args (JSON): {\"url\": \"...\", \"terms\": [\"...\"], \"context\": 2, \"json\": false} to fetch+search, or {\"file\": \"/abs/path\", \"terms\": [...]} for an already-downloaded file.",
             "parameters": {
