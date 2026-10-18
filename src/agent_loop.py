@@ -1860,6 +1860,10 @@ async def stream_agent_loop(
     # whole turn. The 3rd identical call injects a gentle notice before the
     # loop-breaker has to fire.
     _repeat_counts: Dict[tuple, int] = {}
+    # TCC stop-guard: count macOS privacy denials (error_code tcc_denied) this
+    # turn; after 2 the harness tells the model to STOP trying those paths.
+    _tcc_failures = 0
+    _tcc_notified = False
     # H3 — deliverable registry: files this turn produced (fed to the H1
     # `present` event at turn end; presentation-only, never model context).
     deliverables: List[dict] = []
@@ -2739,6 +2743,9 @@ async def stream_agent_loop(
             # T1.4 — count identical (tool, args) calls across the whole turn.
             _sig = (block.tool_type, block.content.strip()[:200])
             _repeat_counts[_sig] = _repeat_counts.get(_sig, 0) + 1
+            # TCC stop-guard — count macOS privacy denials.
+            if result.get("error_code") == "tcc_denied":
+                _tcc_failures += 1
 
             formatted = format_tool_result(desc, result)
             tool_results.append(formatted)
@@ -2767,6 +2774,24 @@ async def stream_agent_loop(
                     ),
                 })
                 _repeat_counts[_sig] = _n + 1  # notify only once per turn
+
+        # TCC stop-guard — after 2 macOS privacy denials this turn, STOP trying
+        # direct paths under the protected folders and go through the user.
+        if _tcc_failures >= 2 and not _tcc_notified:
+            _tcc_notified = True
+            messages.append({
+                "role": "system",
+                "content": (
+                    "macOS privacy protection (TCC) has blocked direct file access to "
+                    "~/Documents, ~/Desktop, ~/Downloads or ~/Library multiple times this "
+                    "turn. STOP trying those paths — every retry fails the same way. Instead: "
+                    "ask the user to paste the content, attach the file in the chat, move it "
+                    "into the project data folder, or grant Full Disk Access to the app "
+                    "(System Settings → Privacy & Security → Full Disk Access). Do not promise "
+                    "to read the file directly."
+                ),
+            })
+            yield _self_ping_delta("macOS privacy (TCC) blocked direct file access — switching to user-assisted access")
 
         # Emit agent_step event
         yield (

@@ -546,6 +546,16 @@ async def _direct_fallback(
                 output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
             from src.spill import spill_or_truncate
             output = spill_or_truncate(output, tool="bash", session_id=session_id, owner=owner)
+            # TCC guard — macOS "Operation not permitted" on protected folders
+            # must come back as ONE actionable error, not rounds of flailing.
+            from src.tcc_guard import is_tcc_denial, tcc_error
+            if is_tcc_denial(output):
+                return {
+                    "output": output or "(no output)",
+                    "error": "bash: macOS privacy protection (TCC) blocked this command\n\n" + tcc_error(text=content),
+                    "error_code": "tcc_denied",
+                    "exit_code": rc or 1,
+                }
             return {"output": output or "(no output)", "exit_code": rc or 0}
 
         if tool == "python":
@@ -577,6 +587,15 @@ async def _direct_fallback(
                 output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
             from src.spill import spill_or_truncate
             output = spill_or_truncate(output, tool="python", session_id=session_id, owner=owner)
+            # TCC guard — same one-shot actionable error as bash.
+            from src.tcc_guard import is_tcc_denial, tcc_error
+            if is_tcc_denial(output):
+                return {
+                    "output": output or "(no output)",
+                    "error": "python: macOS privacy protection (TCC) blocked this code\n\n" + tcc_error(text=content),
+                    "error_code": "tcc_denied",
+                    "exit_code": rc or 1,
+                }
             return {"output": output or "(no output)", "exit_code": rc or 0}
 
         if tool == "read_file":
@@ -584,6 +603,12 @@ async def _direct_fallback(
             try:
                 path = _resolve_tool_path(raw_path, owner=owner, session_id=session_id)
             except ValueError as e:
+                # TCC guard — a path under ~/Documents|Desktop|Downloads|Library
+                # would ALSO be OS-blocked; say so once, with the fix.
+                from src.tcc_guard import is_tcc_path, tcc_error
+                if is_tcc_path(raw_path):
+                    return {"error": f"read_file: {e}\n\n" + tcc_error(path=raw_path),
+                            "error_code": "tcc_denied", "exit_code": 1}
                 return {"error": f"read_file: {e}", "exit_code": 1}
             try:
                 # Run blocking read in a thread to keep the loop responsive.
@@ -597,6 +622,10 @@ async def _direct_fallback(
             except FileNotFoundError:
                 return {"error": f"read_file: {path}: not found", "exit_code": 1}
             except PermissionError:
+                from src.tcc_guard import is_tcc_path, tcc_error
+                if is_tcc_path(path):
+                    return {"error": f"read_file: {path}: permission denied\n\n" + tcc_error(path=path),
+                            "error_code": "tcc_denied", "exit_code": 1}
                 return {"error": f"read_file: {path}: permission denied", "exit_code": 1}
             except OSError as e:
                 return {"error": f"read_file: {path}: {e}", "exit_code": 1}
@@ -612,6 +641,10 @@ async def _direct_fallback(
             try:
                 path = _resolve_tool_path(raw_path, owner=owner, session_id=session_id)
             except ValueError as e:
+                from src.tcc_guard import is_tcc_path, tcc_error
+                if is_tcc_path(raw_path):
+                    return {"error": f"write_file: {e}\n\n" + tcc_error(path=raw_path),
+                            "error_code": "tcc_denied", "exit_code": 1}
                 return {"error": f"write_file: {e}", "exit_code": 1}
             try:
                 def _write():
@@ -623,6 +656,10 @@ async def _direct_fallback(
                     return len(body)
                 size = await asyncio.to_thread(_write)
             except PermissionError:
+                from src.tcc_guard import is_tcc_path, tcc_error
+                if is_tcc_path(path):
+                    return {"error": f"write_file: {path}: permission denied\n\n" + tcc_error(path=path),
+                            "error_code": "tcc_denied", "exit_code": 1}
                 return {"error": f"write_file: {path}: permission denied", "exit_code": 1}
             except OSError as e:
                 return {"error": f"write_file: {path}: {e}", "exit_code": 1}

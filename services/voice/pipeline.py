@@ -42,6 +42,13 @@ from services.voice.memory import chat_summary_spine, get_voice_memory, session_
 
 logger = logging.getLogger(__name__)
 
+# Guard-rejection cap: per-voice-conversation counter of consecutive guard
+# rejections. After the limit the pipeline PAUSES (reason="guard-paused")
+# instead of spamming one rejection line per failed forge. Reset whenever a
+# message actually reaches the chat.
+_GUARD_REJECTS: Dict[str, int] = {}
+_GUARD_CONSECUTIVE_LIMIT = 2
+
 INTENTS = {
     "task": "Do something: create, edit, send, schedule, run, change a file/email/calendar/code",
     "question": "Answer a factual or analytical question that needs the chat agent",
@@ -772,6 +779,17 @@ async def _forge_and_emit(
         yield _ev(type="done", send=False, reason="duplicate", duplicate_of=(dup or "similar")[:160])
         return
     if g.get("coherent", 1.0) < 0.5 or g.get("faithful", 1.0) < 0.4:
+        # Guard-rejection cap: after consecutive rejections for the same voice
+        # conversation, PAUSE instead of spamming the HUD with rejections. The
+        # assistant is flailing; a pause signal tells the user to rephrase or
+        # continue in the chat directly.
+        _gkey = getattr(mem, "voice_id", None) or f"{owner}:{chat_session_id or ''}"
+        _GUARD_REJECTS[_gkey] = _GUARD_REJECTS.get(_gkey, 0) + 1
+        if _GUARD_REJECTS[_gkey] >= _GUARD_CONSECUTIVE_LIMIT:
+            _GUARD_REJECTS.pop(_gkey, None)
+            yield _ev(type="stage", stage="guard", status="idle", ms=gms)
+            yield _ev(type="done", send=False, reason="guard-paused", guard=g)
+            return
         yield _ev(type="stage", stage="guard", status="idle", ms=gms)
         yield _ev(type="done", send=False, reason="guard-rejected", guard=g)
         return
@@ -793,6 +811,10 @@ async def _forge_and_emit(
             yield _ev(type="done", send=False, reason="needs-clarification", guard=g)
             return
     yield _ev(type="stage", stage="guard", status="done", ms=gms)
+
+    # A message actually reached the chat — reset the guard-rejection counter.
+    _gkey = getattr(mem, "voice_id", None) or f"{owner}:{chat_session_id or ''}"
+    _GUARD_REJECTS.pop(_gkey, None)
 
     mem.record_sent(message, decision)
     yield _ev(type="stage", stage="forge", status="done", ms=int((time.time() - t0) * 1000))

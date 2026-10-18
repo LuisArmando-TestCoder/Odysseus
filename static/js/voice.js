@@ -1233,6 +1233,7 @@ function _onPipeEvent(ev) {
       if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90), { criticality: 1 }); }
       else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
       else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 }); }
+      else if (ev.reason === 'guard-paused') { _systemLine('Voice→chat paused — the guard rejected the last messages as unfaithful. Rephrase what you want, or continue in the chat directly.', 'warn'); }
       else if (ev.reason === 'not-directed-to-chat') { _systemLine('That didn’t look like it was meant for the chat — say it again if you want it sent.', 'info'); }
       else if (ev.reason === 'needs-clarification') { _systemLine('I wasn’t sure that was meant for the chat — could you confirm?', 'warn'); }
       else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide', { criticality: 0.8 }); }
