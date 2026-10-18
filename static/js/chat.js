@@ -198,6 +198,16 @@ import wakeLock from './wakeLock.js';
   var showWelcomeScreen = chatRenderer.showWelcomeScreen;
 
   // ── Queue chip (DSH message-queue visibility in normal chat) ────────────
+  // Feather-style inline SVG icons (stroke: currentColor) replacing emoji.
+  const _QSVG = {
+    hourglass: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4"/></svg>',
+    play: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>',
+    wrench: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    check: '<svg class="qsvg qsvg-ok" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+    x: '<svg class="qsvg qsvg-err" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    pencil: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  };
+
   function _setQueueChip(n) {
     let chip = document.getElementById('queue-chip');
     if (!n || n <= 0) {
@@ -205,15 +215,115 @@ import wakeLock from './wakeLock.js';
       return;
     }
     if (!chip) {
-      chip = document.createElement('div');
+      chip = document.createElement('button');
       chip.id = 'queue-chip';
       chip.className = 'queue-chip';
+      chip.type = 'button';
       const anchor = document.getElementById('message');
       if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(chip, anchor);
       else return;
+      chip.addEventListener('click', () => _showQueuePopover(chip));
     }
-    chip.textContent = `⏳ ${n} message${n === 1 ? '' : 's'} queued — runs when the current turn finishes`;
+    chip.innerHTML = _QSVG.hourglass +
+      `<span class="queue-chip-label">${n} message${n === 1 ? '' : 's'} queued</span>` +
+      `<span class="queue-chip-sub">runs when the current turn finishes</span>`;
     chip.hidden = false;
+  }
+
+  // Queue popover — list queued messages with per-entry / bulk cancel (D5).
+  let _queuePopoverSession = null;
+  async function _showQueuePopover(anchorEl) {
+    document.querySelectorAll('.queue-popover').forEach(el => el.remove());
+    const sid = sessionModule.getCurrentSessionId();
+    if (!sid) return;
+    const pop = document.createElement('div');
+    pop.className = 'queue-popover';
+    const head = document.createElement('div');
+    head.className = 'queue-popover-head';
+    head.innerHTML = _QSVG.hourglass + '<span>Queued messages</span>';
+    const close = document.createElement('button');
+    close.className = 'queue-popover-close';
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Close');
+    close.innerHTML = _QSVG.x;
+    close.addEventListener('click', () => pop.remove());
+    head.appendChild(close);
+    const body = document.createElement('div');
+    body.className = 'queue-popover-body';
+    body.textContent = 'Loading…';
+    pop.appendChild(head);
+    pop.appendChild(body);
+    document.body.appendChild(pop);
+    const r = anchorEl.getBoundingClientRect();
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.left = Math.min(r.left, window.innerWidth - 420) + 'px';
+    const dismiss = (ev) => {
+      if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', dismiss, true); }
+    };
+    setTimeout(() => document.addEventListener('click', dismiss, true), 0);
+    _queuePopoverSession = sid;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/queue/${encodeURIComponent(sid)}`, { credentials: 'same-origin' });
+      const data = await res.json();
+      if (_queuePopoverSession !== sid) return;
+      const items = (data && data.queued) || [];
+      if (!items.length) {
+        body.textContent = '';
+        body.innerHTML = '<span class="queue-popover-empty">Nothing queued.</span>';
+        return;
+      }
+      body.textContent = '';
+      const list = document.createElement('ol');
+      list.className = 'queue-popover-list';
+      items.forEach(it => {
+        const li = document.createElement('li');
+        li.className = 'queue-popover-item';
+        const txt = document.createElement('span');
+        txt.className = 'queue-popover-item-text';
+        txt.textContent = it.message || '(empty)';
+        if (it.position) txt.dataset.position = it.position;
+        const rm = document.createElement('button');
+        rm.className = 'queue-popover-item-x';
+        rm.type = 'button';
+        rm.setAttribute('aria-label', 'Cancel this queued message');
+        rm.innerHTML = _QSVG.x;
+        rm.addEventListener('click', async () => {
+          try {
+            await fetch(`${API_BASE}/api/chat/queue/${encodeURIComponent(sid)}/${it.position}`, { method: 'DELETE', credentials: 'same-origin' });
+            _showQueuePopover(anchorEl);
+            _refreshQueueChipCount(sid);
+          } catch (_) {}
+        });
+        li.appendChild(txt);
+        li.appendChild(rm);
+        list.appendChild(li);
+      });
+      body.appendChild(list);
+      const clearAll = document.createElement('button');
+      clearAll.className = 'queue-popover-clear';
+      clearAll.type = 'button';
+      clearAll.textContent = 'Cancel all';
+      clearAll.addEventListener('click', async () => {
+        try {
+          await fetch(`${API_BASE}/api/chat/queue/${encodeURIComponent(sid)}`, { method: 'DELETE', credentials: 'same-origin' });
+          _showQueuePopover(anchorEl);
+          _refreshQueueChipCount(sid);
+        } catch (_) {}
+      });
+      body.appendChild(clearAll);
+    } catch (_) {
+      body.textContent = 'Could not load queue.';
+    }
+  }
+
+  async function _refreshQueueChipCount(sid) {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/queue/${encodeURIComponent(sid)}`, { credentials: 'same-origin' });
+      const data = await res.json();
+      _setQueueChip((data && data.queued && data.queued.length) || 0);
+    } catch (_) {
+      _setQueueChip(0);
+    }
   }
 
   // ── Diff popover (DSH pick-diff UI for edited files) ────────────────────
@@ -270,6 +380,21 @@ import wakeLock from './wakeLock.js';
       }
       if (el('incognito-toggle') && el('incognito-toggle').checked) fd.append('incognito', 'true');
       const res = await fetch(`${API_BASE}/api/chat_stream`, { method: 'POST', body: fd, credentials: 'same-origin' });
+      // D6 — a non-OK response (session deleted, privilege 429, validation 400)
+      // would previously be swallowed, leaving the optimistic bubble with no
+      // queued turn. Surface it and reset the queue state.
+      if (!res.ok) {
+        let msg = `Error ${res.status}`;
+        try {
+          const t = await res.text();
+          const m = t.match(/"detail"\s*:\s*"([^"]+)"/) || t.match(/"message"\s*:\s*"([^"]+)"/);
+          if (m) msg = m[1].replace(/\\"/g, '"');
+          else if (t && t.length < 200) msg = t;
+        } catch (_) {}
+        _resetQueuedSend();
+        if (uiModule.showError) uiModule.showError('Could not queue message: ' + msg);
+        return;
+      }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -287,10 +412,32 @@ import wakeLock from './wakeLock.js';
               _renderQueuedTurn(sessionId);
               return;  // the compact renderer re-fetches /resume and renders
             }
+            if (j && j.type === 'turn_failed') {
+              // The queued turn could not start (cancelled / factory error / timeout).
+              _resetQueuedSend();
+              const reason = (j.data && j.data.reason) || 'queued turn failed';
+              if (uiModule.showError) uiModule.showError('Queued message did not run: ' + reason);
+              return;
+            }
           }
         }
       }
-    } catch (_) { /* run is detached server-side; the dots still show it */ }
+    } catch (_) {
+      // Network drop while the follower stream was open — the queue itself
+      // still holds the message server-side, so reset the local chip but keep
+      // the run intact (a refresh shows the queued answer).
+      _resetQueuedSend();
+    }
+  }
+
+  // Reset the optimistic queue state after a failed / aborted queued send.
+  function _resetQueuedSend() {
+    _queuePending = false;
+    _setQueueChip(0);
+    const sb = document.querySelector('.send-btn');
+    if (sb) updateSubmitButton('idle', sb);
+    const inp = uiModule.el('message');
+    if (inp) { inp.disabled = false; inp.focus(); }
   }
 
   // Compact renderer for queued turns — re-fetches /api/chat/resume until the
@@ -345,7 +492,16 @@ import wakeLock from './wakeLock.js';
               const n = document.createElement('div');
               n.className = 'status-note queue-resumed-note';
               n.setAttribute('role', 'status');
-              n.textContent = '▶ queued message now running';
+              n.innerHTML = _QSVG.play + '<span>queued message now running</span>';
+              _hist().appendChild(n);
+              continue;
+            }
+            if (j.type === 'turn_failed') {
+              const _reason = (j.data && j.data.reason) || 'queued turn failed';
+              const n = document.createElement('div');
+              n.className = 'status-note queue-failed-note';
+              n.setAttribute('role', 'status');
+              n.innerHTML = _QSVG.x + `<span>${_escQ(_reason)}</span>`;
               _hist().appendChild(n);
               continue;
             }
@@ -372,16 +528,21 @@ import wakeLock from './wakeLock.js';
               const n = document.createElement('div');
               n.className = 'status-note queued-tool-note';
               n.setAttribute('role', 'status');
-              n.textContent = `🛠 ${j.tool || 'tool'}…`;
+              n.innerHTML = _QSVG.wrench + `<span class="queued-tool-label">${_escQ(j.tool || 'tool')}…</span>`;
               _hist().appendChild(n);
             } else if (j.type === 'tool_output') {
               const n = document.createElement('div');
               n.className = 'status-note queued-tool-note';
               n.setAttribute('role', 'status');
               const _ok = (j.exit_code === 0 || j.exit_code == null);
-              n.innerHTML = `${_ok ? '✓' : '✗'} ${_escQ(j.tool || 'tool')} — ${_escQ(j.output ? String(j.output).slice(0, 220) : '')}`;
+              n.innerHTML = (_ok ? _QSVG.check : _QSVG.x) +
+                `<span class="queued-tool-label">${_escQ(j.tool || 'tool')}</span>` +
+                `<span class="queued-tool-out">${_escQ(j.output ? String(j.output).slice(0, 220) : '')}</span>`;
+              n.classList.add(_ok ? 'ok' : 'err');
               _hist().appendChild(n);
             } else if (j.type === 'file_diff') {
+              // Note: `edited` is scoped to the `present` event below — this
+              // branch only attaches the diff chip; no summary line here.
               const _fd = j.data || {};
               if (_fd.lines && _fd.lines.length && holder) {
                 const chip = document.createElement('button');
@@ -397,7 +558,8 @@ import wakeLock from './wakeLock.js';
                 const line = document.createElement('div');
                 line.className = 'status-note edited-files-note';
                 line.setAttribute('role', 'status');
-                line.textContent = `✏️ edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${edited.join(', ')}`;
+                line.innerHTML = _QSVG.pencil +
+                  `<span>edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${_escQ(edited.join(', '))}</span>`;
                 _hist().appendChild(line);
               }
               const build = chatRenderer.buildDeliverableCard;
@@ -2465,7 +2627,8 @@ import wakeLock from './wakeLock.js';
                 qd.className = 'status-note turn-queued-note';
                 qd.setAttribute('role', 'status');
                 const _qpos = json.data?.position ?? '?';
-                qd.textContent = `⏳ message queued (position ${_qpos}) — it runs automatically when the current turn finishes.`;
+                qd.innerHTML = _QSVG.hourglass +
+                  `<span>message queued (position ${_qpos}) — it runs automatically when the current turn finishes.</span>`;
                 document.getElementById('chat-history').appendChild(qd);
                 _setQueueChip(_qpos);
                 uiModule.scrollHistory();
@@ -2566,13 +2729,14 @@ import wakeLock from './wakeLock.js';
                   const build = mod.buildDeliverableCard || (mod.default && mod.default.buildDeliverableCard);
                   const box = document.getElementById('chat-history');
                   if (!build || !box) return;
-                  if (edited.length) {
-                    const line = document.createElement('div');
-                    line.className = 'status-note edited-files-note';
-                    line.setAttribute('role', 'status');
-                    line.textContent = `✏️ edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${edited.join(', ')}`;
-                    box.appendChild(line);
-                  }
+                   if (edited.length) {
+                     const line = document.createElement('div');
+                     line.className = 'status-note edited-files-note';
+                     line.setAttribute('role', 'status');
+                     line.innerHTML = _QSVG.pencil +
+                       `<span>edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${_escQ(edited.join(', '))}</span>`;
+                     box.appendChild(line);
+                   }
                   files.forEach(f => {
                     const card = build(f);
                     if (card) box.appendChild(card);

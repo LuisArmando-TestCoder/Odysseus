@@ -1105,9 +1105,24 @@ def setup_chat_routes(
             _pending = turn_inbox.pending_items(session)
             if _pending and _pending[-1] == (message or ""):
                 # Fast double-send that beat the persistence guard — this exact
-                # message is already queued. Don't queue it twice.
-                return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
-            _q = turn_inbox.enqueue(session, message or "")
+                # message is already queued. Don't queue it twice; instead attach
+                # to the follower stream so the already-queued turn still renders
+                # (D4 — the old code returned subscribe() here, whose stream never
+                # carries `turn_resumed`, so that turn's answer was never shown).
+                logger.info("[queue] duplicate message already queued for %s — attaching to follower", session)
+                return StreamingResponse(_queued_follower_stream(session), media_type="text/event-stream")
+            # Enqueue the RICH entry: the built system preface (memory/RAG/web/
+            # persona) plus the preset's temperature/max_tokens, so the queued
+            # turn rebuilds the SAME prompt fidelity as a live turn. The user
+            # message is NOT re-stored — it is already the last entry of
+            # ctx.messages (persisted by build_chat_context), so the queued turn
+            # uses ctx.messages as-is and never duplicates it (D1/D2).
+            _q = turn_inbox.enqueue(
+                session, message or "",
+                preface=ctx.preface,
+                temperature=ctx.preset.temperature,
+                max_tokens=ctx.preset.max_tokens,
+            )
             agent_runs.publish(
                 session,
                 f'data: {json.dumps({"type": "turn_queued", "data": _q})}\n\n',
@@ -1172,6 +1187,47 @@ def setup_chat_routes(
         rec = dict(rec)
         rec["queued"] = _queued  # G4 — queued-turn count for the UI
         return rec
+
+    # ------------------------------------------------------------------ #
+    # GET /api/chat/queue/{session_id} — inspect queued messages (D5)
+    # DELETE /api/chat/queue/{session_id} — cancel the whole queue
+    # DELETE /api/chat/queue/{session_id}/{position} — cancel one entry
+    # ------------------------------------------------------------------ #
+    @router.get("/api/chat/queue/{session_id}")
+    async def chat_queue_list(request: Request, session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        try:
+            from src import turn_inbox
+            return {
+                "session_id": session_id,
+                "queued": turn_inbox.entries(session_id),
+            }
+        except Exception as e:
+            raise HTTPException(500, f"Failed to read queue: {e}")
+
+    @router.delete("/api/chat/queue/{session_id}")
+    async def chat_queue_clear(request: Request, session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        try:
+            from src import turn_inbox
+            turn_inbox.clear(session_id)
+            return {"session_id": session_id, "cleared": True}
+        except Exception as e:
+            raise HTTPException(500, f"Failed to clear queue: {e}")
+
+    @router.delete("/api/chat/queue/{session_id}/{position}")
+    async def chat_queue_remove(request: Request, session_id: str, position: int) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        try:
+            from src import turn_inbox
+            removed = turn_inbox.remove(session_id, position)
+            if not removed:
+                raise HTTPException(404, "Queued entry not found")
+            return {"session_id": session_id, "position": position, "removed": True}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Failed to remove queue entry: {e}")
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/active — run inventory for the sidebar (G4): working
@@ -1408,11 +1464,17 @@ def setup_chat_routes(
         return StreamingResponse(stream_rewrite(), media_type="text/event-stream")
 
     # ── I1: turn-inbox stream factory (queue-don't-cancel) ──────────────────
-    # The queued message's turn runs detached with sane defaults, mirroring the
-    # agent branch of stream_with_save (bg_monitor persistence pattern). The
-    # user message is already persisted by the original request's
-    # build_chat_context, so only the turn itself is rebuilt here.
-    async def _queued_turn_stream(session_id: str, message: str):
+    # The queued message's turn runs detached with the SAME context fidelity as
+    # a live turn: the built system preface (memory/RAG/web/persona, captured at
+    # enqueue time) + live session history (which already ends with the queued
+    # user message) + the preset's temperature/max_tokens. We must NOT re-append
+    # the user message — the original request's build_chat_context already
+    # persisted it, so appending it again duplicates the prompt (D1).
+    async def _queued_turn_stream(session_id: str, entry: dict):
+        message = (entry or {}).get("message", "")
+        preface = (entry or {}).get("preface") or []
+        temperature = (entry or {}).get("temperature")
+        max_tokens = (entry or {}).get("max_tokens")
         try:
             sess = session_manager.get_session(session_id)
         except Exception:
@@ -1425,8 +1487,9 @@ def setup_chat_routes(
             set_cost_scope(session_id, "chat", owner)
         except Exception:
             pass
-        _msgs = sess.get_context_messages()
-        _msgs.append({"role": "user", "content": message or ""})
+        # preface (system/memory/RAG/web/persona) + live history (ends with the
+        # queued user message). Never re-append the message.
+        _msgs = list(preface) + sess.get_context_messages()
         # I1 queue UX — mark the queued-turn boundary so frontends can hand the
         # renderer over from the finished turn to this one.
         agent_runs.publish(
@@ -1439,8 +1502,8 @@ def setup_chat_routes(
             async for chunk in stream_agent_loop(
                 sess.endpoint_url, sess.model, _msgs,
                 headers=sess.headers,
-                temperature=0.3,
-                max_tokens=0,  # server decides — no hard cap truncation
+                temperature=temperature if temperature is not None else 0.3,
+                max_tokens=max_tokens if max_tokens is not None else 0,
                 context_length=getattr(sess, "context_length", 0) or 0,
                 session_id=session_id,
                 owner=owner,
@@ -1471,12 +1534,12 @@ def setup_chat_routes(
                 logger.warning(f"queued turn persistence failed: {e}")
         yield "data: [DONE]\n\n"
 
-    def _queued_turn_factory(session_id: str, message: str):
+    def _queued_turn_factory(session_id: str, entry: dict):
         try:
             owner = getattr(session_manager.get_session(session_id), "owner", None)
         except Exception:
             owner = None
-        return (_queued_turn_stream(session_id, message), owner)
+        return (_queued_turn_stream(session_id, entry), owner)
 
     # ── I1: follower stream for a queued message's own POST ─────────────────
     # The current run is already streaming on the primary connection, so this
@@ -1484,6 +1547,7 @@ def setup_chat_routes(
     # own stream. The frontend discards everything before `turn_resumed`.
     async def _queued_follower_stream(session: str):
         import asyncio
+        from src import turn_inbox as _ti
         _run = agent_runs.current_run(session)
         try:
             # Phase 1 — wait for the current run to finish (no events: the
@@ -1491,7 +1555,21 @@ def setup_chat_routes(
             while _run is not None and getattr(_run, "status", None) == "running":
                 await asyncio.sleep(0.2)
             # Phase 2 — drain_on_finish starts the queued turn; wait for it.
+            # Bounded (D3): if the queued turn fails to start (factory error,
+            # queue race, cancelled queue), emit a terminal `turn_failed` event
+            # and close instead of spinning forever.
+            _deadline = asyncio.get_event_loop().time() + 30.0
             while not agent_runs.is_active(session):
+                if asyncio.get_event_loop().time() > _deadline:
+                    yield f'data: {json.dumps({"type": "turn_failed", "data": {"session_id": session, "reason": "queued turn did not start"}})}\n\n'
+                    yield "data: [DONE]\n\n"
+                    return
+                # Queue drained with no run = the queued turn was cancelled or
+                # its factory failed — fail fast instead of waiting the full 30s.
+                if not _ti.is_queued(session):
+                    yield f'data: {json.dumps({"type": "turn_failed", "data": {"session_id": session, "reason": "queued turn was cancelled"}})}\n\n'
+                    yield "data: [DONE]\n\n"
+                    return
                 await asyncio.sleep(0.05)
             # Phase 3 — stream the queued turn from its own start
             # (turn_resumed → model_info → full agent stream → [DONE]).
@@ -1501,6 +1579,7 @@ def setup_chat_routes(
             raise
         except Exception as e:
             logger.warning(f"queued follower stream failed for {session}: {e}")
+            yield f'data: {json.dumps({"type": "turn_failed", "data": {"session_id": session, "reason": str(e)}})}\n\n'
             yield "data: [DONE]\n\n"
 
     try:
