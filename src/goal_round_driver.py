@@ -13,29 +13,30 @@ from src.goal import get_goal, update_goal, GoalConflict
 logger = logging.getLogger(__name__)
 
 
-def _bump_round(session_id: str) -> Optional[Dict[str, Any]]:
+def _bump_round(owner: str) -> Optional[Dict[str, Any]]:
     """Increment roundsStarted and persist it atomically.
 
     The loop owns the counter, not the model. Reads the latest goal, bumps the
     counter, and writes it back — retrying on a concurrent revision bump.
+    Goals are owner-keyed (Layer 0 / F0.3); rounds execute in goal.session_id.
     """
     for _ in range(5):
-        goal = get_goal(session_id)
+        goal = get_goal(owner)
         if not goal:
             return None
         try:
             # A no-op edit bumps the revision; we then set the counter and
             # persist via a second update so the revision stays consistent.
-            goal = update_goal(session_id, goal["revision"], "edit")
+            goal = update_goal(owner, goal["revision"], "edit")
             goal["roundsStarted"] = goal.get("roundsStarted", 0) + 1
             # Persist the counter directly (atomic write) without another
             # revision bump, so the counter and revision stay in sync.
             from src.goal import _write
-            _write(session_id, goal)
+            _write(owner, goal)
             return goal
         except GoalConflict:
             continue
-    return get_goal(session_id)
+    return get_goal(owner)
 
 
 def seed_queue_from_objective(session_id, items):
@@ -91,8 +92,8 @@ async def run_agent_round(
         pass
 
     # The agent may have called finish_goal, which transitions the state
-    # directly. Re-read to detect the outcome.
-    updated = get_goal(session_id)
+    # directly. Re-read (owner-keyed, F0.3) to detect the outcome.
+    updated = get_goal(goal.get("owner") or owner)
     if not updated:
         return {"done": False, "blocked_reason": None}
     if updated.get("phase") == "complete":
@@ -104,13 +105,15 @@ async def run_agent_round(
 
 
 async def goal_round_loop(
-    session_id: str,
+    owner: str,
     run_agent_round: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
     blocked_conditions: Optional[list] = None,
 ) -> None:
     """Auto-continue rounds until complete/blocked/paused.
 
-    ``run_agent_round(goal)`` must return a dict with optional keys:
+    ``owner`` is the goal identity (Layer 0 / F0.3); rounds run in the goal's
+    ``session_id``. ``run_agent_round(goal)`` must return a dict with optional
+    keys:
       - ``done`` (bool): the objective is truly achieved → complete.
       - ``blocked_reason`` (str): a concrete blocking condition. After 3
         consecutive rounds with the same reason, the goal is marked blocked
@@ -119,12 +122,12 @@ async def goal_round_loop(
     same_blocked = 0
     last_blocked_reason = None
     while True:
-        goal = get_goal(session_id)
+        goal = get_goal(owner)
         if not goal or goal["phase"] in ("complete", "blocked", "paused"):
             break
         if goal["roundsStarted"] >= goal["maxGoalRounds"]:
             try:
-                update_goal(session_id, goal["revision"], "blocked",
+                update_goal(owner, goal["revision"], "blocked",
                             blocked_reason="maxGoalRounds reached")
             except GoalConflict:
                 pass
@@ -140,18 +143,19 @@ async def goal_round_loop(
         outcome = outcome or {}
 
         # 2) bump progress (the loop owns the counter, not the model).
-        goal = _bump_round(session_id)
+        goal = _bump_round(owner)
         if not goal:
             break
 
         # 2b) advance the continuous-task cursor: mark the injected item done.
         try:
             from src.checkpoint import checkpoint_next, checkpoint_pop_done
-            _item = checkpoint_next(session_id)
+            _sid = goal.get("session_id")
+            _item = checkpoint_next(_sid)
             if _item is not None:
-                checkpoint_pop_done(_item, session_id)
+                checkpoint_pop_done(_item, _sid)
                 # if that was the last item, the goal is effectively done
-                if checkpoint_next(session_id) is None:
+                if checkpoint_next(_sid) is None:
                     outcome["done"] = True
         except Exception:
             pass
@@ -159,7 +163,7 @@ async def goal_round_loop(
         # 3) decide continue vs stop.
         if outcome.get("done"):
             try:
-                update_goal(session_id, goal["revision"], "complete")
+                update_goal(owner, goal["revision"], "complete")
             except GoalConflict:
                 pass
             break
@@ -172,7 +176,7 @@ async def goal_round_loop(
                 last_blocked_reason = reason
             if same_blocked >= 3:  # DSH rule: blocked only after 3 consecutive rounds
                 try:
-                    update_goal(session_id, goal["revision"], "blocked",
+                    update_goal(owner, goal["revision"], "blocked",
                                 blocked_reason=last_blocked_reason)
                 except GoalConflict:
                     pass

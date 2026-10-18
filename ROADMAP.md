@@ -5,6 +5,34 @@ Odysseus is on a voyage, but not home yet. It works great for me (lol), but this
 If you see weird CSS, strange layout behavior, or a suspiciously murky corner of
 the codebase, you are probably right to stay away.
 
+## Harness (shipped — DeepSeek-Harness port)
+
+Done and tested (architecture in `docs/harness-port.md`, plan in the repo history):
+
+- Continuous **goals** with harness-driven auto-continuing rounds (idle-gated,
+  boot-resume, blocked-after-3), owner-keyed goal state + goal card.
+- **Background turns + message queue**: closing the tab never kills a turn;
+  new messages queue behind the live one instead of cancelling it
+  (`/api/chat/resume`, `/api/chat/active`, sidebar working dots).
+- **Ask-user mid-task** (`ask_user_question` tool → question card → answer
+  resumes the exact turn; root-only, 10-min timeout).
+- **Subagents & branching**: fork a chat into a child session, spawn children,
+  steer them (`send_message`/`list_agents`/`interrupt_agent`), depth cap 3.
+- **No-truncation spill**: oversized tool output goes to disk with a locator
+  (`data/spills/`), never silently cut.
+- **Tool guardrails**: per-call deadlines (`tool_timeout`), repeat-call
+  reminders, `llm_retry` retry policy + model fallback chain.
+- **Response middleman preserved as the `post_response` hook**; hook points
+  `user_prompt_submit` / `pre_tool_use` / `post_tool_use` / `post_response`.
+- **Legal corpus** (SINALEVI + Corte IDH): query-first adapters + tools +
+  opt-in bulk inventory (`docs/legal-corpus.md`).
+- **Voice mode untouched**; two-way voice↔chat context bridge documented and
+  regression-tested (`docs/voice-chat-bridge.md`).
+- Full test suite green (1476 passed / 1 skipped).
+
+Remaining (small): i18n for the new UI strings, cross-process run resume,
+a workflow-tool equivalent, and the UI niceties tracked in the commit log.
+
 ## High Priority
 
 - SQUASH BUGS

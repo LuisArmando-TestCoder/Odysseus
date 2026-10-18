@@ -359,4 +359,105 @@
   .msg-delete-btn, .msg-more-btn, .ctx-compact-btn, .memory-used-pill {
     transition-duration: 0.001s !important;
   }
+  .question-card-enter,
+  .deliverable-card-enter {
+    animation: none !important;
+  }
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   PORT: per-message duration + question card + status notes
+   ═══════════════════════════════════════════════════════════════════════════ */
+.msg-duration {
+  font-size: 10px;
+  color: var(--muted, #6b7280);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.question-card-wrap { display: block; }
+#question-card-wrap { margin: 8px 0; }
+.question-card {
+  border: 1px solid var(--border, #e5e7eb);
+  border-left: 3px solid #8b5cf6;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--card-bg, #fff);
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.question-card-header { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--fg, #111827); }
+.question-item { margin: 8px 0; }
+.question-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--fg, #111827); }
+.question-option {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; padding: 5px 8px; border-radius: 8px; cursor: pointer;
+  color: var(--fg, #111827);
+}
+.question-option:hover { background: var(--hover, #f3f4f6); }
+.question-custom {
+  width: 100%; margin-top: 6px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border, #e5e7eb); background: var(--input-bg, #fff);
+  color: var(--fg, #111827); font-size: 13px;
+}
+.question-actions { display: flex; gap: 8px; margin-top: 10px; }
+.question-send-btn {
+  padding: 7px 16px; border: none; border-radius: 8px; cursor: pointer;
+  background: #8b5cf6; color: #fff; font-size: 13px; font-weight: 600;
+}
+.question-send-btn:hover { background: #7c3aed; }
+.question-dismiss-btn {
+  padding: 7px 12px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px;
+  background: transparent; color: var(--muted, #6b7280); font-size: 12px; cursor: pointer;
+}
+.turn-queued-note, .tool-timeout-note, .llm-retry-note,
+.subagent-note, .subagent-done-note {
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PORT UI NICETIES (U1–U8): status notes, question polish, deliverable polish
+   ═══════════════════════════════════════════════════════════════════════════ */
+.status-note {
+  font-size: 11px;
+  opacity: 0.72;
+  font-style: italic;
+  padding: 4px 8px;
+  margin: 4px 0;
+  color: var(--muted, #6b7280);
+}
+.subagent-note-clickable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  opacity: 0.9;
+  font-style: normal;
+}
+.subagent-note-clickable:hover { opacity: 1; color: var(--fg, #111827); }
+
+.question-card-enter {
+  animation: questionCardIn .22s ease-out;
+}
+@keyframes questionCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.question-opt-recommended {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: #6d28d9;
+  background: #ede9fe;
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+
+.deliverable-card-enter {
+  animation: deliverableCardIn .25s ease-out;
+}
+@keyframes deliverableCardIn {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
 }

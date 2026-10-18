@@ -553,6 +553,10 @@ app.include_router(setup_trusted_claims_routes())
 from routes.goal_routes import setup_goal_routes
 app.include_router(setup_goal_routes())
 
+# Ask-user questions (Cluster B / Q4 — pending mid-task question + answer)
+from routes.question_routes import setup_question_routes
+app.include_router(setup_question_routes(session_manager))
+
 # Chat
 from routes.chat_routes import setup_chat_routes
 app.include_router(setup_chat_routes(
@@ -872,6 +876,18 @@ async def startup_event():
         _startup_tasks.append(start_bg_monitor())
     except Exception as _e:
         logger.warning("Failed to start background-job monitor: %s", _e)
+    # Cluster C — turn inbox (queue-don't-cancel) + goal round driver.
+    # Registration order matters: drain_on_finish runs FIRST so a queued user
+    # message takes priority over the next goal round at run termination.
+    try:
+        from src import agent_runs, turn_inbox
+        agent_runs.on_finish(turn_inbox.drain_on_finish)
+        from src import goal_driver
+        agent_runs.on_finish(goal_driver.on_run_finished)
+        _startup_tasks.append(goal_driver.start_daemon())
+        logger.info("Turn inbox + goal round driver wired")
+    except Exception as _e:
+        logger.warning(f"turn-inbox/goal-driver wiring failed: {_e}")
     # MCP servers can be slow or blocked by local tooling. Connect them after
     # the web server is accepting traffic instead of delaying the whole UI.
     async def _startup_mcp_connections():

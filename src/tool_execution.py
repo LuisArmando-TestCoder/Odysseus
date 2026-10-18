@@ -21,6 +21,29 @@ from src.tool_security import is_public_blocked_tool, owner_is_admin_or_single_u
 MAX_OUTPUT_CHARS = 10_000
 MAX_READ_CHARS = 20_000
 
+# T1.2 — per-call tool deadlines (port of DSH guard/timeout-policy). Applied
+# by the agent loop's parallel pool; a call past its deadline returns a clean
+# {"error_code": "timeout"} result instead of hanging the round. bash/python
+# keep their own internal subprocess timeout (_tool_timeout_seconds) as the
+# first line; these pool deadlines are the second, slightly larger net.
+TOOL_TIMEOUTS: Dict[str, float] = {
+    "web_search": 30,
+    "web_fetch": 45,
+    "universal_search": 30,
+    "read_file": 15,
+    "write_file": 15,
+    "bash": 120,
+    "python": 120,
+    "download_pdf": 60,
+    "google_ai_search": 30,
+    "ask_user_question": 600,   # human answer wait (Cluster B)
+    "subagent": 900,            # foreground subagent await (Cluster D)
+    "sinalevi_search": 30,
+    "corteidh_search": 30,
+    "corteidh_case": 20,
+    "legal_fetch_document": 60,
+}
+
 # ---------------------------------------------------------------------------
 # Path confinement for read_file / write_file
 # ---------------------------------------------------------------------------
@@ -80,10 +103,17 @@ def _tool_path_roots(owner: Optional[str] = None, session_id: Optional[str] = No
     """
     roots: list[str] = []
 
+    # Project data/ — the documented confinement contract (see
+    # tests/test_tool_path_confinement.py): "Legitimate paths under project
+    # data/ and /tmp — allowed". Covers documents/, uploads/, spills/ and the
+    # other agent workspaces; the sensitive-path deny list above still blocks
+    # .ssh/.gnupg/rc-files etc. even under data/.
+    from src.constants import DATA_DIR, UPLOAD_DIR
+    roots.append(DATA_DIR)
+
     # The session's own documents folder — the agent's primary workspace.
     # Confined per-session so one chat cannot read another chat's files.
     import re as _re
-    from src.constants import DATA_DIR, UPLOAD_DIR
     sid = _re.sub(r"[^A-Za-z0-9._-]", "_", str(session_id or owner or "shared"))
     roots.append(os.path.join(DATA_DIR, "documents", sid))
     if owner:
@@ -506,12 +536,16 @@ async def _direct_fallback(
                 progress_cb=progress_cb,
             )
             if timed_out:
-                return {"error": f"bash: timed out after {_bash_timeout:g}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
+                from src.spill import spill_or_truncate
+                return {"error": f"bash: timed out after {_bash_timeout:g}s — process killed", "exit_code": 124,
+                        "stdout": spill_or_truncate(stdout, tool="bash", session_id=session_id, owner=owner),
+                        "stderr": spill_or_truncate(stderr, tool="bash", session_id=session_id, owner=owner)}
             output = stdout.rstrip()
             err = stderr.rstrip()
             if err:
                 output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
-            output = _truncate(output, MAX_OUTPUT_CHARS)
+            from src.spill import spill_or_truncate
+            output = spill_or_truncate(output, tool="bash", session_id=session_id, owner=owner)
             return {"output": output or "(no output)", "exit_code": rc or 0}
 
         if tool == "python":
@@ -533,12 +567,16 @@ async def _direct_fallback(
                 progress_cb=progress_cb,
             )
             if timed_out:
-                return {"error": f"python: timed out after {_py_timeout:g}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
+                from src.spill import spill_or_truncate
+                return {"error": f"python: timed out after {_py_timeout:g}s — process killed", "exit_code": 124,
+                        "stdout": spill_or_truncate(stdout, tool="python", session_id=session_id, owner=owner),
+                        "stderr": spill_or_truncate(stderr, tool="python", session_id=session_id, owner=owner)}
             output = stdout.rstrip()
             err = stderr.rstrip()
             if err:
                 output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
-            output = _truncate(output, MAX_OUTPUT_CHARS)
+            from src.spill import spill_or_truncate
+            output = spill_or_truncate(output, tool="python", session_id=session_id, owner=owner)
             return {"output": output or "(no output)", "exit_code": rc or 0}
 
         if tool == "read_file":
@@ -548,10 +586,13 @@ async def _direct_fallback(
             except ValueError as e:
                 return {"error": f"read_file: {e}", "exit_code": 1}
             try:
-                # Run blocking read in a thread to keep the loop responsive
+                # Run blocking read in a thread to keep the loop responsive.
+                # T1.6: read the WHOLE file; oversized content is spilled to
+                # disk with a locator instead of being silently discarded —
+                # the model can read any offset afterwards.
                 def _read():
                     with open(path, "r", encoding="utf-8", errors="replace") as f:
-                        return f.read(MAX_READ_CHARS + 1)
+                        return f.read()
                 data = await asyncio.to_thread(_read)
             except FileNotFoundError:
                 return {"error": f"read_file: {path}: not found", "exit_code": 1}
@@ -559,9 +600,9 @@ async def _direct_fallback(
                 return {"error": f"read_file: {path}: permission denied", "exit_code": 1}
             except OSError as e:
                 return {"error": f"read_file: {path}: {e}", "exit_code": 1}
-            truncated = len(data) > MAX_READ_CHARS
-            if truncated:
-                data = data[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars]"
+            from src.spill import spill_or_truncate
+            data = spill_or_truncate(data, tool="read_file", session_id=session_id,
+                                     owner=owner, limit=MAX_READ_CHARS)
             return {"output": data, "exit_code": 0}
 
         if tool == "write_file":
@@ -898,12 +939,16 @@ async def execute_tool_block(
     disabled_tools: Optional[set] = None,
     owner: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    can_ask_user: bool = False,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
     `progress_cb` is forwarded to long-running subprocess tools
     (bash, python) so the agent loop can emit `tool_progress` SSE
     events while the command is in flight. Ignored by other tools.
+
+    `can_ask_user` (Q3) gates the ask_user_question tool: only the live root
+    chat turn passes True; delegated contexts receive DELEGATED_CALLER.
     """
     from src.tool_implementations import (
         do_create_document, do_update_document, do_edit_document,
@@ -923,7 +968,14 @@ async def execute_tool_block(
         do_document_append,
     )
     from src.checkpoint import do_checkpoint
-    from src.goal import finish_goal as do_finish_goal
+    from src.goal import (
+        finish_goal as do_finish_goal,
+        create_goal as do_create_goal,
+        get_goal as do_get_goal,
+        update_goal as do_update_goal,
+        get_goal_for_session,
+        resolve_owner,
+    )
     from src.docfind import do_docfind
     from src.registros_cr import do_registros_cr
 
@@ -1180,13 +1232,225 @@ async def execute_tool_block(
         desc = f"finish_goal: {content.split(chr(10))[0][:60]}"
         # The agent signals done/blocked. Content is JSON {"status": "done"|"blocked", "reason": "..."}
         # or a bare "done"/"blocked" string. The harness owns the transition.
+        # Layer 0 / F0.3: goals are owner-keyed; fall back to session id only
+        # when no owner is known (then it degrades to a clean "no active goal").
         try:
             _args = json.loads(content) if content.strip().startswith("{") else {}
         except (json.JSONDecodeError, TypeError):
             _args = {}
         _status = _args.get("status") or content.strip().lower()
         _reason = _args.get("reason")
-        result = do_finish_goal(session_id, _status, reason=_reason)
+        result = do_finish_goal(owner or session_id or "", _status, reason=_reason)
+    elif tool == "create_goal":
+        desc = f"create_goal: {content.split(chr(10))[0][:80]}"
+        # Layer 0 / F0.4: the agent can START a goal (previously it could only
+        # finish one). Content: {"objective": "...", "max_goal_rounds": N?}.
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        _objective = (_args.get("objective") or content.strip() or "").strip()
+        if not _objective:
+            result = {"error": "create_goal requires an objective", "exit_code": 1}
+        else:
+            _goal_owner = resolve_owner(session_id, owner)
+            if not _goal_owner:
+                result = {"error": "create_goal: cannot resolve the goal owner for this session", "exit_code": 1}
+            else:
+                try:
+                    _existing = do_get_goal(_goal_owner)
+                except Exception:
+                    _existing = None
+                if _existing and _existing.get("phase") in ("active", "paused"):
+                    result = {"error": "an active goal already exists for this owner", "exit_code": 1}
+                else:
+                    try:
+                        _maxr = int(_args.get("max_goal_rounds") or 0) or None
+                    except (TypeError, ValueError):
+                        _maxr = None
+                    _created = do_create_goal(
+                        _goal_owner, _objective, max_goal_rounds=_maxr,
+                        session_id=session_id,
+                    )
+                    result = {"output": f"goal created: {_created['objective'][:120]}",
+                              "exit_code": 0, "goal": _created}
+    elif tool == "get_goal":
+        desc = "get_goal"
+        # Session-scoped view: the agent sees the goal of ITS chat (owner-keyed).
+        try:
+            _goal = get_goal_for_session(session_id, owner)
+        except Exception:
+            _goal = None
+        if not _goal:
+            result = {"error": "no active goal for this session", "exit_code": 1}
+        else:
+            result = {"output": json.dumps(_goal, ensure_ascii=False), "exit_code": 0, "goal": _goal}
+    elif tool == "ask_user_question":
+        desc = "ask_user_question"
+        # Q2/Q3 — the tool REGISTERS the question and returns {"ask_user": ...};
+        # the agent loop emits the ask_user SSE event, awaits the human answer
+        # with heartbeats, and feeds it back as this call's tool result.
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        _qs = _args.get("questions") or []
+        if not isinstance(_qs, list) or not _qs:
+            result = {"error": "ask_user_question requires a non-empty questions array", "exit_code": 1}
+        else:
+            from src.user_questions import ask as _uq_ask
+            _reg = _uq_ask(session_id or "", _qs, can_ask_user=can_ask_user)
+            if _reg.get("status") == "pending":
+                result = {"ask_user": _qs, "session_id": session_id or ""}
+            else:
+                result = _reg  # DELEGATED_CALLER / ALREADY_PENDING errors
+    elif tool == "subagent":
+        desc = f"subagent: {content.split(chr(10))[0][:80]}"
+        # B2/B3 — start a child agent run (own session, detached). The loop
+        # awaits foreground runs with heartbeats; background runs return the
+        # subagent_id handle immediately.
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src import subagents as _subs
+        result = await _subs.run_subagent(
+            parent_session_id=session_id or "",
+            owner=owner or "",
+            mode=_args.get("mode") or "spawn",
+            task=_args.get("task") or content.strip(),
+            run_in_background=bool(_args.get("run_in_background")),
+            disabled_tools=set(disabled_tools or []),
+        )
+    elif tool == "send_message":
+        desc = f"send_message: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src import subagents as _subs
+        result = _subs.append_message_and_resume(
+            _args.get("subagent_id") or "", _args.get("message") or "", owner or "",
+        )
+    elif tool == "list_agents":
+        desc = "list_agents"
+        from src import subagents as _subs
+        result = {"output": json.dumps(_subs.list_subs(owner or None), ensure_ascii=False),
+                  "exit_code": 0}
+    elif tool == "interrupt_agent":
+        desc = f"interrupt_agent: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src import subagents as _subs
+        result = _subs.interrupt(_args.get("subagent_id") or "", owner or "")
+    elif tool == "job_output":
+        desc = f"job_output: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src import subagents as _subs
+        result = _subs.job_status(_args.get("job_id") or "", owner or "")
+    elif tool == "job_kill":
+        desc = f"job_kill: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src import subagents as _subs
+        result = _subs.interrupt(_args.get("job_id") or "", owner or "")
+    elif tool == "sinalevi_search":
+        desc = f"sinalevi_search: {content.split(chr(10))[0][:60]}"
+        # L4 — targeted Costa Rican legislation query; results always cite the
+        # source so the agent can never fabricate a norm.
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src.legal.sinalevi import search_sinalevi
+        _hits = await search_sinalevi(
+            term=_args.get("term"), theme=_args.get("theme"), number=_args.get("number"),
+        )
+        result = {"output": json.dumps([h.as_dict() for h in (_hits or [])[:10]], ensure_ascii=False),
+                  "exit_code": 0, "hits": [h.as_dict() for h in (_hits or [])[:10]]}
+    elif tool == "corteidh_search":
+        desc = f"corteidh_search: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src.legal.corteidh import corteidh_search
+        _hits = await corteidh_search(term=_args.get("term") or "")
+        result = {"output": json.dumps([h.as_dict() for h in (_hits or [])[:10]], ensure_ascii=False),
+                  "exit_code": 0, "hits": [h.as_dict() for h in (_hits or [])[:10]]}
+    elif tool == "corteidh_case":
+        desc = f"corteidh_case: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        from src.legal.corteidh import corteidh_case
+        _case = await corteidh_case(_args.get("case_id") or "")
+        if not _case:
+            result = {"error": "corteidh_case: case not found", "exit_code": 1}
+        else:
+            result = {"output": json.dumps(_case.as_dict(), ensure_ascii=False),
+                      "exit_code": 0, "case": _case.as_dict()}
+    elif tool == "legal_fetch_document":
+        desc = f"legal_fetch_document: {content.split(chr(10))[0][:60]}"
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        _source = _args.get("source") or ""
+        _url = _args.get("pdf_url") or ""
+        if _source not in ("sinalevi", "corteidh") or not _url:
+            result = {"error": "legal_fetch_document requires source ('sinalevi'|'corteidh') and pdf_url", "exit_code": 1}
+        else:
+            from src.legal.corpus import fetch_pdf
+            _path = await fetch_pdf(
+                {"pdf_url": _url, "title": _args.get("title") or _url.rsplit("/", 1)[-1],
+                 "number": "", "case_id": "", "url": _url},
+                _source,
+            )
+            if not _path:
+                result = {"error": f"legal_fetch_document: could not fetch {_url}", "exit_code": 1}
+            else:
+                result = {"output": f"document extracted to {_path} — grep it with docfind/read_file",
+                          "exit_code": 0, "path": _path}
+    elif tool == "update_goal":
+        desc = f"update_goal: {content.split(chr(10))[0][:60]}"
+        # Model authority (DSH rule): complete/blocked only. edit/pause/resume
+        # remain human-only via the API (routes/goal_routes.py).
+        try:
+            _args = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _args = {}
+        _action = _args.get("action") or content.strip().lower()
+        _goal_owner = resolve_owner(session_id, owner)
+        if _action not in ("complete", "blocked"):
+            result = {"error": "update_goal from the agent only accepts action 'complete' or 'blocked'", "exit_code": 1}
+        elif not _goal_owner:
+            result = {"error": "update_goal: cannot resolve the goal owner for this session", "exit_code": 1}
+        else:
+            try:
+                _goal = do_get_goal(_goal_owner)
+                if not _goal:
+                    raise KeyError("no goal")
+                if _action == "complete":
+                    _goal = do_update_goal(_goal_owner, _goal["revision"], "complete")
+                else:
+                    _goal = do_update_goal(
+                        _goal_owner, _goal["revision"], "blocked",
+                        blocked_reason=_args.get("blocked_reason") or _args.get("reason") or "blocked",
+                    )
+                result = {"output": f"goal {_action}", "exit_code": 0, "goal": _goal}
+            except KeyError:
+                result = {"error": "no active goal for this owner", "exit_code": 1}
+            except Exception as _ge:
+                result = {"error": f"update_goal failed: {_ge}", "exit_code": 1}
     elif tool == "document_append":
         desc = f"document_append: {content.split(chr(10))[0][:60]}"
         result = await do_document_append(content, session_id=session_id, owner=owner)

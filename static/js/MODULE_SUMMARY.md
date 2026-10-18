@@ -87,6 +87,15 @@ This document describes what each JavaScript module is responsible for.
 
 ---
 
+### 12. **questionCard.js** (Harness port — Cluster B)
+- Mid-task question card for the `ask_user_question` tool
+- Renders questions, options with `(Recommended)` badge, custom answers
+- POSTs answers to `/api/question/{sid}/answer`
+- Restores pending questions on page refresh / session switch
+- A11y: `aria-live`, focus, Escape-to-dismiss, answered state
+
+---
+
 ## Main Application File
 
 ### **app.js**

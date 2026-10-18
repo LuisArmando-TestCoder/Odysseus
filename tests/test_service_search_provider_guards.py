@@ -82,6 +82,7 @@ def test_service_ddg_html_fallback_sends_safesearch(monkeypatch):
 
     class _Response:
         text = html
+        status_code = 200  # the real fallback checks for a 202 bot-check page
 
         def raise_for_status(self):
             return None

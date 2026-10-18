@@ -54,6 +54,25 @@ for _stub in [
 from fastapi import HTTPException
 
 
+@pytest.fixture(autouse=True)
+def _restore_core_database_attrs():
+    """The helpers below augment the REAL core.database module (setattr
+    MagicMocks for the webhook import chain). Restore those attributes after
+    each test — otherwise later tests (task_scheduler_session_delivery) lazy-
+    import ChatMessage from core.database and get the leaked MagicMock."""
+    import core.database as _cdb
+    _saved = {}
+    for _n in ("Webhook", "ChatMessage", "ModelEndpoint"):
+        if hasattr(_cdb, _n):
+            _saved[_n] = getattr(_cdb, _n)
+    yield
+    for _n in ("Webhook", "ChatMessage", "ModelEndpoint"):
+        if _n in _saved:
+            setattr(_cdb, _n, _saved[_n])
+        elif hasattr(_cdb, _n):
+            delattr(_cdb, _n)
+
+
 # ---------------------------------------------------------------------------
 # calendar._get_or_404_calendar / _get_or_404_event
 # ---------------------------------------------------------------------------

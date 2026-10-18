@@ -421,6 +421,19 @@ def setup_chat_routes(
         except (ValueError, ValidationError):
             raise HTTPException(400, "Invalid request parameters")
 
+        # H2 — USER_PROMPT_SUBMIT hooks may rewrite the message before context
+        # build (mirror of DSH's hook protocol; the middleman's transform seam).
+        try:
+            from src.hooks import run_hooks as _run_hooks, HookPoint as _HP
+            _hres = await _run_hooks(_HP.USER_PROMPT_SUBMIT, {
+                "message": message, "session_id": session,
+                "user": getattr(request.state, "current_user", None),
+            })
+            if isinstance(_hres.get("message"), str):
+                message = _hres["message"]
+        except Exception:
+            pass
+
         # ------------------------------------------------------------------ #
         # Privilege gates that must fire BEFORE any LLM work / token spend.
         #   1. allowed_models — reject if session.model isn't in the user's
@@ -986,6 +999,7 @@ def setup_chat_routes(
                         disabled_tools=disabled_tools if disabled_tools else None,
                         owner=_user,
                         fallbacks=_fallback_candidates,
+                        can_ask_user=True,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -1080,12 +1094,27 @@ def setup_chat_routes(
             finally:
                 _active_streams.pop(session, None)
 
+        # ── I1: queue-don't-cancel ──────────────────────────────────────────
+        # A live run is draining for this session and this is a NEW message
+        # (duplicates were handled by the double-send guard above). The message
+        # is already persisted (build_chat_context/preprocess). Queue it instead
+        # of cancelling the turn — the queued turn runs when the current one
+        # finishes (turn_inbox.drain_on_finish → the registered factory).
+        if agent_runs.is_active(session):
+            from src import turn_inbox
+            _q = turn_inbox.enqueue(session, message or "")
+            agent_runs.publish(
+                session,
+                f'data: {json.dumps({"type": "turn_queued", "data": _q})}\n\n',
+            )
+            return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
+
         # Run the stream as a DETACHED background task so it survives the client
         # closing the tab / navigating away (true terminal-agent behavior). The
         # SSE response just subscribes (replay buffered output + live); dropping
         # the SSE only removes a subscriber — the run keeps going and saves the
         # assistant message on completion regardless. Reconnect via /api/chat/resume.
-        agent_runs.start(session, _safe_stream())
+        agent_runs.start(session, _safe_stream(), owner=_user)
         return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
 
     # ------------------------------------------------------------------ #
@@ -1121,11 +1150,44 @@ def setup_chat_routes(
         # check and the indexed read if a sibling stream's finally pops the
         # entry in between (same pattern _stream_set already uses).
         rec = _active_streams.get(session_id)
+        try:
+            from src import turn_inbox
+            _queued = turn_inbox.queued_count(session_id)
+        except Exception:
+            _queued = 0
         if rec is None:
             if agent_runs.is_active(session_id):
-                return {"status": "streaming", "detached": True}
+                return {"status": "streaming", "detached": True, "queued": _queued}
             raise HTTPException(404, "No active stream for this session")
+        rec = dict(rec)
+        rec["queued"] = _queued  # G4 — queued-turn count for the UI
         return rec
+
+    # ------------------------------------------------------------------ #
+    # GET /api/chat/active — run inventory for the sidebar (G4): working
+    # dots + queued counts across sessions of the current user.
+    # ------------------------------------------------------------------ #
+    @router.get("/api/chat/active")
+    async def chat_active(request: Request) -> Dict[str, Any]:
+        try:
+            from src.auth_helpers import effective_user
+            _user = effective_user(request)
+            from src import agent_runs as _ar, turn_inbox
+            runs = []
+            for r in _ar.list_active():
+                # S3 — never leak other owners' run state; in single-user mode
+                # (no auth) everything is shown.
+                if _user and r["owner"] and r["owner"] != _user:
+                    continue
+                runs.append({
+                    "session_id": r["session_id"],
+                    "status": r["status"],
+                    "owner": r["owner"],
+                    "queued": turn_inbox.queued_count(r["session_id"]),
+                })
+            return {"runs": runs}
+        except Exception:
+            return {"runs": []}
 
     # ------------------------------------------------------------------ #
     # POST /api/inject_context
@@ -1307,5 +1369,76 @@ def setup_chat_routes(
                 yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 500})}\n\n'
 
         return StreamingResponse(stream_rewrite(), media_type="text/event-stream")
+
+    # ── I1: turn-inbox stream factory (queue-don't-cancel) ──────────────────
+    # The queued message's turn runs detached with sane defaults, mirroring the
+    # agent branch of stream_with_save (bg_monitor persistence pattern). The
+    # user message is already persisted by the original request's
+    # build_chat_context, so only the turn itself is rebuilt here.
+    async def _queued_turn_stream(session_id: str, message: str):
+        try:
+            sess = session_manager.get_session(session_id)
+        except Exception:
+            yield f'event: error\ndata: {json.dumps({"error": "queued turn: session missing", "status": 404})}\n\n'
+            yield "data: [DONE]\n\n"
+            return
+        owner = getattr(sess, "owner", None)
+        try:
+            from src.cost_ledger import set_cost_scope
+            set_cost_scope(session_id, "chat", owner)
+        except Exception:
+            pass
+        _msgs = sess.get_context_messages()
+        _msgs.append({"role": "user", "content": message or ""})
+        yield f'data: {json.dumps({"type": "model_info", "model": sess.model})}\n\n'
+        full = ""
+        try:
+            async for chunk in stream_agent_loop(
+                sess.endpoint_url, sess.model, _msgs,
+                headers=sess.headers,
+                temperature=0.3,
+                max_tokens=0,  # server decides — no hard cap truncation
+                context_length=getattr(sess, "context_length", 0) or 0,
+                session_id=session_id,
+                owner=owner,
+                can_ask_user=True,
+            ):
+                if chunk.startswith("data: ") and chunk != "data: [DONE]\n\n":
+                    try:
+                        _d = json.loads(chunk[6:])
+                        if isinstance(_d, dict) and "delta" in _d and not _d.get("thinking"):
+                            full += _d["delta"]
+                    except (ValueError, TypeError):
+                        pass
+                yield chunk
+        except (asyncio.CancelledError, GeneratorExit):
+            if full:
+                try:
+                    sess.add_message(ChatMessage("assistant", full,
+                                                 metadata={"stopped": True, "model": sess.model}))
+                except Exception:
+                    pass
+            raise
+        if full:
+            try:
+                sess.add_message(ChatMessage("assistant", full,
+                                             metadata={"queued_turn": True, "model": sess.model}))
+                yield f'data: {json.dumps({"type": "message_saved"})}\n\n'
+            except Exception as e:
+                logger.warning(f"queued turn persistence failed: {e}")
+        yield "data: [DONE]\n\n"
+
+    def _queued_turn_factory(session_id: str, message: str):
+        try:
+            owner = getattr(session_manager.get_session(session_id), "owner", None)
+        except Exception:
+            owner = None
+        return (_queued_turn_stream(session_id, message), owner)
+
+    try:
+        from src import turn_inbox
+        turn_inbox.register_stream_factory(_queued_turn_factory)
+    except RuntimeError:
+        logger.warning("turn_inbox factory already registered (module reload?)")
 
     return router

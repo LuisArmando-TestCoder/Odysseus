@@ -667,6 +667,32 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             raise HTTPException(401, "Not authenticated")
         session_manager.save_sessions()
         return {"ok": True, "path": SESSIONS_FILE}
+
+    @router.post("/session/{sid}/fork")
+    async def fork_session(request: Request, sid: str):
+        """B1 — branch this chat into a NEW child conversation seeded with a
+        copy of its history (DSH subagent-fork-in-process equivalent)."""
+        _verify_session_owner(request, sid, session_manager=session_manager)
+        user = effective_user(request)
+        body = {}
+        try:
+            raw = await request.body()
+            if raw:
+                body = await request.json()
+        except Exception:
+            body = {}
+        try:
+            keep_count = int(body.get("keep_count") or 0)
+        except (TypeError, ValueError):
+            keep_count = 0
+        from src.subagents import fork_child_session
+        child = fork_child_session(
+            sid, user, keep_count=keep_count,
+            name=body.get("name") or None,
+        )
+        if not child:
+            raise HTTPException(404, "Session not found or session manager unavailable")
+        return child
     
     @router.post("/session/openai")
     def create_session_openai(

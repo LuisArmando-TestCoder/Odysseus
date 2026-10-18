@@ -20,6 +20,7 @@ A self-hosted AI workspace -- meant to be the self-hosted version of the UI expe
   - **Calendar** -- Local-first calendar with CalDAV sync to Radicale / Nextcloud / Apple / Fastmail.<br>　<sub>CalDAV pull · .ics import/export · per-calendar colors · agent-aware</sub>
   - **Works on mobile** -- looks and runs great on your phone, not just desktop.<br>　<sub>responsive · installable (PWA) · touch gestures</sub>
   - **Extras** -- more to explore, happy if you give it a go!<br>　<sub>image editor · theme editor · file uploads (vision + PDF) · web search · presets · sessions · 2FA</sub>
+  - **Harness** -- DeepSeek-Harness-style chat architecture (see `docs/harness-port.md`).<br>　<sub>continuous goals with auto-continuing rounds · background turns + message queue (nothing cancels a live turn) · mid-task questions (`ask_user_question`) · subagents & branching into their own chats · no-truncation spill-to-disk · per-tool deadlines + retry/fallback · response middleman + hook points · Costa Rican + Inter-American legal corpus (SINALEVI / Corte IDH)</sub>
 
 ## Demo
 A full, hover-to-play tour lives on the landing page (`docs/index.html`).
@@ -334,6 +335,16 @@ Key settings:
 | `CHROMADB_HOST` | `localhost` | ChromaDB host for vector memory. Docker overrides this to `chromadb`. |
 | `CHROMADB_PORT` | `8100` | ChromaDB port for manual host runs. Docker overrides this to `8000`. |
 | `EMBEDDING_URL` | -- | OpenAI-compatible embeddings endpoint |
+
+Harness settings (live in Settings, not `.env` — see `docs/harness-port.md`):
+
+| Setting | Default | Description |
+|---|---|---|
+| `agent_max_rounds` | `20` | Max agent rounds per turn (was a hardcoded constant). |
+| `ask_user_timeout_seconds` | `600` | How long a mid-task question waits before auto-resolving as timed out. |
+| `subagent_timeout_seconds` | `900` | Foreground subagent await deadline. |
+| `agent_run_evict_grace_seconds` | `180` | How long a finished background run keeps its replay buffer. |
+| `agent_run_buffer_max_events` | `5000` | Soft cap on the replay buffer per run (head + tail kept). |
 
 ### Built-in MCP servers (optional setup)
 

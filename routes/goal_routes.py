@@ -7,7 +7,7 @@ these routes without a session parameter.
 from fastapi import APIRouter, Request, HTTPException
 
 from src.auth_helpers import effective_user
-from src.goal import get_goal, update_goal, GoalConflict
+from src.goal import get_goal, update_goal, create_goal, GoalConflict
 
 
 def _is_top_level_human(request: Request) -> bool:
@@ -30,6 +30,68 @@ def setup_goal_routes() -> APIRouter:
             raise HTTPException(403, "Authentication required")
         g = get_goal(owner)
         return {"goal": g} if g else {"goal": None}
+
+    @router.post("")
+    async def goal_create(request: Request):
+        """Layer 0 / F0.4 — the goal creation path that did not exist before.
+
+        Body: {objective, session_id?, max_goal_rounds?}. Goals are owner-keyed;
+        `session_id` (explicit or the owner's most recent non-archived chat) is
+        where the goal's rounds will execute.
+        """
+        owner = effective_user(request)
+        if not owner:
+            raise HTTPException(403, "Authentication required")
+        body = {}
+        try:
+            raw = await request.body()
+            if raw:
+                body = await request.json()
+        except Exception:
+            body = {}
+        objective = (body.get("objective") or "").strip()
+        if not objective:
+            raise HTTPException(400, "objective is required")
+
+        session_id = (body.get("session_id") or "").strip() or None
+        if session_id:
+            from routes.session_routes import _verify_session_owner
+            _verify_session_owner(request, session_id)
+        else:
+            # Default: the owner's most recently accessed, non-archived chat.
+            try:
+                from core.database import SessionLocal
+                from core.database import Session as DBSession
+                _db = SessionLocal()
+                try:
+                    _row = (
+                        _db.query(DBSession)
+                        .filter(DBSession.owner == owner, DBSession.archived == False)
+                        .order_by(DBSession.updated_at.desc())
+                        .first()
+                    )
+                    session_id = getattr(_row, "id", None)
+                finally:
+                    _db.close()
+            except Exception:
+                session_id = None
+
+        existing = get_goal(owner)
+        if existing and existing.get("phase") in ("active", "paused"):
+            raise HTTPException(409, "an active goal already exists")
+
+        try:
+            _maxr = int(body.get("max_goal_rounds") or 0) or None
+        except (TypeError, ValueError):
+            _maxr = None
+        goal = create_goal(owner, objective, max_goal_rounds=_maxr, session_id=session_id)
+        # G1 — kick the round driver (idle-gated; no-op if the session is busy).
+        try:
+            from src import goal_driver
+            goal_driver.maybe_start_goal_round(owner=owner, goal=goal)
+        except Exception:
+            pass
+        return {"goal": goal}
 
     @router.get("/queue")
     async def goal_queue(request: Request):

@@ -289,3 +289,16 @@
     transition-duration: 0.001s !important;
   }
 }
+/* PORT: per-session working dot (detached runs + queued turns) */
+.run-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex: 0 0 auto;
+  background: transparent;
+  transition: background .15s ease;
+}
+.run-dot.active { background: #10b981; animation: runDotPulse 1.2s ease-in-out infinite; }
+.run-dot.queued { background: #8b5cf6; }
+@keyframes runDotPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }

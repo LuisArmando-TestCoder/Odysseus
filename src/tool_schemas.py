@@ -186,6 +186,144 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "create_goal",
+            "description": "Create a persistent, harness-owned continuous goal for this chat (Layer 0 / F0.4). Use when the user asks for a long-running objective — even if they don't say 'goal'. The harness tracks phase (active/paused/blocked/complete) and round count; you work one round at a time and read state back via get_goal. One active goal per user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "objective": {"type": "string", "description": "The concrete completion objective, one or two sentences."},
+                    "max_goal_rounds": {"type": "integer", "description": "Optional cap on automatic continuation rounds (default 256)."}
+                },
+                "required": ["objective"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_goal",
+            "description": "Read the current goal for THIS chat (owner-keyed, session-scoped): objective, phase, roundsStarted, revision, blockedReason. Use at the start of a turn to check whether you are still under an active goal.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_goal",
+            "description": "Transition the current goal from the agent side. Model authority (DSH rule): ONLY 'complete' (objective truly achieved, with evidence) or 'blocked' (concrete blocking condition in blocked_reason). edit/pause/resume are human-only via the UI.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["complete", "blocked"], "description": "'complete' when achieved; 'blocked' when a concrete condition prevents progress."},
+                    "blocked_reason": {"type": "string", "description": "The concrete blocking condition (for action='blocked')."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user_question",
+            "description": "Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. Send one or more questions, each with a stable id that is echoed in the answer. Only available in the live root chat turn; the turn pauses until the user answers (other chats keep running).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "description": "Questions to ask the user before continuing.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": True,
+                            "properties": {
+                                "id": {"type": "string", "description": "Stable id for this question; echoed in the answer."},
+                                "question": {"type": "string", "description": "The specific question to ask the user."},
+                                "header": {"type": "string", "description": "Optional short heading, such as 'Confirm' or 'Choose Mode'."},
+                                "options": {
+                                    "type": "array",
+                                    "description": "Optional choices. If you recommend one, put it first and append '(Recommended)' to that label.",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {"type": "string", "description": "Short user-facing option label."},
+                                            "description": {"type": "string", "description": "One sentence explaining the tradeoff or impact."}
+                                        }
+                                    }
+                                },
+                                "multi_select": {"type": "boolean", "description": "Whether the user may select more than one option. Defaults to false."}
+                            }
+                        }
+                    }
+                },
+                "required": ["questions"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sinalevi_search",
+            "description": "Search Costa Rican legislation (SINALEVI) — laws, decrees, norms. Targeted queries only: by theme (e.g. 'ambiente' lists all environmental norms), free term, or law number. Returns titles + numbers + links + PDF links. Always cite the returned source; never fabricate a norm.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string", "description": "Free-text term to search in the legislation."},
+                    "theme": {"type": "string", "description": "Thematic search (SINALEVI temática), e.g. 'ambiente'."},
+                    "number": {"type": "string", "description": "Law/decreto number, e.g. '7554'."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "corteidh_search",
+            "description": "Search Inter-American Court of Human Rights (Corte IDH) jurisprudence for cases matching a term. Returns case ids, titles, and PDF links.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string", "description": "Search term (country, topic, person)."}
+                },
+                "required": ["term"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "corteidh_case",
+            "description": "Fetch one Corte IDH case's metadata + direct PDF links by case id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "case_id": {"type": "string", "description": "The case id from corteidh_search."}
+                },
+                "required": ["case_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "legal_fetch_document",
+            "description": "Download a legal document PDF (SINALEVI law or Corte IDH case) on demand, extract its text into the local legal corpus, and return the path + a snippet. Use docfind/read_file on the returned path for precise article grep.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "enum": ["sinalevi", "corteidh"], "description": "Which corpus the document belongs to."},
+                    "pdf_url": {"type": "string", "description": "The pdf_url from a sinalevi_search/corteidh_case hit."},
+                    "title": {"type": "string", "description": "Optional document title for the corpus index."}
+                },
+                "required": ["source", "pdf_url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "document_append",
             "description": "Append findings to a document WITHOUT rewriting what's already there. Append-only: existing content is preserved and the new `content` is added at the end with a separator. Accumulate findings, evidence, and results here as you discover them — never rely on create_document/update_document for accumulation because those replace/rewrite. Resolution: pass `doc_id` (most precise), or omit to target the active document / most recent document, or pass `title` to match by title. If no document exists yet, it creates one titled `title` (or 'Findings').",
             "parameters": {
@@ -196,6 +334,87 @@ FUNCTION_TOOL_SCHEMAS = [
                     "content": {"type": "string", "description": "The findings to append (appended verbatim, never truncated or rewritten)."}
                 },
                 "required": ["content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "subagent",
+            "description": "Delegate a self-contained task to a child agent running in its own chat session. mode='spawn' = fresh child with just the task; mode='fork' = child seeded with a copy of THIS conversation (branch to a new chat). Set run_in_background=true to keep working while the child runs (a continuable child you steer with send_message/list_agents/interrupt_agent); default waits for the child's final answer as this tool's result. Max delegation depth is 3.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["spawn", "fork"], "description": "'spawn' = fresh child session; 'fork' = child inherits this conversation's history."},
+                    "task": {"type": "string", "description": "Complete self-contained instructions for the child agent."},
+                    "run_in_background": {"type": "boolean", "description": "True = start and return a subagent_id immediately; the child runs independently."}
+                },
+                "required": ["mode", "task"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message",
+            "description": "Send more work to a background/continuable subagent (id from subagent or list_agents). Appends a user message to the child's chat and starts its next turn if idle.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subagent_id": {"type": "string", "description": "The subagent id returned by subagent(..., run_in_background=true)."},
+                    "message": {"type": "string", "description": "The message/task to send."}
+                },
+                "required": ["subagent_id", "message"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_agents",
+            "description": "List your subagents (id, session, parent, depth, status, task) — children started with run_in_background=true.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "interrupt_agent",
+            "description": "Stop a running subagent's current turn (its partial output is saved).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subagent_id": {"type": "string", "description": "The subagent id to interrupt."}
+                },
+                "required": ["subagent_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "job_output",
+            "description": "Check the status/result of a background subagent (alias over the subagent registry).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "The subagent id (job id) to inspect."}
+                },
+                "required": ["job_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "job_kill",
+            "description": "Stop a background subagent run (alias for interrupt_agent).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "The subagent id (job id) to stop."}
+                },
+                "required": ["job_id"]
             }
         }
     },

@@ -12,6 +12,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from core.database import Base, Session as DbSession
+
+# Re-bind task_scheduler against the REAL core.database: an earlier-collected
+# test module may have imported it while core.database was stubbed, which binds
+# ChatMessage to a MagicMock attribute and makes db.add(user_msg) explode in
+# SQLAlchemy's state_str. Popping + re-importing re-executes the module with
+# the real classes.
+import sys as _sys
+_sys.modules.pop("src.task_scheduler", None)
 from src.task_scheduler import TaskScheduler
 
 # TEMPORARY ISOLATION WORKAROUND — remove once test_null_owner_gates.py is

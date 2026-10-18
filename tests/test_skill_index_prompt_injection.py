@@ -126,8 +126,11 @@ def test_skill_index_does_not_leak_to_system_role(tmp_path, monkeypatch):
 
 
 def test_skill_index_lands_in_untrusted_user_message(tmp_path, monkeypatch):
-    """The skill INDEX, when non-empty, must produce an untrusted user-role
-    message with metadata.trusted=False."""
+    """Skill INDEX injection is now REMOVED entirely (stronger than the original
+    untrusted-wrap fix): _build_base_prompt returns an empty index block — the
+    full catalog confused the voice assistant and was a needless prompt-injection
+    surface. Pin that invariant: the index's skill names appear in NO message,
+    trusted or untrusted."""
     data_dir = _seed_index_skill(tmp_path)
     _patch_prefs(monkeypatch, data_dir)
 
@@ -139,16 +142,9 @@ def test_skill_index_lands_in_untrusted_user_message(tmp_path, monkeypatch):
         active_document=None, mcp_mgr=None, owner=None,
     )
 
-    # Find the untrusted user message containing the index's name.
-    untrusted = [
-        m for m in out
-        if (m.get("metadata") or {}).get("trusted") is False
-        and "inbox-bomb" in (m.get("content") or "")
-    ]
-    assert untrusted, (
-        "Expected an untrusted user-role message carrying the skill INDEX; "
-        "got none. The fix must wrap _build_base_prompt's skill index block "
-        "via untrusted_context_message before inserting."
+    all_text = "\n".join(str(m.get("content") or "") for m in out)
+    assert "inbox-bomb" not in all_text, (
+        "The skill INDEX block must stay removed from the chat agent context "
+        "(it previously wrapped in an untrusted user message; the whole block "
+        "is now gone — see _build_base_prompt)."
     )
-    assert untrusted[0]["role"] == "user"
-    assert "Source: skills" in untrusted[0]["content"]

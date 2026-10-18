@@ -33,6 +33,8 @@ from src.agent_tools import (
     ToolBlock,
     MAX_AGENT_ROUNDS,
 )
+# T1.2 — per-call tool deadlines enforced by the parallel tool pool.
+from src.tool_execution import TOOL_TIMEOUTS  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -1495,7 +1497,7 @@ async def stream_agent_loop(
     temperature: float = 0.3,
     max_tokens: int = 4096,
     prompt_type: Optional[str] = None,
-    max_rounds: int = MAX_AGENT_ROUNDS,
+    max_rounds: Optional[int] = None,
     max_tool_calls: int = 0,
     context_length: int = 0,
     active_document=None,
@@ -1504,6 +1506,7 @@ async def stream_agent_loop(
     owner: Optional[str] = None,
     relevant_tools: Optional[Set[str]] = None,
     fallbacks: Optional[List[tuple]] = None,
+    can_ask_user: bool = False,
     _is_teacher_run: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
@@ -1516,6 +1519,14 @@ async def stream_agent_loop(
       - data: {"type": "metrics", "data": {...}}            (final metrics)
       - data: [DONE]                                        (end)
     """
+
+    # Layer 0 / F0.5: round cap comes from settings (callers may override).
+    if max_rounds is None:
+        try:
+            from src.settings import get_setting
+            max_rounds = int(get_setting("agent_max_rounds", MAX_AGENT_ROUNDS))
+        except Exception:
+            max_rounds = MAX_AGENT_ROUNDS
 
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
@@ -1688,9 +1699,10 @@ async def stream_agent_loop(
     # Goal auto-injection — the equivalent of DSH's <goal_round> message. The
     # harness (not the model) owns the counter/state; each round the agent is
     # re-told the objective + round number so it stays on-task across rounds.
+    # Layer 0 / F0.3: goals are owner-keyed; this lookup is session-scoped.
     try:
-        from src.goal import get_goal as _get_goal
-        _goal = _get_goal(session_id)
+        from src.goal import get_goal_for_session
+        _goal = get_goal_for_session(session_id, owner)
     except Exception:
         _goal = None
     if _goal and _goal.get("phase") == "active":
@@ -1843,6 +1855,14 @@ async def stream_agent_loop(
     _doc_acc = ""          # accumulated tool-call JSON arguments
     _doc_opened = False    # whether doc_stream_open was sent
     _doc_last_len = 0      # last content length sent
+
+    # T1.4 — repeated-tool reminder: (tool, normalized args) → count across the
+    # whole turn. The 3rd identical call injects a gentle notice before the
+    # loop-breaker has to fire.
+    _repeat_counts: Dict[tuple, int] = {}
+    # H3 — deliverable registry: files this turn produced (fed to the H1
+    # `present` event at turn end; presentation-only, never model context).
+    deliverables: List[dict] = []
 
     for round_num in range(1, max_rounds + 1):
         round_response = ""
@@ -2378,12 +2398,65 @@ async def stream_agent_loop(
                     async def _push_progress(payload):
                         await progress_q.put((block.tool_type, payload))
                     try:
-                        return await execute_tool_block(
-                            block,
-                            session_id=session_id,
-                            disabled_tools=disabled_tools,
-                            owner=owner,
-                            progress_cb=_push_progress,
+                        # H2 — PRE_TOOL_USE hooks may rewrite the tool content.
+                        _content = block.content
+                        try:
+                            from src.hooks import run_hooks as _run_hooks_pre, HookPoint as _HP_pre
+                            _pre = await _run_hooks_pre(_HP_pre.PRE_TOOL_USE, {
+                                "tool": block.tool_type, "content": block.content,
+                                "session_id": session_id, "owner": owner,
+                            })
+                            _content = _pre.get("content", block.content)
+                        except Exception:
+                            _content = block.content
+                        _blk = ToolBlock(block.tool_type, _content)
+
+                        _deadline = TOOL_TIMEOUTS.get(_blk.tool_type)
+                        if _deadline:
+                            # T1.2 — pool-level per-call deadline (second net
+                            # after the tool's own internal timeout). A hung
+                            # call returns a clean timeout result instead of
+                            # stalling the round.
+                            _desc, _res = await asyncio.wait_for(
+                                execute_tool_block(
+                                    _blk,
+                                    session_id=session_id,
+                                    disabled_tools=disabled_tools,
+                                    owner=owner,
+                                    progress_cb=_push_progress,
+                                    can_ask_user=can_ask_user,
+                                ),
+                                timeout=_deadline,
+                            )
+                        else:
+                            _desc, _res = await execute_tool_block(
+                                _blk,
+                                session_id=session_id,
+                                disabled_tools=disabled_tools,
+                                owner=owner,
+                                progress_cb=_push_progress,
+                                can_ask_user=can_ask_user,
+                            )
+                        # H2 — POST_TOOL_USE hooks may rewrite the result dict.
+                        try:
+                            from src.hooks import run_hooks as _run_hooks_post, HookPoint as _HP_post
+                            _post = await _run_hooks_post(_HP_post.POST_TOOL_USE, {
+                                "tool": _blk.tool_type,
+                                "result": dict(_res) if isinstance(_res, dict) else {"output": str(_res)},
+                                "session_id": session_id, "owner": owner,
+                            })
+                            _res = _post.get("result", _res)
+                        except Exception:
+                            pass
+                        return _desc, _res
+                    except asyncio.TimeoutError:
+                        return (
+                            f"{block.tool_type}: TIMEOUT after {_deadline:g}s",
+                            {
+                                "error": f"tool '{block.tool_type}' exceeded its {_deadline:g}s deadline",
+                                "error_code": "timeout",
+                                "exit_code": 124,
+                            },
                         )
                     finally:
                         # Sentinel so the drainer knows this tool finished.
@@ -2413,6 +2486,75 @@ async def stream_agent_loop(
             desc_results = []
 
         for (block, cmd_display, is_doc_tool), (desc, result) in zip(block_meta, desc_results):
+
+            # Q3 — ask_user_question: the tool registered the question; the
+            # loop now emits the ask_user SSE event, awaits the human answer
+            # with heartbeats, and feeds it back as THIS call's tool result
+            # (same slot → result ordering is preserved). While waiting, other
+            # sessions run unaffected (per-session registry) and this stream
+            # stays alive via keep-alive comments.
+            if isinstance(result, dict) and result.get("ask_user"):
+                _questions = result["ask_user"]
+                yield (
+                    f'data: {json.dumps({"type": "ask_user", "data": {"questions": _questions, "session_id": session_id or ""}})}\n\n'
+                )
+                from src.user_questions import get_future as _uq_get_future
+                from src.stream_util import heartbeat_wait, HEARTBEAT
+                _fut = _uq_get_future(session_id)
+                _answer_payload = None
+                if _fut is not None:
+                    async for _hb in heartbeat_wait(_fut, interval=15.0):
+                        if _hb == HEARTBEAT:
+                            yield _hb
+                        else:
+                            _answer_payload = _hb
+                if isinstance(_answer_payload, dict):
+                    _answers = _answer_payload.get("answers") or []
+                    _timed_out = bool(_answer_payload.get("timeout"))
+                    if _timed_out:
+                        result = {"error": "the user did not answer the question before the timeout",
+                                  "error_code": "timeout", "exit_code": 1}
+                    else:
+                        result = {
+                            "output": "user answered: " + json.dumps(_answers, ensure_ascii=False),
+                            "answer": _answers,
+                            "exit_code": 0,
+                        }
+                else:
+                    result = {"error": "question registration was lost (no pending future)",
+                              "error_code": "NO_FUTURE", "exit_code": 1}
+
+            # B2/B3 — subagent: foreground runs await the child's terminal
+            # state with heartbeats; background/continuable runs report the
+            # subagent_id handle immediately and the parent keeps working.
+            if isinstance(result, dict) and result.get("subagent_started"):
+                from src import subagents as _subs_mod
+                _child_sid = result["child_session_id"]
+                yield (
+                    f'data: {json.dumps({"type": "subagent_started", "data": {"subagent_id": result["subagent_id"], "session_id": _child_sid, "background": bool(result.get("run_in_background"))}})}\n\n'
+                )
+                if result.get("run_in_background"):
+                    result = {
+                        "output": result.get("output"),
+                        "subagent_id": result.get("subagent_id"),
+                        "exit_code": 0,
+                    }
+                else:
+                    from src.stream_util import heartbeat_wait, HEARTBEAT
+                    _payload = None
+                    _fut = _subs_mod.wait_run_future(_child_sid)
+                    if _fut is not None:
+                        async for _hb in heartbeat_wait(_fut, interval=15.0):
+                            if _hb == HEARTBEAT:
+                                yield _hb
+                            else:
+                                _payload = _hb
+                    _out = _subs_mod.collect_output(_child_sid, _payload)
+                    result = {
+                        "output": _out,
+                        "subagent_id": result.get("subagent_id"),
+                        "exit_code": 0,
+                    }
 
             # Extract structured web sources from web_search tool output.
             # web_search returns {"output": ..., "exit_code": 0}; check "output"
@@ -2518,6 +2660,12 @@ async def stream_agent_loop(
             # the model is re-invoked with the timeout context next round.
             if result.get("exit_code") == 124:
                 yield _self_ping_delta(f"tool '{block.tool_type}' timed out")
+            # T1.2 — dedicated tool_timeout event so the UI can render a
+            # distinct "deadline exceeded" status line.
+            if result.get("error_code") == "timeout":
+                yield (
+                    f'data: {json.dumps({"type": "tool_timeout", "tool": block.tool_type, "round": round_num})}\n\n'
+                )
 
             # Native document tools open in the editor + carry the REAL doc id.
             # Emit a doc_update so the frontend opens/activates it and sends it
@@ -2563,6 +2711,16 @@ async def stream_agent_loop(
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
 
+            # H3 — deliverable registry: files this turn wrote (dedupe by path).
+            if result.get("success") and result.get("path"):
+                _path = str(result["path"])
+                if not any(d.get("path") == _path for d in deliverables):
+                    deliverables.append({
+                        "name": _path.replace("\\", "/").rsplit("/", 1)[-1],
+                        "path": _path,
+                        "description": "",
+                    })
+
             # Force-append a 1-line summary to the durable checkpoint after
             # every tool execution, so the next round (or a later nudge)
             # resumes instead of re-deriving. Best-effort — never let a
@@ -2578,6 +2736,10 @@ async def stream_agent_loop(
             except Exception:
                 pass
 
+            # T1.4 — count identical (tool, args) calls across the whole turn.
+            _sig = (block.tool_type, block.content.strip()[:200])
+            _repeat_counts[_sig] = _repeat_counts.get(_sig, 0) + 1
+
             formatted = format_tool_result(desc, result)
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
@@ -2591,6 +2753,21 @@ async def stream_agent_loop(
                              tool_results, tool_result_texts, used_native, round_num,
                              round_reasoning=round_reasoning)
 
+        # T1.4 — after the 3rd identical call, inject a gentle reminder into
+        # the next round's context (DSH guard/repeat-tool-reminder). Fires once
+        # per turn; the harder loop-breaker (:2252) remains the backstop.
+        for _sig, _n in list(_repeat_counts.items()):
+            if _n == 3:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        f"You have called `{_sig[0]}` with the same arguments {_n} times. "
+                        "Either the arguments are wrong or the approach is stuck — change one "
+                        "(different args, different tool, or ask the user)."
+                    ),
+                })
+                _repeat_counts[_sig] = _n + 1  # notify only once per turn
+
         # Emit agent_step event
         yield (
             f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -2598,6 +2775,13 @@ async def stream_agent_loop(
 
         # Separator in accumulated response
         full_response += "\n\n"
+
+    # H1 — deliverable cards (DSH `present`): the files this turn produced,
+    # emitted once at turn end so the frontend renders one card per file.
+    if deliverables:
+        yield (
+            f'data: {json.dumps({"type": "present", "data": {"files": deliverables}})}\n\n'
+        )
 
     # If the response is completely empty and no tools were executed,
     # yield a fallback message so the user is not left hanging.

@@ -243,10 +243,20 @@ export function addRoundSeparator(roundNum) {
 
 export function buildDeliverableCard(file) {
   const card = document.createElement('div');
-  card.className = 'deliverable-card';
+  card.className = 'deliverable-card deliverable-card-enter';
+  // U5 — extension-aware icon when there's no preview thumbnail.
+  const _name = (file.name || file.path?.split('/').pop() || '').toLowerCase();
+  const _ext = _name.includes('.') ? _name.split('.').pop() : '';
+  const _ICONS = {
+    pdf: '\uD83D\uDCC4', xlsx: '\uD83D\uDCCA', xls: '\uD83D\uDCCA', csv: '\uD83D\uDCCA',
+    docx: '\uD83D\uDCC4', doc: '\uD83D\uDCC4', pptx: '\uD83D\uDCC8', ppt: '\uD83D\uDCC8',
+    png: '\uD83D\uDDBC', jpg: '\uD83D\uDDBC', jpeg: '\uD83D\uDDBC', gif: '\uD83D\uDDBC',
+    webp: '\uD83D\uDDBC', mp4: '\uD83C\uDFAC', mov: '\uD83C\uDFAC', zip: '\uD83D\uDDC2',
+  };
+  const glyph = _ICONS[_ext] || '\uD83D\uDCC4';
   const icon = file.previewUrl
     ? `<img class="deliverable-thumb" src="${file.previewUrl}" alt="">`
-    : '<span class="deliverable-icon">📄</span>';
+    : `<span class="deliverable-icon">${glyph}</span>`;
   card.innerHTML = `
     ${icon}
     <div class="deliverable-meta">
@@ -1448,9 +1458,11 @@ export function createMsgFooter(msgElement) {
     { id: 'copy', icon: COPY_ICON, title: 'Copy message', cls: 'footer-copy-btn', html: true, handler(e) {
       e.stopPropagation();
       const btn = e.currentTarget;
+      if (btn.dataset.busy === '1') return;  // DSH copy-cooldown guard
+      btn.dataset.busy = '1';
       uiModule.copyToClipboard(msgElement.dataset.raw || msgElement.querySelector('.body')?.textContent || '');
       btn.innerHTML = CHECK_ICON;
-      setTimeout(() => { btn.innerHTML = COPY_ICON; }, 1500);
+      setTimeout(() => { btn.innerHTML = COPY_ICON; btn.dataset.busy = ''; }, 1500);
     }},
     { id: 'edit', icon: '\u270E', title: 'Edit', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();
@@ -1630,7 +1642,30 @@ export function createMsgFooter(msgElement) {
   }
 
   footer.appendChild(actions);
+
+  // Per-message duration (Phase 6 — DSH formatRunDuration equivalent). Populated
+  // live by chat.js via setMsgDuration while streaming, frozen at response_time.
+  const duration = document.createElement('span');
+  duration.className = 'msg-duration';
+  footer.appendChild(duration);
+
   return footer;
+}
+
+/**
+ * Set the live/frozen duration text on a message footer (seconds or null to
+ * clear). Formats like DSH's formatRunDuration: `3.2s`, `1m 04s`.
+ */
+export function setMsgDuration(msgElement, seconds) {
+  const el = msgElement && msgElement.querySelector('.msg-duration');
+  if (!el) return;
+  if (seconds == null || !isFinite(seconds)) { el.textContent = ''; el.title = ''; return; }
+  const s = Math.max(0, seconds);
+  el.textContent = s >= 60
+    ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`
+    : `${s.toFixed(1)}s`;
+  // U6 — exact value on hover.
+  el.title = `${s.toFixed(2)}s response time`;
 }
 
 /**
@@ -1667,9 +1702,11 @@ export function createUserMsgFooter(msgElement) {
     { id: 'copy', icon: COPY_ICON, title: 'Copy message', cls: 'footer-copy-btn', html: true, handler(e) {
       e.stopPropagation();
       const btn = e.currentTarget;
+      if (btn.dataset.busy === '1') return;  // DSH copy-cooldown guard
+      btn.dataset.busy = '1';
       uiModule.copyToClipboard(msgElement.querySelector('.body')?.textContent || '');
       btn.innerHTML = CHECK_ICON;
-      setTimeout(() => { btn.innerHTML = COPY_ICON; }, 1500);
+      setTimeout(() => { btn.innerHTML = COPY_ICON; btn.dataset.busy = ''; }, 1500);
     }},
     { id: 'resend', icon: '\u21BB', title: 'Resend message', cls: 'msg-action-btn', handler(e) {
       e.stopPropagation();

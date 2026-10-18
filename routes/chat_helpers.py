@@ -430,6 +430,36 @@ def _normalize_model_id_from_cache(sess) -> Optional[str]:
     return None
 
 
+def voice_memory_stratum(user: str, session_id: str) -> str:
+    """V1/V2 — the chat ← voice bridge direction, extracted for testability.
+
+    Returns the read-only voice-memory context for the chat (compressed spine
+    + full live transcript, newest last), or "" when there is no voice memory
+    or the memory layer is unavailable. Failures degrade silently — the chat
+    must never break because the voice memory is down.
+    """
+    try:
+        from services.voice.memory import get_voice_memory
+        _vm = get_voice_memory(user, f"chat-{session_id}")
+        # The compressed spine (highest summary + newest of each level) gives
+        # the chat the distilled overview; the FULL live transcript gives it
+        # the actual spoken conversation verbatim. Both read-only DATA.
+        _spine = _vm.spine_text(include_live=True) or ""
+        _transcript = _vm.transcript_text(max_turns=200) or ""
+        _parts = []
+        if _spine.strip():
+            _parts.append(_spine)
+        if _transcript.strip():
+            _parts.append(
+                "[Full voice transcript — the actual spoken conversation, newest last]\n"
+                + _transcript
+            )
+        return "\n\n".join(_parts)
+    except Exception as _vme:
+        logger.debug(f"voice memory stratum injection skipped: {_vme}")
+        return ""
+
+
 async def build_chat_context(
     sess,
     request,
@@ -545,32 +575,14 @@ async def build_chat_context(
     # already covered and forge informed responses. Injected as untrusted
     # DATA (read-only): the chat agent can read it while reasoning but can
     # never mutate the memory storage.
-    try:
-        from services.voice.memory import get_voice_memory
-        _vm = get_voice_memory(user, f"chat-{session_id}")
-        # The compressed spine (highest summary + newest of each level) gives the
-        # chat the distilled overview. The FULL live transcript gives it the
-        # actual spoken conversation — what the user really said, verbatim, so
-        # the chat can answer "what did I talk about" without the compression
-        # losing the specifics. Both are read-only DATA (untrusted), never
-        # instructions.
-        _spine = _vm.spine_text(include_live=True)
-        _transcript = _vm.transcript_text(max_turns=200)
-        _parts = []
-        if _spine.strip():
-            _parts.append(_spine)
-        if _transcript.strip():
-            _parts.append(
-                "[Full voice transcript — the actual spoken conversation, newest last]\n"
-                + _transcript
-            )
-        if _parts:
+    # V2 — turn-type matrix: incognito and no_memory turns get NO voice
+    # stratum (never leak a voice transcript into an ephemeral chat).
+    if not incognito and not no_memory:
+        _stratum = voice_memory_stratum(user, session_id)
+        if _stratum:
             preface.append(untrusted_context_message(
-                "voice memory stratum (read-only)",
-                "\n\n".join(_parts),
+                "voice memory stratum (read-only)", _stratum,
             ))
-    except Exception as _vme:
-        logger.debug(f"voice memory stratum injection skipped: {_vme}")
 
     # Normalize model ID. Prefer cached endpoint models so group chat does not
     # re-hit slow local /models endpoints on every participant turn.

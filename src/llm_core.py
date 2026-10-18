@@ -1536,44 +1536,69 @@ async def _stream_llm_with_fallback_raw(candidates, messages, **kwargs):
         yield f'event: error\ndata: {json.dumps({"error": "No model endpoint configured", "status": 503})}\n\n'
         return
 
+    # T1.5 — per-candidate retry policy (port of DSH agent/request-error
+    # retryPolicy). Default 1 = today's behavior (no same-candidate retry).
+    # Each retry emits an `llm_retry` SSE event so the UI can show it.
+    try:
+        max_retries = int(kwargs.pop("max_retries", 1) or 1)
+    except (TypeError, ValueError):
+        max_retries = 1
+    max_retries = max(1, min(max_retries, 5))
+
     primary_model = cands[0][1]
     last_error = None
     for i, (url, model, headers) in enumerate(cands):
         is_last = (i == len(cands) - 1)
         emitted = False
-        retried = False
-        async for chunk in stream_llm(url, model, messages, headers=headers, **kwargs):
-            if chunk.startswith("event: error"):
-                if not emitted and not is_last:
-                    # Pre-content failure with fallbacks left — swallow and
-                    # move to the next candidate.
-                    last_error = chunk
-                    retried = True
-                    if i == 0:
-                        logger.warning(f"[fallback] primary {model} failed before output; trying fallback")
-                    else:
-                        logger.warning(f"[fallback] candidate {model} failed; trying next")
-                    break
+        switched = False
+        attempt = 0
+        while True:
+            attempt += 1
+            failed_pre_content = False
+            async for chunk in stream_llm(url, model, messages, headers=headers, **kwargs):
+                if chunk.startswith("event: error"):
+                    if not emitted:
+                        if attempt < max_retries:
+                            # Same-candidate retry (T1.5) — announce it.
+                            failed_pre_content = True
+                            yield ('data: ' + json.dumps({
+                                "type": "llm_retry",
+                                "data": {"attempt": attempt, "model": model},
+                            }) + '\n\n')
+                            break
+                        if not is_last:
+                            # Pre-content failure with fallbacks left — swallow
+                            # and move to the next candidate.
+                            last_error = chunk
+                            switched = True
+                            if i == 0:
+                                logger.warning(f"[fallback] primary {model} failed before output; trying fallback")
+                            else:
+                                logger.warning(f"[fallback] candidate {model} failed; trying next")
+                            break
+                    yield chunk
+                    continue
+                # Any data chunk other than the terminal [DONE] means real output.
+                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                    # First real output from a NON-primary candidate: tell the client
+                    # the selected model failed and another answered. Without this the
+                    # fallback is invisible — a misconfigured provider looks like it
+                    # works because the reply is shown under the originally selected
+                    # model's name (e.g. a Bedrock/Claude endpoint that 400s every
+                    # request but appears fine because another model silently answered).
+                    if not emitted and i > 0:
+                        yield ('data: ' + json.dumps({
+                            "type": "fallback",
+                            "selected_model": primary_model,
+                            "answered_by": model,
+                            "reason": _summarize_stream_error(last_error),
+                        }) + '\n\n')
+                    emitted = True
                 yield chunk
-                continue
-            # Any data chunk other than the terminal [DONE] means real output.
-            if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
-                # First real output from a NON-primary candidate: tell the client
-                # the selected model failed and another answered. Without this the
-                # fallback is invisible — a misconfigured provider looks like it
-                # works because the reply is shown under the originally selected
-                # model's name (e.g. a Bedrock/Claude endpoint that 400s every
-                # request but appears fine because another model silently answered).
-                if not emitted and i > 0:
-                    yield ('data: ' + json.dumps({
-                        "type": "fallback",
-                        "selected_model": primary_model,
-                        "answered_by": model,
-                        "reason": _summarize_stream_error(last_error),
-                    }) + '\n\n')
-                emitted = True
-            yield chunk
-        if not retried:
+            if failed_pre_content:
+                continue  # retry the SAME candidate
+            break
+        if not switched:
             return  # candidate finished (success, or terminal error already sent)
     # Every candidate failed pre-content — surface the last error.
     if last_error:
@@ -1631,16 +1656,17 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None):
-    """Stream LLM responses, guarded by the response middleman.
+    """Stream LLM responses through the POST_RESPONSE hook chain (H2).
 
-    Yields the same SSE chunk protocol as the raw streamer, with text deltas
-    rewritten when the middleman flags + reduces the response.
+    The built-in hook is the response middleman guard; additional registered
+    stream hooks compose after it. Yields the same SSE chunk protocol as the
+    raw streamer, with text deltas rewritten when the guard flags + reduces.
     """
-    from src.llm_middleman import guard_stream
+    from src.hooks import run_post_response_stream
     raw = _stream_llm_raw(url, model, messages, temperature=temperature,
                           max_tokens=max_tokens, headers=headers,
                           timeout=timeout, prompt_type=prompt_type, tools=tools)
-    async for chunk in guard_stream(raw, url=url, model=model, headers=headers):
+    async for chunk in run_post_response_stream(raw, url=url, model=model, headers=headers):
         yield chunk
 
 

@@ -180,6 +180,7 @@ import wakeLock from './wakeLock.js';
   // are now in chatRenderer.js — referenced via the public API delegation above.
   var addMessage = chatRenderer.addMessage;
   var createMsgFooter = chatRenderer.createMsgFooter;
+  var setMsgDuration = chatRenderer.setMsgDuration;
   var displayMetrics = chatRenderer.displayMetrics;
   var hideWelcomeScreen = chatRenderer.hideWelcomeScreen;
   var showWelcomeScreen = chatRenderer.showWelcomeScreen;
@@ -1000,6 +1001,7 @@ import wakeLock from './wakeLock.js';
       const decoder = new TextDecoder();
       let buffer = '';
       let metrics = null;
+      let _durationTicker = null;  // Phase 6 — live duration ticker handle
       let isThinking = false;
       let thinkingStartTime = null;
       // Streaming TTS: synthesize sentence-by-sentence during streaming
@@ -1110,6 +1112,16 @@ import wakeLock from './wakeLock.js';
       let _docFenceOpened = false;
       let _docFenceContentStart = -1;
       let _liveThinkSection = null;
+
+      // Phase 6 — live per-message duration ticker (DSH formatRunDuration).
+      // Ticks while streaming and freezes to metrics.response_time at the end.
+      const _streamStartTs = Date.now();
+      _durationTicker = setInterval(() => {
+        if (!isStreaming) return;
+        if (roundHolder && typeof setMsgDuration === 'function') {
+          setMsgDuration(roundHolder, (Date.now() - _streamStartTs) / 1000);
+        }
+      }, 500);
       let _liveThinkContent = null;
       let _liveThinkInner = null;
       let _liveThinkHeader = null;
@@ -2255,6 +2267,126 @@ import wakeLock from './wakeLock.js';
                 const chatBox = document.getElementById('chat-history');
                 chatBox.appendChild(budgetDiv);
 
+              } else if (json.type === 'turn_queued') {
+                // I1 — this message was queued behind the live turn.
+                if (_isBg) continue;
+                const qd = document.createElement('div');
+                qd.className = 'status-note turn-queued-note';
+                qd.setAttribute('role', 'status');
+                const _qpos = json.data?.position ?? '?';
+                qd.textContent = `⏳ message queued (position ${_qpos}) — it runs automatically when the current turn finishes.`;
+                document.getElementById('chat-history').appendChild(qd);
+                uiModule.scrollHistory();
+
+              } else if (json.type === 'tool_timeout') {
+                // T1.2 — per-call deadline exceeded; the harness returned a
+                // clean timeout result and the agent tries something else.
+                if (_isBg) continue;
+                const td = document.createElement('div');
+                td.className = 'status-note tool-timeout-note';
+                td.setAttribute('role', 'status');
+                td.textContent = `⏱ ${json.tool || 'tool'} exceeded its deadline — trying something else.`;
+                document.getElementById('chat-history').appendChild(td);
+                uiModule.scrollHistory();
+
+              } else if (json.type === 'llm_retry') {
+                // T1.5 — same-model retry before falling back.
+                if (_isBg) continue;
+                const rd = document.createElement('div');
+                rd.className = 'status-note llm-retry-note';
+                rd.setAttribute('role', 'status');
+                const _ratt = json.data?.attempt ?? '';
+                const _rmod = json.data?.model ? ` ${esc(json.data.model)}` : '';
+                rd.textContent = `↻ retrying (attempt ${_ratt})${_rmod}…`;
+                document.getElementById('chat-history').appendChild(rd);
+                uiModule.scrollHistory();
+
+              } else if (json.type === 'ask_user') {
+                // Cluster B — the agent asked a question mid-task. Render the
+                // question card (module handles the answer POST); the stream
+                // stays alive on heartbeats while the user answers.
+                if (_isBg) {
+                  if (window.chatStreamModule?.notifyStreamComplete) {
+                    window.chatStreamModule.notifyStreamComplete(streamSessionId, 'is asking you a question');
+                  }
+                  continue;
+                }
+                import('./questionCard.js').then(mod => {
+                  const fn = mod.renderQuestions || (mod.default && mod.default.renderQuestions);
+                  if (fn) fn(json.data?.questions || [], streamSessionId);
+                }).catch(() => {});
+
+              } else if (json.type === 'subagent_started') {
+                // B2/B3 — a child agent started in its own chat. U2: the note
+                // is a clickable chip that opens the child session.
+                if (_isBg) continue;
+                const sd = document.createElement('div');
+                sd.className = 'status-note subagent-note subagent-note-clickable';
+                sd.setAttribute('role', 'status');
+                const _sdata = json.data || {};
+                sd.textContent = _sdata.background
+                  ? `🤖 subagent ${_sdata.subagent_id} started in its own chat — it keeps working while this chat continues. Click to open.`
+                  : `🤖 subagent ${_sdata.subagent_id} started (own chat) — waiting for its answer… Click to open.`;
+                if (_sdata.session_id) {
+                  sd.dataset.sid = _sdata.session_id;
+                  sd.title = 'Open this subagent chat';
+                  sd.addEventListener('click', () => {
+                    if (sessionModule && typeof sessionModule.selectSession === 'function') {
+                      sessionModule.selectSession(_sdata.session_id);
+                    }
+                  });
+                }
+                document.getElementById('chat-history').appendChild(sd);
+                uiModule.scrollHistory();
+
+              } else if (json.type === 'subagent_done') {
+                // B4 — continuable child settled.
+                const dd = document.createElement('div');
+                dd.className = 'status-note subagent-done-note';
+                dd.setAttribute('role', 'status');
+                const _ddata = json.data || {};
+                dd.textContent = `✅ subagent ${_ddata.subagent_id} finished (${_ddata.status})${_ddata.summary ? ` — ${_ddata.summary}` : ''}`;
+                document.getElementById('chat-history').appendChild(dd);
+                uiModule.scrollHistory();
+
+              } else if (json.type === 'present') {
+                // H1 — deliverable cards for the files this turn produced.
+                import('./chatRenderer.js').then(mod => {
+                  const files = json.data?.files || [];
+                  if (!files.length) return;
+                  const build = mod.buildDeliverableCard || (mod.default && mod.default.buildDeliverableCard);
+                  const box = document.getElementById('chat-history');
+                  if (!build || !box) return;
+                  files.forEach(f => {
+                    const card = build(f);
+                    if (card) box.appendChild(card);
+                  });
+                  uiModule.scrollHistory();
+                }).catch(() => {});
+
+              } else if (json.type === 'goal_update') {
+                // G3 — the goal card is global; refresh it live and drive the
+                // activity dot lifecycle (U4): working only during rounds,
+                // idle otherwise, red when blocked.
+                import('./goalCard.js').then(m => {
+                  const act = m.setGoalActivity || (m.default && m.default.setGoalActivity);
+                  const rf = m.refreshGoal || (m.default && m.default.refreshGoal);
+                  if (act) act((json.data && json.data.phase === 'blocked') ? 'blocked' : 'idle');
+                  if (rf) rf();
+                }).catch(() => {});
+
+              } else if (json.type === 'goal_round') {
+                import('./goalCard.js').then(m => {
+                  const act = m.setGoalActivity || (m.default && m.default.setGoalActivity);
+                  const rf = m.refreshGoal || (m.default && m.default.refreshGoal);
+                  if (act) act('working');
+                  if (rf) rf();
+                }).catch(() => {});
+
+              } else if (json.type === 'run_buffer_truncated') {
+                // S1 — informational only; the live tail continues streaming.
+                console.debug('run buffer truncated', json.data);
+
               } else if (json.type === 'teacher_takeover') {
                 if (_isBg) continue;
                 _cancelThinkingTimer();
@@ -2324,6 +2456,12 @@ import wakeLock from './wakeLock.js';
       _throttleStreamRender();
       _cancelThinkingTimer();
       _removeThinkingSpinner();
+      // Phase 6 — freeze the live ticker to the final response time.
+      if (_durationTicker) { clearInterval(_durationTicker); _durationTicker = null; }
+      const _finalDuration = (metrics && typeof metrics.response_time === 'number')
+        ? metrics.response_time
+        : (Date.now() - _streamStartTs) / 1000;
+      if (typeof setMsgDuration === 'function') setMsgDuration(roundHolder || holder, _finalDuration);
       // Stop any thread pulse animations
       document.querySelectorAll('.agent-thread.streaming').forEach(t => t.classList.remove('streaming'));
       // --- Final render (skip if stream was ever backgrounded or currently in background) ---
@@ -2793,6 +2931,8 @@ import wakeLock from './wakeLock.js';
       // Streaming done — let screen readers announce the settled response.
       const _chatLogDone = document.getElementById('chat-history');
       if (_chatLogDone) _chatLogDone.setAttribute('aria-busy', 'false');
+      // Phase 6 — never leave the duration ticker running past this turn.
+      if (_durationTicker) { clearInterval(_durationTicker); _durationTicker = null; }
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {

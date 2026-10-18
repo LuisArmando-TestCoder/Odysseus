@@ -286,6 +286,12 @@ function createSessionItem(s) {
   handle.title = 'Drag to reorder';
   div.appendChild(handle);
 
+  // Working dot — filled by _refreshRunDots via /api/chat/active while this
+  // session has a detached run (or queued turns) in the background.
+  const runDot = document.createElement('span');
+  runDot.className = 'run-dot';
+  div.appendChild(runDot);
+
   // Provider dot indicator
   if (!isOpenClaw) {
     const star = document.createElement('span');
@@ -805,8 +811,37 @@ function _scheduleCostRefresh() {
   if (!_costInterval) {
     _costInterval = setInterval(() => { if (!document.hidden) refreshSessionCosts(); }, 20000);
   }
+  _ensureRunsPoll();
 }
 window.refreshSessionCosts = refreshSessionCosts;
+
+// ── Working dots (G8/Phase 4) — per-row indicator fed by /api/chat/active ──
+let _runsPoll = null;
+function _ensureRunsPoll() {
+  if (_runsPoll) return;
+  _runsPoll = setInterval(_refreshRunDots, 5000);
+  _refreshRunDots();
+}
+async function _refreshRunDots() {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/active`, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const byId = new Map((data.runs || []).map(r => [r.session_id, r]));
+    document.querySelectorAll('.session-item[data-session-id]').forEach(item => {
+      const r = byId.get(item.dataset.sessionId);
+      const dot = item.querySelector('.run-dot');
+      if (!dot) return;
+      const running = !!r && r.status === 'running';
+      const queued = !!r && r.queued > 0;
+      dot.classList.toggle('active', running);
+      dot.classList.toggle('queued', queued);
+      dot.title = running
+        ? (queued ? `working · ${r.queued} message(s) queued` : 'working in background')
+        : '';
+    });
+  } catch (_) { /* best-effort */ }
+}
 
 let _renderRAF = null;
 export function renderSessionList() {
@@ -2035,6 +2070,12 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     if (window.chatModule && window.chatModule.checkPendingResearch) {
       window.chatModule.checkPendingResearch(id);
     }
+    // Cluster B — restore an unanswered mid-task question (marker persisted
+    // server-side; the awaiting turn resumes when the user answers).
+    import('./questionCard.js').then(m => {
+      const fn = m.restorePendingQuestions || (m.default && m.default.restorePendingQuestions);
+      if (fn) fn(id);
+    }).catch(() => {});
     // Restore group chat state if this is a group session
     if (window.groupModule && window.groupModule.restoreState && window.groupModule.restoreState(id)) {
       if (window._syncGroupIndicator) window._syncGroupIndicator(true);

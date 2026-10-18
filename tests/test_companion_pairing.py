@@ -47,7 +47,12 @@ class _DBStub(types.ModuleType):
 _db = _DBStub("core.database")
 _db.get_db_session = _get_db_session
 _db.ApiToken = _ApiToken
-sys.modules["core.database"] = _db  # overwrite any minimal stub from a sibling test
+# NOTE: intentionally NOT installed into sys.modules at collection time —
+# doing so clobbered the REAL core.database for every later-collected test
+# module (document_close, topic_analyzer, ...). The autouse fixture below
+# installs it only while this file's tests run.
+
+_restore_after_import = []  # (name, prev_module) — stubs to undo post-import
 
 for _name, _attrs in {
     "core.auth": {"AuthManager": MagicMock()},
@@ -58,13 +63,89 @@ for _name, _attrs in {
         for _k, _v in _attrs.items():
             setattr(_mm, _k, _v)
         sys.modules[_name] = _mm
+        # Collection-order hygiene: this stub was only needed for the imports
+        # below; restore sys.modules right after so later-collected modules
+        # (test_provider_endpoints, ...) bind the REAL modules.
+        _restore_after_import.append((_name, None))
 
 from fastapi import HTTPException  # noqa: E402
+
+# Import-order race guard: an earlier test module (e.g. test_app) may already
+# have imported companion.pairing with the REAL core.database bound. Re-import
+# it fresh so it binds OUR stub above — otherwise mint_token writes the real DB
+# and the hash-only assertion below fails depending on collection order.
+for _stale in ("companion.pairing", "companion.routes"):
+    sys.modules.pop(_stale, None)
 
 import companion.pairing as P  # noqa: E402
 import companion.routes as companion_routes  # noqa: E402
 from companion.routes import mint_pairing_token, setup_companion_routes  # noqa: E402
 from core.middleware import require_admin  # noqa: E402
+
+# Restore any stubs we installed above: they are re-installed per-test by the
+# autouse fixture below, so nothing leaks into other test modules. Also detach
+# from the parent package — `from src import endpoint_resolver` resolves the
+# parent attribute first, which survives a bare sys.modules pop.
+for _name, _prev in _restore_after_import:
+    if _prev is None:
+        sys.modules.pop(_name, None)
+        _parent, _, _child = _name.partition(".")
+        _pkg = sys.modules.get(_parent)
+        if _pkg is not None and hasattr(_pkg, _child):
+            try:
+                delattr(_pkg, _child)
+            except Exception:
+                pass
+    else:
+        sys.modules[_name] = _prev
+
+
+@pytest.fixture(autouse=True)
+def _pin_stubs():
+    """Install OUR stubs for the duration of each test, then restore whatever
+    core.database was in place before (the real module in a full-suite run).
+    companion.pairing/routes bind core.database LAZILY at call time, so they
+    are re-imported under the stub and rebound onto the module globals the
+    tests reference."""
+    _prev_db = sys.modules.get("core.database")
+    _prev_auth = sys.modules.get("core.auth")
+    _prev_er = sys.modules.get("src.endpoint_resolver")
+    sys.modules["core.database"] = _db
+    for _name, _attrs in {
+        "core.auth": {"AuthManager": MagicMock()},
+        "src.endpoint_resolver": {"build_chat_url": (lambda u: u)},
+    }.items():
+        _mm = sys.modules.get(_name)
+        if _mm is None or not getattr(_mm, "__file__", None):
+            # Only touch modules that are stubs (or absent) — NEVER set stub
+            # attributes onto the REAL module, or every later test binding it
+            # inherits the poisoned lambda.
+            _mm = types.ModuleType(_name)
+            sys.modules[_name] = _mm
+            for _k, _v in _attrs.items():
+                setattr(_mm, _k, _v)
+    for _stale in ("companion.pairing", "companion.routes"):
+        sys.modules.pop(_stale, None)
+    import companion.pairing as _P2
+    import companion.routes as _R2
+    globals()["P"] = _P2
+    globals()["companion_routes"] = _R2
+    globals()["mint_pairing_token"] = _R2.mint_pairing_token
+    globals()["setup_companion_routes"] = _R2.setup_companion_routes
+    yield
+    for _name, _prev in (("core.database", _prev_db), ("core.auth", _prev_auth),
+                         ("src.endpoint_resolver", _prev_er)):
+        if _prev is None:
+            sys.modules.pop(_name, None)
+            _parent, _, _child = _name.partition(".")
+            _pkg = sys.modules.get(_parent)
+            if _pkg is not None and hasattr(_pkg, _child):
+                try:
+                    delattr(_pkg, _child)
+                except Exception:
+                    pass
+        else:
+            sys.modules[_name] = _prev
 
 
 # --- token minting: shown once, hashed at rest -----------------------------

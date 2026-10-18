@@ -108,6 +108,18 @@ DEFAULT_SETTINGS = {
     # `compute_input_token_budget` in src/context_budget.py.
     "agent_input_token_hard_max": 200_000,
     "agent_stream_timeout_seconds": 300,
+    # Layer 0 / F0.5 — harness limits, tunable per deployment.
+    # Max agent rounds per turn (was the hardcoded MAX_AGENT_ROUNDS=20).
+    "agent_max_rounds": 20,
+    # Ask-user seam (Cluster B): how long an unanswered mid-task question
+    # stays pending before it auto-resolves with {"timeout": true}.
+    "ask_user_timeout_seconds": 600,
+    # Subagent seam (Cluster D): foreground subagent await deadline.
+    "subagent_timeout_seconds": 900,
+    # agent_runs replay-buffer retention/eviction (F0.2 wiring).
+    "agent_run_evict_grace_seconds": 180,
+    # Soft cap on replay-buffer events per run (Cluster F/S1 consumer).
+    "agent_run_buffer_max_events": 5000,
     # Default wall-clock timeout for a single tool execution (bash/python
     # subprocesses). "Over a minute" by default so real work isn't killed
     # mid-flight, but bounded so a runaway/hung command frees the worker and
