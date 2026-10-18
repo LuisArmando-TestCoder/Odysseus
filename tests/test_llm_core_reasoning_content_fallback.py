@@ -123,10 +123,12 @@ def test_stream_agent_reasoning_only_does_not_emit_error():
     )
     assert chunk is None, "Must not emit any SSE chunk when reasoning is present"
     assert "The model returned an empty response" not in (chunk or "")
-    # Reasoning-only turns are persisted wrapped in  thinking tags so the
+    # Reasoning-only turns are persisted wrapped in think tags so the
     # reasoning stays inside the thinking container on reload instead of
     # being exposed as a plain assistant message.
-    assert final_response == " thinkingI reasoned carefully response"
+    _open = chr(60) + "think" + chr(62)
+    _close = chr(60) + "/think" + chr(62)
+    assert final_response == f"{_open}I reasoned carefully{_close}"
 
 
 # ---------------------------------------------------------------------------

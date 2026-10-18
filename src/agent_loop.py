@@ -1425,9 +1425,11 @@ def _empty_response_fallback(
     if round_reasoning.strip():
         # Reasoning-only turn. The reasoning was already streamed into the
         # thinking container as {thinking:true} chunks — keep it THERE.
-        # Persist wrapped in  thinking tags so it stays inside the thinking
+        # Persist wrapped in think tags so it stays inside the thinking
         # container on reload instead of being exposed as a plain message.
-        return f" thinking{round_reasoning} response", None
+        _open = chr(60) + "think" + chr(62)
+        _close = chr(60) + "/think" + chr(62)
+        return f"{_open}{round_reasoning}{_close}", None
     if stream_error:
         _error_msg = (
             "The model returned an empty response due to a temporary connection or "
