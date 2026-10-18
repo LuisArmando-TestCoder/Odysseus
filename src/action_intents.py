@@ -100,14 +100,34 @@ def message_needs_tools(text: str, patterns: Iterable[Pattern[str]] = _TOOL_INTE
 # it answerable from context?" The regex heuristic above stays as a fast,
 # offline fallback when JEV is unavailable.
 
+# Narrowed fast-path: only EXPLICIT research asks route straight to deep
+# research. Casual phrasing ("look into", "find out about", "study up on",
+# "report on") no longer triggers — those go through the JEV gate below.
 _RESEARCH_HINT_RE = re.compile(
-    r"\b(?:research|deep\s+dive|look\s+into|investigate|find\s+out\s+about|"
-    r"study\s+up\s+on|report\s+on|do\s+research|look\s+up\s+everything)\b",
+    r"\b(?:deep\s+research|do\s+(?:some\s+)?research|research\s+(?:this|that|it|the|into|on)\b|"
+    r"investigate\b|deep\s+dive\b|write\s+(?:me\s+)?(?:a\s+)?(?:research\s+)?report\b|"
+    r"prepare\s+(?:a\s+)?(?:research\s+)?report\b|look\s+up\s+everything\b)",
     re.I,
 )
 
+# Pre-gate: a message must look research-shaped before we spend a JEV
+# round-trip on it. Chatty/short messages skip JEV entirely.
+_RESEARCH_WORTHY_RE = re.compile(
+    r"\b(?:who|what|when|where|why|how|which|best|compare|vs\.?|review|analysis|"
+    r"analyze|latest|trends|impact|pros|cons|history|market|report)\b", re.I,
+)
 
-def research_needed_jev(text: str, *, threshold: float = 0.6) -> bool:
+
+def _looks_research_worthy(text: str) -> bool:
+    words = text.split()
+    if len(words) < 4:
+        return False
+    if re.match(r"^(?:thanks|thank you|ok\b|okay|yes|no|lol|hi|hey|hello)\b", text.strip(), re.I):
+        return False
+    return "?" in text or bool(_RESEARCH_WORTHY_RE.search(text))
+
+
+def research_needed_jev(text: str, *, threshold: float = 0.75) -> bool:
     """Decide whether a user message warrants deep research (vs a quick answer).
 
     Uses JEV's calibrated `noul` answer when available; falls back to the
@@ -123,6 +143,10 @@ def research_needed_jev(text: str, *, threshold: float = 0.6) -> bool:
     if _RESEARCH_HINT_RE.search(text):
         return True
 
+    # Pre-gate: don't spend a JEV round-trip on chatty/short messages.
+    if not _looks_research_worthy(text):
+        return False
+
     try:
         from src.decisions import jev_decide_sync, DecisionsUnavailable
         answers = jev_decide_sync(
@@ -131,16 +155,16 @@ def research_needed_jev(text: str, *, threshold: float = 0.6) -> bool:
                 "research_needed": {
                     "type": "noul",
                     "instructions": (
-                        "Does this request require deep, multi-source research "
-                        "(searching the web, gathering and synthesizing many sources, "
-                        "producing a researched report), or is it a quick question "
-                        "answerable from the assistant's own knowledge / the current "
-                        "conversation context? Answer 'yes' only for genuine research "
-                        "tasks, not for simple factual questions or chit-chat."
+                        "Did the user EXPLICITLY ask for research, a report, or an "
+                        "investigation (e.g. 'do deep research on X', 'write me a "
+                        "research report on Y', 'investigate Z')? Answer 'yes' only "
+                        "when the user clearly requested a researched deliverable — "
+                        "not merely a question whose answer would benefit from a "
+                        "web search, and not chit-chat or simple factual questions."
                     ),
                     "criteria": {
-                        "true": "Needs deep research",
-                        "false": "Quick answer / no research needed",
+                        "true": "User explicitly asked for research / a report / an investigation",
+                        "false": "Not an explicit research request",
                     },
                 }
             },

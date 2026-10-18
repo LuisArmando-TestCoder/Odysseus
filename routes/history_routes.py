@@ -51,9 +51,14 @@ def setup_history_routes(session_manager) -> APIRouter:
         if not history_dict:
             db = SessionLocal()
             try:
+                # Mirror _db_to_session: only hydrate the ACTIVE branch, so a
+                # session with multiple version-tree branches doesn't render
+                # every message once per branch (the "sent twice" effect).
+                _active_branch = getattr(session, "active_branch", None) or "root"
                 db_messages = (
                     db.query(DbChatMessage)
                     .filter(DbChatMessage.session_id == session_id)
+                    .filter(DbChatMessage.branch_id == _active_branch)
                     .order_by(DbChatMessage.timestamp)
                     .all()
                 )

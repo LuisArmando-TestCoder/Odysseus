@@ -140,9 +140,21 @@ class SessionManager:
             if meta is None: meta = {}
             meta['_db_id'] = db_msg.id
             meta.setdefault('timestamp', _message_timestamp_iso(db_msg.timestamp))
+            _content = _parse_msg_content(db_msg.content)
+            # Self-heal: skip a row that exactly duplicates the previous
+            # hydrated row (same role + non-empty content). Consecutive
+            # duplicates are the signature of the double-submit / fork-copy
+            # bugs; dropping them at read time keeps the feed clean without
+            # mutating the DB.
+            if history:
+                _prev = history[-1]
+                if (_prev.role == db_msg.role
+                        and _prev.content == _content
+                        and _content):
+                    continue
             history.append(ChatMessage(
                 role=db_msg.role,
-                content=_parse_msg_content(db_msg.content),
+                content=_content,
                 metadata=meta,
             ))
 
@@ -293,6 +305,17 @@ class SessionManager:
         if not session:
             return None
         prefix = list(session.history[:keep_count])
+        # Dedupe consecutive duplicate rows before copying so a version-tree
+        # fork never re-multiplies duplicates that already exist in memory.
+        _deduped = []
+        for _m in prefix:
+            if _deduped:
+                _p = _deduped[-1]
+                if (_p.role == _m.role and _p.content == _m.content
+                        and _m.content):
+                    continue
+            _deduped.append(_m)
+        prefix = _deduped
         new_branch = str(uuid.uuid4())
         session.active_branch = new_branch
         session.history = prefix

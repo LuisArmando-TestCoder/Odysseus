@@ -3941,8 +3941,10 @@ import wakeLock from './wakeLock.js';
       if (!res.ok) return; // 404 = no research for this session
       const data = await res.json();
 
-      if (data.status === 'done') {
-        // Fetch and render the completed result
+      if (data.status === 'done' || data.status === 'error') {
+        // Fetch and render the completed result (or the partial/error result
+        // saved after a timeout — a reload after a hang should show what was
+        // researched, not nothing).
         _notifyResearchComplete(sessionId, data.query || '');
         if (sessionModule && sessionModule.clearResearching) sessionModule.clearResearching(sessionId);
         const resultRes = await fetch(`${API_BASE}/api/research/result/${sessionId}`, { method: 'POST' });

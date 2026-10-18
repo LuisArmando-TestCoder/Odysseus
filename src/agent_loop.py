@@ -1423,7 +1423,11 @@ def _empty_response_fallback(
     if full_response.strip() or tool_events:
         return full_response, None
     if round_reasoning.strip():
-        return round_reasoning, None
+        # Reasoning-only turn. The reasoning was already streamed into the
+        # thinking container as {thinking:true} chunks — keep it THERE.
+        # Persist wrapped in  thinking tags so it stays inside the thinking
+        # container on reload instead of being exposed as a plain message.
+        return f" thinking{round_reasoning} response", None
     if stream_error:
         _error_msg = (
             "The model returned an empty response due to a temporary connection or "
@@ -1447,6 +1451,38 @@ def _self_ping_delta(reason: str) -> str:
     completion) and is continuing rather than leaving the chat hanging."""
     msg = f"\n\n_[self-ping] {reason} — continuing._\n\n"
     return f'data: {json.dumps({"delta": msg})}\n\n'
+
+
+def _malformed_chain_reason(text: str) -> str | None:
+    """Return why a finished-looking turn is NOT a well-formed message chain.
+
+    A turn that ends with truncated tool markup (unclosed fence, [TOOL_CALL],
+    <invoke>, <tool_code>, DSML, or partial JSON) is silently dropped by
+    parse_tool_blocks, so the loop would otherwise break with no self-ping.
+    Detecting it here lets the self-ping gate re-invoke the model to re-emit
+    the complete tool call instead of leaving the chat hanging.
+    """
+    if not text:
+        return None
+    # 1. Unclosed ``` fence (tool call or code block opened, never closed)
+    if sum(1 for ln in text.split("\n") if ln.strip().startswith("```")) % 2 == 1:
+        return "the response ended inside an unclosed code fence"
+    low = text.lower()
+    # 2. Unclosed [TOOL_CALL]
+    if low.count("[tool_call]") > low.count("[/tool_call]"):
+        return "the response ended with an unclosed [TOOL_CALL] block"
+    # 3. Unclosed XML-style tool blocks
+    for open_t, close_t, label in (
+        ("<tool_call>", "</tool_call>", "<tool_call> block"),
+        ("<invoke", "</invoke>", "<invoke> tool call"),
+        ("<tool_code>", "</tool_code>", "<tool_code> block"),
+    ):
+        if low.count(open_t) > low.count(close_t):
+            return f"the response ended with an unclosed {label}"
+    # 4. Truncated JSON tool action ({"action": "...  with no closing brace)
+    if re.search(r'\{\s*"(?:action|tool|name)"\s*:\s*"[^"]*"\s*(?:,\s*"[^"]+":\s*[^}]*)?$', text.strip()):
+        return "the response ended with a truncated JSON tool call"
+    return None
 
 
 async def stream_agent_loop(
@@ -2159,32 +2195,48 @@ async def stream_agent_loop(
             # ── Self-ping / completion detection ───────────────────────
             # A round with no tool calls AND no answer text is a "no
             # completion" state: the stream may have timed out, the model
-            # went silent, or a lock/error swallowed the output. Instead of
-            # ending the turn and leaving the chat hanging, emit a self-ping
-            # notice and re-invoke the model (capped) so it keeps going with
-            # the context of what happened.
-            _no_completion = _round_timed_out or not _claimed_done
+            # went silent, a lock/error swallowed the output, or the turn
+            # ended with truncated tool markup that parse_tool_blocks
+            # silently dropped. Instead of ending the turn and leaving the
+            # chat hanging, emit a self-ping notice and re-invoke the model
+            # (capped) so it keeps going with the context of what happened.
+            _malformed = _malformed_chain_reason(round_response)
+            _no_completion = (
+                _round_timed_out or not _claimed_done
+                or bool(_malformed) or _stream_error
+            )
             if _no_completion and _self_ping_count < _MAX_SELF_PINGS and not _force_answer:
                 _self_ping_count += 1
-                _reason = (
-                    "the model stream timed out before producing an answer"
-                    if _round_timed_out
-                    else "the model returned no answer and no tool calls"
-                )
+                if _round_timed_out:
+                    _reason = "the model stream timed out before producing an answer"
+                elif _malformed:
+                    _reason = _malformed
+                elif _stream_error:
+                    _reason = "the stream errored before the answer completed"
+                else:
+                    _reason = "the model returned no answer and no tool calls"
                 logger.warning(
                     f"[agent] self-ping on round {round_num}: {_reason} "
                     f"(ping {_self_ping_count}/{_MAX_SELF_PINGS})"
                 )
                 yield _self_ping_delta(_reason)
-                messages.append({
-                    "role": "system",
-                    "content": (
+                if _malformed:
+                    _instruction = (
+                        "Your previous turn ended with an unfinished tool call "
+                        f"({_reason}). Re-emit the COMPLETE tool call and execute "
+                        "it, or finish the answer."
+                    )
+                else:
+                    _instruction = (
                         "Your previous turn ended without a completed answer "
                         f"({_reason}). Do NOT stop here. Continue the task: "
                         "either produce the final answer now, or take the next "
                         "concrete step with a tool. If you are genuinely blocked, "
                         "say plainly what is blocking you."
-                    ),
+                    )
+                messages.append({
+                    "role": "system",
+                    "content": _instruction,
                 })
                 full_response += "\n\n"
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'

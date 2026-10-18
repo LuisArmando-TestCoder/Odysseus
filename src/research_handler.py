@@ -241,15 +241,15 @@ class ResearchHandler:
         if hard_timeout is None:
             from src.settings import get_setting
             try:
-                raw_timeout = int(get_setting("research_run_timeout_seconds", 1800))
+                raw_timeout = int(get_setting("research_run_timeout_seconds", 900))
             except (TypeError, ValueError):
-                raw_timeout = 1800
+                raw_timeout = 900
             if raw_timeout <= 0:
                 hard_timeout = None  # 0 = no wall-clock cap (asyncio.wait_for timeout=None)
             else:
                 hard_timeout = _bounded_int(
                     raw_timeout,
-                    default=1800,
+                    default=900,
                     minimum=60,
                     maximum=86400,
                 )
@@ -281,6 +281,7 @@ class ResearchHandler:
             "category": category,
             # SECURITY: track ownership so all reads / saves can filter by user.
             "owner": owner or "",
+            "session_id": session_id,
         }
         self._active_tasks[session_id] = entry
 
@@ -332,13 +333,20 @@ class ResearchHandler:
                     logger.error(f"on_complete callback failed: {cb_err}")
             except asyncio.TimeoutError:
                 logger.error(f"Research hard timeout ({hard_timeout}s) for session {session_id}")
-                entry["status"] = "error"
-                # If we have partial results, save what we have
                 researcher = entry.get("researcher")
-                if researcher and researcher.evolving_report:
-                    entry["result"] = self._format_research_report(
-                        query, researcher.evolving_report,
-                        researcher.get_stats(), hard_timeout,
+                partial = getattr(researcher, "evolving_report", "") if researcher else ""
+                if not partial and researcher and researcher.findings:
+                    # Salvage: a hang shouldn't erase what was already found.
+                    partial = "\n\n".join(
+                        f"- **{f.get('title') or f.get('url', 'source')}**\n"
+                        f"  {f.get('summary') or f.get('evidence', '')} ({f.get('url', '')})"
+                        for f in researcher.findings[:30]
+                    )
+                if partial:
+                    entry["result"] = (
+                        self._format_research_report(query, partial, researcher.get_stats(), hard_timeout)
+                        + f"\n\n> ⚠️ Research hit the {hard_timeout}s time limit — showing the partial "
+                          "results gathered so far (saved to this chat)."
                     )
                     entry["status"] = "done"
                     self._save_result(session_id, entry)
@@ -349,8 +357,11 @@ class ResearchHandler:
                     except Exception as e:
                         logger.warning(f"on_complete callback failed in timeout branch: {e}")
                 else:
-                    entry["result"] = f"Research timed out after {hard_timeout}s. The model may be too slow for deep research."
-                on_progress({"phase": "error", "message": f"Research timed out after {hard_timeout}s"})
+                    entry["result"] = (f"Research timed out after {hard_timeout}s before any sources "
+                                       "could be gathered. You can retry, or ask a more specific question.")
+                    entry["status"] = "error"
+                    _guarded_complete(session_id, entry["result"], [], [])
+                on_progress({"phase": "error", "message": f"Research timed out after {hard_timeout}s — partial results saved"})
             except asyncio.CancelledError:
                 entry["status"] = "cancelled"
                 raise
@@ -384,8 +395,21 @@ class ResearchHandler:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("consumed"):
                     return None
+                status = data.get("status", "done")
+                # Stale "running" snapshot guard: a checkpoint whose
+                # checkpoint_at is older than ~2 minutes (or whose started_at
+                # is older than the hard timeout) means the task no longer
+                # exists (server restart / crash). Report it as timed-out so
+                # the SSE loop doesn't wait forever on a dead task.
+                if status == "running":
+                    _ckpt = data.get("checkpoint_at", 0)
+                    _started = data.get("started_at", 0)
+                    _stale = (_ckpt and (time.time() - _ckpt) > 120) or \
+                             (_started and (time.time() - _started) > 900)
+                    if _stale:
+                        status = "error"
                 return {
-                    "status": data.get("status", "done"),
+                    "status": status,
                     "progress": {},
                     "query": data.get("query", ""),
                     "started_at": data.get("started_at", 0),
@@ -729,6 +753,39 @@ class ResearchHandler:
                 maximum=12,
             )
 
+            # Throttled disk checkpoints: wrap the progress callback so that,
+            # at most once per ~10s, we snapshot the evolving report + findings
+            # to data/deep_research/<session>.json. A server crash mid-hang then
+            # leaves "what it already researched" on disk, keyed to the chat ID.
+            _session_id = (_task_entry or {}).get("session_id")
+            _last_checkpoint = [0.0]
+
+            def _checkpointing_progress(event):
+                if progress_callback:
+                    progress_callback(event)
+                if not _session_id:
+                    return
+                now = time.time()
+                if now - _last_checkpoint[0] < 10:
+                    return
+                _last_checkpoint[0] = now
+                try:
+                    _res = (_task_entry or {}).get("researcher")
+                    _snap = {
+                        "query": query,
+                        "status": "running",
+                        "checkpoint_at": now,
+                        "evolving_report": getattr(_res, "evolving_report", "") if _res else "",
+                        "sources": self._extract_sources(_res.findings) if _res and _res.findings else [],
+                        "raw_findings": self._extract_raw_findings(_res.findings) if _res and _res.findings else [],
+                        "started_at": (_task_entry or {}).get("started_at", now),
+                        "owner": (_task_entry or {}).get("owner", ""),
+                    }
+                    _path = RESEARCH_DATA_DIR / f"{_session_id}.json"
+                    _path.write_text(json.dumps(_snap), encoding="utf-8")
+                except Exception:
+                    pass
+
             researcher = DeepResearcher(
                 llm_endpoint=llm_endpoint,
                 llm_model=llm_model,
@@ -739,7 +796,7 @@ class ResearchHandler:
                 max_report_tokens=_max_report_tokens,
                 extraction_timeout=_extraction_timeout,
                 extraction_concurrency=_extraction_concurrency,
-                progress_callback=progress_callback,
+                progress_callback=_checkpointing_progress,
                 search_provider=search_provider,
                 category=category,
             )

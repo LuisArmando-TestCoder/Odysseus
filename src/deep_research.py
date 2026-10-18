@@ -317,6 +317,10 @@ class DeepResearcher:
                            total_sources=len(self.urls_fetched),
                            total_findings=len(findings))
                 report = await self._synthesize(question, findings, report)
+                # Persist the evolving report after every synthesis round so a
+                # hang/timeout mid-search still has the latest partial report
+                # to salvage (see research_handler timeout branch).
+                self.evolving_report = report
 
             # DECIDE
             if round_num >= self.min_rounds:

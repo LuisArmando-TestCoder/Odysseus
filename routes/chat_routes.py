@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, AsyncGenerator, List
 
 from fastapi import APIRouter, Request, HTTPException, Form, Query
@@ -466,6 +466,24 @@ def setup_chat_routes(
                 pass
 
         no_memory = str(form_data.get("no_memory", "")).lower() == "true"
+
+        # Double-submit guard: if a detached run is already active for this session
+        # and this message equals the last persisted user message (sent within the
+        # last ~15s), don't append the message again or start a second run — just
+        # re-subscribe the duplicate request to the run already in flight.
+        if message and sess and getattr(sess, "history", None):
+            _last = sess.history[-1]
+            if (_last.role == "user" and _last.content == message
+                    and agent_runs.is_active(session)):
+                try:
+                    _ts = (_last.metadata or {}).get("timestamp", "")
+                    _dt = datetime.fromisoformat(_ts.replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - _dt).total_seconds() < 15:
+                        return StreamingResponse(
+                            agent_runs.subscribe(session), media_type="text/event-stream"
+                        )
+                except Exception:
+                    pass
 
         # Build shared context (stream path uses enhanced_message for context preface)
         ctx = await build_chat_context(
