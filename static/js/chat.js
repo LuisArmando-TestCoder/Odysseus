@@ -1343,6 +1343,7 @@ import wakeLock from './wakeLock.js';
               // Force-close thinking if still open (model never output boundary)
               if (isThinking) {
                 isThinking = false;
+                _thinkOpen = false;
                 cancelAnimationFrame(_thinkTimerRAF);
                 var _elapsedDone = thinkingStartTime ? ((Date.now() - thinkingStartTime) / 1000).toFixed(1) : null;
                 if (_elapsedDone) {
@@ -1938,6 +1939,7 @@ import wakeLock from './wakeLock.js';
                 // Force-close thinking if still open — tools are real content, not thinking
                 if (isThinking) {
                   isThinking = false;
+                  _thinkOpen = false;
                   cancelAnimationFrame(_thinkTimerRAF);
                   var _elapsed2 = thinkingStartTime ? ((Date.now() - thinkingStartTime) / 1000).toFixed(1) : null;
                   if (_liveThinkHeader) _liveThinkHeader.textContent = 'View thinking process';
@@ -2214,6 +2216,7 @@ import wakeLock from './wakeLock.js';
                 currentToolBubble = null;
                 roundFinalized = false;
                 isThinking = false;
+                _thinkOpen = false;
                 _docFenceOpened = false;
                 _docFenceContentStart = -1;
                 const box = document.getElementById('chat-history');
@@ -2270,6 +2273,7 @@ import wakeLock from './wakeLock.js';
                 // Reset round bubble state so the teacher's first text starts a new bubble
                 roundHolder = null;
                 roundText = '';
+                _thinkOpen = false;
                 roundFinalized = false;
                 currentToolBubble = null;
                 uiModule.scrollHistory();
