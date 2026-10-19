@@ -1,3 +1,10 @@
+/* Base for inline status SVGs (shared with messages-hyper.css queue/status) */
+.qsvg {
+  display: inline-block;
+  vertical-align: -2px;
+  flex: 0 0 auto;
+}
+
 /* Goal card — metas continuas (extrapolado de DSH) */
 .goal-card {
   padding: 10px 12px;
@@ -8,11 +15,15 @@
   box-shadow: 0 1px 2px rgba(0,0,0,.04);
 }
 .goal-card-header { display: flex; justify-content: space-between; align-items: center; }
-.goal-card-title { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted, #6b7280); }
+.goal-card-title { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted, #6b7280); display: inline-flex; align-items: center; gap: 5px; }
+.goal-card-title .qsvg { flex: 0 0 auto; }
 .goal-badge {
   font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
   text-transform: uppercase; letter-spacing: .04em;
+  display: inline-flex; align-items: center; gap: 4px;
 }
+.goal-badge .qsvg { flex: 0 0 auto; }
+.goal-badge span { line-height: 1; }
 .goal-badge.active   { background: #dcfce7; color: #15803d; }
 .goal-badge.paused   { background: #fef3c7; color: #b45309; }
 .goal-badge.blocked  { background: #fee2e2; color: #b91c1c; }
@@ -31,7 +42,9 @@
 .goal-btn {
   flex: 1; border: 1px solid var(--border, #e5e7eb); background: transparent;
   border-radius: 7px; padding: 4px 0; font-size: 12px; cursor: pointer; color: var(--fg, #111827);
+  display: inline-flex; align-items: center; justify-content: center;
 }
+.goal-btn .qsvg { flex: 0 0 auto; }
 .goal-btn:hover { background: var(--hover, #f3f4f6); }
 
 /* Deliverable card — equivalente de `present` (reporte/doc entregable) */
@@ -113,7 +126,8 @@
 
 /* Trail (checkpoint) */
 .goal-trail { margin-top: 8px; font-size: 11px; }
-.goal-trail summary { cursor: pointer; color: var(--muted, #6b7280); font-weight: 600; }
+.goal-trail summary { cursor: pointer; color: var(--muted, #6b7280); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.goal-trail summary .qsvg { flex: 0 0 auto; }
 .goal-trail-body {
   max-height: 160px; overflow: auto; margin: 6px 0 0; padding: 8px;
   background: var(--code-bg, #0b1020); color: #e5e7eb; border-radius: 8px;
@@ -132,6 +146,8 @@
 }
 .goal-toast.done { background: #16a34a; }
 .goal-toast.blocked { background: #dc2626; }
+.goal-toast { display: inline-flex; align-items: center; gap: 7px; }
+.goal-toast .qsvg { flex: 0 0 auto; }
 @keyframes goalToastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* Banner in-chat */
@@ -139,7 +155,10 @@
   padding: 7px 14px; font-size: 12px; border-bottom: 1px solid var(--border, #e5e7eb);
   background: #f0fdf4; color: #15803d; cursor: pointer; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
+  display: inline-flex; align-items: center; gap: 7px;
 }
+.goal-banner .qsvg { flex: 0 0 auto; }
+.goal-banner span { overflow: hidden; text-overflow: ellipsis; }
 
 /* Thumbnail + badge de deliverable */
 .deliverable-thumb {
@@ -150,6 +169,18 @@
   font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   padding: 1px 6px; border-radius: 999px; background: #ede9fe; color: #6d28d9;
 }
+
+/* Expandable todo list (DSH parity) */
+.goal-todo { margin-top: 8px; font-size: 11px; }
+.goal-todo summary { cursor: pointer; color: var(--muted, #6b7280); font-weight: 600; }
+.goal-todo-body { margin: 6px 0 0; display: flex; flex-direction: column; gap: 3px; }
+.goal-todo-item {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: var(--fg, #111827); padding: 2px 0;
+}
+.goal-todo-item .qsvg { flex: 0 0 auto; opacity: .7; }
+.goal-todo-item.done { color: var(--muted, #6b7280); text-decoration: line-through; }
+.goal-todo-item.done .qsvg { opacity: 1; }
 
 /* Separador de rondas en el chat */
 .round-sep {

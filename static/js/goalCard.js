@@ -3,6 +3,20 @@ const GOAL_PHASES = ['active', 'paused', 'blocked', 'complete'];
 
 let _lastPhase = null;
 
+// ── Status-note SVG icons (stroke: currentColor) replacing emoji ────────
+// Feather-style, 14px, aria-hidden. A non-color channel so phase is never
+// conveyed by color alone (WCAG 1.4.1).
+const _GSVG = {
+  target: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  scroll: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/></svg>',
+  check: '<svg class="qsvg qsvg-ok" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+  blocked: '<svg class="qsvg qsvg-err" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
+  pause: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
+  play: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>',
+  box: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>',
+  boxChecked: '<svg class="qsvg qsvg-ok" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="9 12 11 14 15 10"/></svg>',
+};
+
 export function renderGoal(goal, extra = {}) {
   const card = document.getElementById('goal-card');
   if (!card) return;
@@ -16,8 +30,17 @@ export function renderGoal(goal, extra = {}) {
 
   document.getElementById('goal-objective').textContent = goal.objective || '';
   const badge = document.getElementById('goal-badge');
-  badge.textContent = goal.phase || 'active';
-  badge.className = 'goal-badge ' + (goal.phase || 'active');
+  const phase = goal.phase || 'active';
+  // Non-color channel: a phase glyph + text label, so state is never
+  // conveyed by color alone (WCAG 1.4.1). The glyph is a small inline SVG.
+  const _phaseGlyph = {
+    active: _GSVG.play,
+    paused: _GSVG.pause,
+    blocked: _GSVG.blocked,
+    complete: _GSVG.check,
+  }[phase] || _GSVG.play;
+  badge.innerHTML = _phaseGlyph + '<span>' + phase + '</span>';
+  badge.className = 'goal-badge ' + phase;
 
   // Rondas (meta amplia)
   const fill = document.getElementById('goal-progress-fill');
@@ -68,13 +91,13 @@ export function renderGoal(goal, extra = {}) {
     (queue.remaining || []).forEach(item => {
       const row = document.createElement('div');
       row.className = 'goal-todo-item';
-      row.textContent = '☐ ' + item;
+      row.innerHTML = _GSVG.box + '<span>' + item + '</span>';
       todoBody.appendChild(row);
     });
     (queue.done || []).forEach(item => {
       const row = document.createElement('div');
       row.className = 'goal-todo-item done';
-      row.textContent = '☑ ' + item;
+      row.innerHTML = _GSVG.boxChecked + '<span>' + item + '</span>';
       todoBody.appendChild(row);
     });
   }
@@ -96,8 +119,8 @@ export function renderGoal(goal, extra = {}) {
 
   // ── GAP 5: toast en transición de fase ──
   if (_lastPhase && _lastPhase !== goal.phase) {
-    if (goal.phase === 'complete') showGoalToast('✅ Meta completada', 'done');
-    else if (goal.phase === 'blocked') showGoalToast('⛔ Meta bloqueada: ' + (reason || '—'), 'blocked');
+    if (goal.phase === 'complete') showGoalToast(_GSVG.check + ' Meta completada', 'done');
+    else if (goal.phase === 'blocked') showGoalToast(_GSVG.blocked + ' Meta bloqueada: ' + (reason || '—'), 'blocked');
   }
   _lastPhase = goal.phase;
   card.classList.toggle('blocked', goal.phase === 'blocked');
@@ -107,7 +130,7 @@ export function renderGoal(goal, extra = {}) {
   const banner = document.getElementById('goal-banner');
   if (banner) {
     banner.hidden = false;
-    banner.textContent = `🎯 ${goal.phase === 'active' ? 'Meta activa' : 'Meta ' + goal.phase}: ${goal.objective}`;
+    banner.innerHTML = _GSVG.target + '<span>' + (goal.phase === 'active' ? 'Meta activa' : 'Meta ' + goal.phase) + ': ' + goal.objective + '</span>';
     banner.onclick = () => document.getElementById('goal-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
@@ -120,7 +143,7 @@ export function setGoalActivity(state) {
 function showGoalToast(msg, kind) {
   const t = document.createElement('div');
   t.className = 'goal-toast ' + kind;
-  t.textContent = msg;
+  t.innerHTML = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3200);
 }

@@ -219,10 +219,21 @@ import wakeLock from './wakeLock.js';
     pencil: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   };
 
-  function _setQueueChip(n) {
+  // The queue chip is scoped to ONE chat context. `_queueChipSession` records
+  // which session the visible chip belongs to; any update for a different
+  // session is ignored so a queued message in chat A can never surface (or
+  // fire) in chat B — live or background.
+  let _queueChipSession = null;
+
+  function _setQueueChip(n, sessionId) {
+    const sid = sessionId || sessionModule.getCurrentSessionId();
     let chip = document.getElementById('queue-chip');
     if (!n || n <= 0) {
-      if (chip) chip.hidden = true;
+      // Only hide if the chip belongs to this session (or no session is known).
+      if (chip && (!_queueChipSession || _queueChipSession === sid)) {
+        chip.hidden = true;
+        _queueChipSession = null;
+      }
       return;
     }
     if (!chip) {
@@ -235,10 +246,29 @@ import wakeLock from './wakeLock.js';
       else return;
       chip.addEventListener('click', () => _showQueuePopover(chip));
     }
+    // Re-scope: if the chip currently shows a DIFFERENT session's queue, only
+    // repaint it when the update is for the session the user is viewing.
+    if (_queueChipSession && _queueChipSession !== sid) return;
+    _queueChipSession = sid;
     chip.innerHTML = _QSVG.hourglass +
       `<span class="queue-chip-label">${n} message${n === 1 ? '' : 's'} queued</span>` +
       `<span class="queue-chip-sub">runs when the current turn finishes</span>`;
     chip.hidden = false;
+  }
+
+  // Re-scope the queue chip when the user switches chats: hide any chip from
+  // the previous session and refresh the count for the newly selected one.
+  function _onSessionChanged(e) {
+    const { sessionId } = (e && e.detail) || {};
+    if (!sessionId) return;
+    _queueChipSession = null;
+    const chip = document.getElementById('queue-chip');
+    if (chip) chip.hidden = true;
+    _refreshQueueChipCount(sessionId);
+  }
+  if (!window.__odysseus_queue_session_bound) {
+    window.__odysseus_queue_session_bound = true;
+    window.addEventListener('odysseus:session-changed', _onSessionChanged);
   }
 
   // Queue popover — list queued messages with per-entry / bulk cancel (D5).
@@ -331,9 +361,13 @@ import wakeLock from './wakeLock.js';
     try {
       const res = await fetch(`${API_BASE}/api/chat/queue/${encodeURIComponent(sid)}`, { credentials: 'same-origin' });
       const data = await res.json();
-      _setQueueChip((data && data.queued && data.queued.length) || 0);
+      // Only repaint if the user is still viewing this session (a switch may
+      // have happened while the fetch was in flight).
+      if (sessionModule.getCurrentSessionId() === sid) {
+        _setQueueChip((data && data.queued && data.queued.length) || 0, sid);
+      }
     } catch (_) {
-      _setQueueChip(0);
+      if (sessionModule.getCurrentSessionId() === sid) _setQueueChip(0, sid);
     }
   }
 
@@ -379,7 +413,7 @@ import wakeLock from './wakeLock.js';
     if (uiModule.autoResize) uiModule.autoResize(el('message'));
     if (window._syncModelPickerAutohide) window._syncModelPickerAutohide();
     _queuePendingSessions.add(sessionId);
-    _setQueueChip(1);
+    _setQueueChip(1, sessionId);
     // POST — the backend persists the message and queues it behind the live
     // run; its response is the follower stream (quiet until `turn_resumed`).
     try {
@@ -445,7 +479,7 @@ import wakeLock from './wakeLock.js';
   // Reset the optimistic queue state after a failed / aborted queued send.
   function _resetQueuedSend(sessionId) {
     if (sessionId) _queuePendingSessions.delete(sessionId);
-    _setQueueChip(0);
+    _setQueueChip(0, sessionId);
     const sb = document.querySelector('.send-btn');
     if (sb) updateSubmitButton('idle', sb);
     const inp = uiModule.el('message');
@@ -500,7 +534,7 @@ import wakeLock from './wakeLock.js';
             try { j = JSON.parse(data); } catch (_) { continue; }
             if (j.type === 'turn_resumed') {
               sawResumed = true;
-              _setQueueChip(0);
+              _setQueueChip(0, sessionId);
               const n = document.createElement('div');
               n.className = 'status-note queue-resumed-note';
               n.setAttribute('role', 'status');
@@ -602,7 +636,7 @@ import wakeLock from './wakeLock.js';
     } finally {
       _queuedRendererActive = false;
       _queuePendingSessions.delete(sessionId);
-      _setQueueChip(0);
+      _setQueueChip(0, sessionId);
       if (submitBtn) updateSubmitButton('idle', submitBtn);
       const inp = uiModule.el('message');
       if (inp) { inp.disabled = false; inp.focus(); }
@@ -2642,7 +2676,7 @@ import wakeLock from './wakeLock.js';
                 qd.innerHTML = _QSVG.hourglass +
                   `<span>message queued (position ${_qpos}) — it runs automatically when the current turn finishes.</span>`;
                 document.getElementById('chat-history').appendChild(qd);
-                _setQueueChip(_qpos);
+                _setQueueChip(_qpos, streamSessionId);
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_timeout') {
@@ -3341,7 +3375,7 @@ import wakeLock from './wakeLock.js';
       // Queue chip — hide once this turn's stream ends (a new turn_queued
       // event re-shows it with the live count). I1: when a queued message is
       // pending, the compact renderer owns the chip.
-      if (!_queuePendingSessions.has(streamSessionId) && typeof _setQueueChip === 'function') _setQueueChip(0);
+      if (!_queuePendingSessions.has(streamSessionId) && typeof _setQueueChip === 'function') _setQueueChip(0, streamSessionId);
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {
