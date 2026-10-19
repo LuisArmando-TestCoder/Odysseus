@@ -7,6 +7,7 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { clearDockSide } from './modalSnap.js';
 import { sortModelIds } from './modelSort.js';
 import { isAltGrEvent } from './platform.js';
+import { showAlert, hideAlert, setButtonLoading, setButtonSuccess, esc as authEsc } from './authUi.js';
 
 let initialized = false;
 let modalEl = null;

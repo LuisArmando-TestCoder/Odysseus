@@ -1,0 +1,452 @@
+/* =========================================================================
+   auth-hyper.css — Odysseus authentication design system (SINGLE source of
+   truth for auth styling).
+
+   Consumers (login.html, settings.js 2FA/password, admin.js users) must use
+   the class hooks below. NO inline styles and NO <style> blocks belong in
+   those consumers; every interaction state lives here, driven by CSS custom
+   properties that inherit the app theme.
+   ========================================================================= */
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+:root {
+  /* Base app palette fallbacks (mirror static/style.css) so the auth page
+     renders correctly even with no saved theme in localStorage. The login
+     page's sync bootstrap overrides these via inline custom properties. */
+  --bg: #282c34;
+  --fg: #9cdef2;
+  --panel: #111;
+  --border: #355a66;
+  --red: #e06c75;
+  --green: #50fa7b;
+  --bg-effect-intensity: 1;
+
+  --auth-radius: 10px;
+  --auth-radius-sm: 6px;
+  --auth-padding: 1.5rem;
+  --auth-gap: 1rem;
+
+  --auth-input-bg: var(--bg, #282c34);
+  --auth-input-border: var(--border, #355a66);
+  --auth-input-fg: var(--fg, #9cdef2);
+  --auth-input-placeholder: color-mix(in srgb, var(--fg, #9cdef2) 45%, transparent);
+
+  --auth-focus-ring: var(--red, #e06c75);
+  --auth-accent: var(--red, #e06c75);
+  --auth-accent-contrast: #ffffff;
+
+  --auth-danger: #e55;
+  --auth-success: #50fa7b;
+  --auth-warning: #e8a830;
+
+  --auth-disabled-opacity: 0.5;
+  --auth-transition: 0.16s ease;
+  --auth-transition-slow: 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Respect reduced motion globally for auth surfaces. */
+@media (prefers-reduced-motion: reduce) {
+  .auth, .auth * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.auth-card {
+  background: var(--panel, #111);
+  border: 1px solid var(--auth-input-border);
+  border-radius: var(--auth-radius);
+  padding: var(--auth-padding);
+  width: 380px;
+  max-width: 90vw;
+  position: relative;
+  z-index: 1;
+  transition: border-color var(--auth-transition), box-shadow var(--auth-transition);
+}
+.auth-card:hover {
+  border-color: color-mix(in srgb, var(--auth-focus-ring) 35%, var(--auth-input-border));
+}
+.auth-card:focus-within {
+  border-color: color-mix(in srgb, var(--auth-focus-ring) 55%, var(--auth-input-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-focus-ring) 15%, transparent);
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.auth-field { margin-bottom: var(--auth-gap); }
+
+.auth-label {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+  color: color-mix(in srgb, var(--auth-input-fg) 65%, transparent);
+}
+
+.auth-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: var(--auth-input-bg);
+  border: 1px solid var(--auth-input-border);
+  border-radius: var(--auth-radius-sm);
+  color: var(--auth-input-fg);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color var(--auth-transition), box-shadow var(--auth-transition),
+              background-color var(--auth-transition);
+}
+
+/* States */
+.auth-input::placeholder { color: var(--auth-input-placeholder); }
+.auth-input:hover:not(:disabled):not([readonly]) {
+  border-color: color-mix(in srgb, var(--auth-focus-ring) 40%, var(--auth-input-border));
+}
+.auth-input:focus {
+  outline: none;
+  border-color: var(--auth-focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-focus-ring) 22%, transparent);
+}
+.auth-input:focus-visible { outline: 2px solid var(--auth-focus-ring); outline-offset: 2px; }
+.auth-input:disabled { opacity: var(--auth-disabled-opacity); cursor: not-allowed; }
+.auth-input[readonly] { cursor: default; background: color-mix(in srgb, var(--auth-input-bg) 85%, #000); }
+.auth-input::selection { background: color-mix(in srgb, var(--auth-accent) 55%, transparent); }
+
+/* Invalid / valid */
+.auth-input[aria-invalid="true"],
+.auth-input.is-invalid {
+  border-color: var(--auth-danger);
+}
+.auth-input[aria-invalid="true"]:focus,
+.auth-input.is-invalid:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-danger) 22%, transparent);
+}
+.auth-input.is-valid { border-color: color-mix(in srgb, var(--auth-success) 55%, var(--auth-input-border)); }
+
+/* Neutralize browser autofill flash (blue/yellow) to match theme. */
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover,
+.auth-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--auth-input-fg);
+  -webkit-box-shadow: 0 0 0 1000px var(--auth-input-bg) inset;
+  box-shadow: 0 0 0 1000px var(--auth-input-bg) inset;
+  transition: background-color 9999s ease-out;
+  caret-color: var(--auth-input-fg);
+}
+
+/* Numeric / one-time-code variant. */
+.auth-input.auth-input-code {
+  text-align: center;
+  letter-spacing: 4px;
+  font-size: 1.1rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.auth-btn {
+  width: 100%;
+  padding: calc(0.7rem + 1px) 0.7rem calc(0.7rem - 1px);
+  border: 1px solid transparent;
+  border-radius: var(--auth-radius-sm);
+  background: color-mix(in srgb, var(--auth-accent) 78%, #000);
+  color: var(--auth-accent-contrast);
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color var(--auth-transition), border-color var(--auth-transition),
+              transform var(--auth-transition), box-shadow var(--auth-transition);
+}
+.auth-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--auth-accent) 66%, #000);
+}
+.auth-btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.995);
+  background: color-mix(in srgb, var(--auth-accent) 60%, #000);
+}
+.auth-btn:focus-visible {
+  outline: 2px solid var(--auth-focus-ring);
+  outline-offset: 2px;
+}
+.auth-btn:disabled {
+  opacity: var(--auth-disabled-opacity);
+  cursor: not-allowed;
+}
+
+/* Variants */
+.auth-btn.auth-btn-danger {
+  background: color-mix(in srgb, var(--auth-danger) 80%, #000);
+}
+.auth-btn.auth-btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--auth-danger) 65%, #000); }
+
+.auth-btn.auth-btn-ghost {
+  background: transparent;
+  color: var(--auth-input-fg);
+  border-color: var(--auth-input-border);
+}
+.auth-btn.auth-btn-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--auth-input-fg) 8%, transparent);
+}
+.auth-btn.auth-btn-ghost:active:not(:disabled) { background: color-mix(in srgb, var(--auth-input-fg) 14%, transparent); }
+
+.auth-btn.auth-btn-sm { width: auto; padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+
+/* Loading state: button shows a spinner + keeps its label muted. */
+.auth-btn.auth-btn-loading { cursor: progress; }
+.auth-btn.auth-btn-loading .auth-btn-label { opacity: 0.65; }
+
+/* Success state: transient green flash. */
+.auth-btn.auth-btn-success {
+  background: color-mix(in srgb, var(--auth-success) 70%, #000);
+  color: #062;
+}
+
+/* ── Eye toggle (password reveal) ────────────────────────────────────────── */
+.auth-eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(calc(-50% + 1px));
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: color-mix(in srgb, var(--auth-input-fg) 40%, transparent);
+  width: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--auth-transition);
+}
+.auth-eye:hover { color: var(--auth-input-fg); }
+.auth-eye:active { color: var(--auth-accent); }
+.auth-eye:focus-visible { outline: 2px solid var(--auth-focus-ring); outline-offset: 2px; border-radius: 3px; }
+.auth-eye svg { display: block; }
+.auth-eye[aria-pressed="true"] { color: var(--auth-accent); }
+
+.auth-pw-wrap { position: relative; }
+.auth-pw-wrap .auth-input { padding-right: 2.5rem; }
+
+/* ── Remember-me checkbox (custom dot over hidden native input) ──────────── */
+.auth-remember {
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+}
+.auth-remember .auth-check {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.auth-remember .auth-check:focus-visible + .auth-dot {
+  outline: 2px solid var(--auth-focus-ring);
+  outline-offset: 2px;
+}
+.auth-dot {
+  display: block;
+  width: 10px; height: 10px;
+  min-width: 10px; min-height: 10px;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--auth-input-fg) 25%, transparent);
+  background: transparent;
+  transition: all var(--auth-transition);
+}
+.auth-check:checked + .auth-dot {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--auth-input-fg) 40%, transparent);
+}
+.auth-remember:hover .auth-dot {
+  border-color: color-mix(in srgb, var(--auth-input-fg) 40%, transparent);
+}
+
+/* ── Switch / toggle ─────────────────────────────────────────────────────── */
+.auth-switch {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.auth-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.auth-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--auth-input-fg) 18%, transparent);
+  transition: background-color var(--auth-transition);
+  cursor: pointer;
+}
+.auth-slider::before {
+  content: "";
+  position: absolute;
+  height: 12px; width: 12px;
+  left: 3px; top: 3px;
+  border-radius: 12px;
+  background: var(--auth-input-fg);
+  transition: transform var(--auth-transition);
+}
+.auth-switch input:checked + .auth-slider {
+  background: color-mix(in srgb, var(--auth-accent) 65%, transparent);
+}
+.auth-switch input:checked + .auth-slider::before { transform: translateX(16px); }
+.auth-switch input:focus-visible + .auth-slider {
+  outline: 2px solid var(--auth-focus-ring);
+  outline-offset: 2px;
+}
+.auth-switch:hover .auth-slider {
+  background: color-mix(in srgb, var(--auth-input-fg) 28%, transparent);
+}
+.auth-switch input:checked:hover + .auth-slider {
+  background: color-mix(in srgb, var(--auth-accent) 80%, transparent);
+}
+.auth-switch input:disabled + .auth-slider { opacity: var(--auth-disabled-opacity); cursor: not-allowed; }
+
+/* ── Links ───────────────────────────────────────────────────────────────── */
+.auth-link {
+  color: var(--auth-accent);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color var(--auth-transition), text-decoration-color var(--auth-transition);
+}
+.auth-link:hover { text-decoration: underline; }
+.auth-link:active { color: color-mix(in srgb, var(--auth-accent) 70%, #000); }
+.auth-link:focus-visible { outline: 2px solid var(--auth-focus-ring); outline-offset: 2px; border-radius: 2px; }
+
+/* ── Alerts (error / success / info) ─────────────────────────────────────── */
+.auth-alert {
+  border-radius: var(--auth-radius-sm);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid transparent;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height var(--auth-transition-slow), opacity var(--auth-transition);
+}
+.auth-alert.auth-alert-visible {
+  max-height: 120px;
+  opacity: 1;
+}
+.auth-alert-error {
+  color: var(--auth-danger);
+  border-color: color-mix(in srgb, var(--auth-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--auth-danger) 10%, transparent);
+}
+.auth-alert-success {
+  color: var(--auth-success);
+  border-color: color-mix(in srgb, var(--auth-success) 35%, transparent);
+  background: color-mix(in srgb, var(--auth-success) 10%, transparent);
+}
+.auth-alert-info {
+  color: var(--auth-input-fg);
+  border-color: color-mix(in srgb, var(--auth-input-fg) 25%, transparent);
+  background: color-mix(in srgb, var(--auth-input-fg) 8%, transparent);
+}
+.auth-alert-warning {
+  color: var(--auth-warning);
+  border-color: color-mix(in srgb, var(--auth-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--auth-warning) 10%, transparent);
+}
+
+/* ── Row (admin user list) ───────────────────────────────────────────────── */
+.auth-row {
+  border: 1px solid var(--auth-input-border);
+  border-radius: var(--auth-radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  transition: border-color var(--auth-transition), background-color var(--auth-transition);
+}
+.auth-row:hover { border-color: color-mix(in srgb, var(--auth-accent) 40%, var(--auth-input-border)); }
+.auth-row[aria-expanded="true"] { border-color: color-mix(in srgb, var(--auth-accent) 55%, var(--auth-input-border)); }
+
+.auth-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.auth-row-header:focus-visible { outline: 2px solid var(--auth-focus-ring); outline-offset: 2px; border-radius: 4px; }
+
+/* ── Spinner (whirlpool) ─────────────────────────────────────────────────── */
+.auth-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--auth-accent-contrast, #fff) 22%, transparent);
+  border-top-color: var(--auth-accent-contrast, #fff);
+  border-radius: 10px;
+  animation: auth-spin 0.7s linear infinite;
+  vertical-align: -3px;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Login page chrome (fonts, layout, brand, background patterns, version label)
+   Lives here so login.html carries NO <style> block of its own.
+   ════════════════════════════════════════════════════════════════════════ */
+@font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
+
+/* Canvas-based bg effects sit at z-index 0; the auth card sits above. */
+#synapse-canvas, #rain-canvas, #constellations-canvas,
+#perlin-flow-canvas, #petals-canvas, #sparkles-canvas,
+#embers-canvas { opacity: var(--bg-effect-intensity, 1); }
+
+body.bg-pattern-dots {
+  background-image: radial-gradient(color-mix(in srgb, var(--bg-effect-color, var(--fg)) calc(5% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px);
+  background-size: 20px 20px; background-attachment: fixed;
+}
+body.bg-pattern-synapse {
+  background-image: linear-gradient(color-mix(in srgb, var(--bg-effect-color, var(--fg)) calc(3.5% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--bg-effect-color, var(--fg)) calc(3.5% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px);
+  background-size: 24px 24px; background-attachment: fixed;
+}
+
+.auth-body {
+  font-family: 'Fira Code', monospace;
+  background: var(--bg, #282c34); color: var(--fg, #9cdef2);
+  display: flex; justify-content: center; align-items: flex-start;
+  min-height: 100vh; min-height: 100dvh;
+  padding-top: 15vh;
+  transition: padding-top 0.2s ease;
+  margin: 0;
+}
+
+.auth-logo { text-align: center; margin-bottom: 1.5rem; font-size: 2rem; font-weight: 600; letter-spacing: 0.04em; }
+.auth-logo .auth-logo-name {
+  font-family: 'Fira Code', monospace;
+  background: linear-gradient(135deg, var(--brand-color, var(--red)), color-mix(in srgb, var(--brand-color, var(--red)) 60%, var(--fg)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.auth-logo-boat { width: 1.6rem; height: 1.6rem; margin-right: 0.4rem; vertical-align: -0.15em; color: var(--red); }
+
+.auth-setup-note { color: color-mix(in srgb, var(--fg) 60%, transparent); font-size: 0.8rem; margin-bottom: 1rem; text-align: center; }
+
+.auth-toggle-area { text-align: center; margin-top: calc(1rem + 4px); font-size: 0.85rem; color: color-mix(in srgb, var(--fg) 50%, transparent); }
+
+.auth-version-label {
+  position: fixed; bottom: 12px; right: 16px;
+  font-size: 0.7rem; opacity: 0.25;
+  font-family: 'Fira Code', monospace;
+  pointer-events: none; user-select: none;
+}
