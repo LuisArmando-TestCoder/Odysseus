@@ -413,7 +413,11 @@ import wakeLock from './wakeLock.js';
     if (uiModule.autoResize) uiModule.autoResize(el('message'));
     if (window._syncModelPickerAutohide) window._syncModelPickerAutohide();
     _queuePendingSessions.add(sessionId);
+    // Optimistic chip: show at least 1 immediately, then refresh from the
+    // backend queue (existing queued messages + this one) so the count never
+    // under-reports when messages were already queued behind the live turn.
     _setQueueChip(1, sessionId);
+    _refreshQueueChipCount(sessionId);
     // POST — the backend persists the message and queues it behind the live
     // run; its response is the follower stream (quiet until `turn_resumed`).
     try {
@@ -534,7 +538,9 @@ import wakeLock from './wakeLock.js';
             try { j = JSON.parse(data); } catch (_) { continue; }
             if (j.type === 'turn_resumed') {
               sawResumed = true;
-              _setQueueChip(0, sessionId);
+              // This queued turn just started — the chip must reflect any
+              // REMAINING queued messages (drain chain), not drop to zero.
+              _refreshQueueChipCount(sessionId);
               const n = document.createElement('div');
               n.className = 'status-note queue-resumed-note';
               n.setAttribute('role', 'status');
@@ -636,7 +642,9 @@ import wakeLock from './wakeLock.js';
     } finally {
       _queuedRendererActive = false;
       _queuePendingSessions.delete(sessionId);
-      _setQueueChip(0, sessionId);
+      // Reflect the authoritative remaining queue (may still be > 0 if a
+      // queued turn failed to start or the drain chain was interrupted).
+      _refreshQueueChipCount(sessionId);
       if (submitBtn) updateSubmitButton('idle', submitBtn);
       const inp = uiModule.el('message');
       if (inp) { inp.disabled = false; inp.focus(); }
