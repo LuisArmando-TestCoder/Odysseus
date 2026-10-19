@@ -423,6 +423,7 @@ import wakeLock from './wakeLock.js';
     try {
       const fd = new FormData();
       fd.append('message', msg);
+      fd.append('session', sessionId);
       if (fileHandlerModule.getPendingFiles) {
         const _pf = fileHandlerModule.getPendingFiles();
         _pf.forEach(f => fd.append('files', f));
@@ -662,7 +663,7 @@ import wakeLock from './wakeLock.js';
       if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(el, anchor);
       else return;
     }
-    el.textContent = msg || '';
+    el.innerHTML = msg || '';
     el.hidden = !msg;
   }
 
