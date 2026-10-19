@@ -411,7 +411,7 @@
 }
 .turn-queued-note, .tool-timeout-note, .llm-retry-note,
 .subagent-note, .subagent-done-note {
-  display: block;
+  display: flex;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

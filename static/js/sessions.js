@@ -1860,6 +1860,10 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
       try { window.documentModule.clearSelection(); } catch {}
     }
     currentSessionId = id;
+    // Notify queue/status components so they re-scope to this chat context.
+    try {
+      window.dispatchEvent(new CustomEvent('odysseus:session-changed', { detail: { sessionId: id, prevSessionId } }));
+    } catch (_) {}
     // Identify Assistant / task-output sessions so we don't "trap" the user
     // there on return. Skipped from both `lastSessionId` persistence and the
     // URL hash — the user complained that coming back to Odysseus kept
@@ -2294,7 +2298,11 @@ export function getCurrentEndpointUrl() {
 
 export function setCurrentSessionId(id) {
   _sessionNavToken++;
+  const _prev = currentSessionId;
   currentSessionId = id;
+  try {
+    window.dispatchEvent(new CustomEvent('odysseus:session-changed', { detail: { sessionId: id, prevSessionId: _prev } }));
+  } catch (_) {}
   if (!id) {
     Storage.remove('lastSessionId');
     history.replaceState(null, '', window.location.pathname);

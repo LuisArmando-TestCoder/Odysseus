@@ -1109,8 +1109,8 @@ def setup_chat_routes(
                 # to the follower stream so the already-queued turn still renders
                 # (D4 — the old code returned subscribe() here, whose stream never
                 # carries `turn_resumed`, so that turn's answer was never shown).
-                logger.info("[queue] duplicate message already queued for %s — attaching to follower", session)
-                return StreamingResponse(_queued_follower_stream(session), media_type="text/event-stream")
+                logger.info("[queue] duplicate message already queued for %s — attaching to live run", session)
+                return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
             # Enqueue the RICH entry: the built system preface (memory/RAG/web/
             # persona) plus the preset's temperature/max_tokens, so the queued
             # turn rebuilds the SAME prompt fidelity as a live turn. The user
@@ -1127,12 +1127,13 @@ def setup_chat_routes(
                 session,
                 f'data: {json.dumps({"type": "turn_queued", "data": _q})}\n\n',
             )
-            # I1 queue UX — the queued message's OWN response is a follower
-            # stream: heartbeats (implicit) while the current run drains, then
-            # the queued turn's full stream (replay-safe from its own start).
-            # This keeps ONE connection per queued message that survives the
-            # handover, so the frontend never needs to re-subscribe.
-            return StreamingResponse(_queued_follower_stream(session), media_type="text/event-stream")
+            # I1 queue UX — subscribe event pattern: the `turn_queued` event is
+            # already published into the live run's buffer, so this POST simply
+            # re-subscribes to the SAME run (replay buffer + live tail). The
+            # frontend's primary reader sees `turn_queued` and, when the run
+            # ends, hands over to the queued turn via /api/chat/resume. No
+            # separate follower stream / polling — one source of truth.
+            return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
 
         # Run the stream as a DETACHED background task so it survives the client
         # closing the tab / navigating away (true terminal-agent behavior). The

@@ -197,6 +197,17 @@ import wakeLock from './wakeLock.js';
   var hideWelcomeScreen = chatRenderer.hideWelcomeScreen;
   var showWelcomeScreen = chatRenderer.showWelcomeScreen;
 
+  // ── Status-note SVG icons (stroke: currentColor) replacing emoji ────────
+  const _SSVG = {
+    save: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
+    clock: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    retry: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>',
+    bot: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg>',
+    checkCircle: '<svg class="qsvg qsvg-ok" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    alert: '<svg class="qsvg qsvg-warn" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    chevronRight: '<svg class="qsvg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>',
+  };
+
   // ── Queue chip (DSH message-queue visibility in normal chat) ────────────
   // Feather-style inline SVG icons (stroke: currentColor) replacing emoji.
   const _QSVG = {
@@ -339,7 +350,7 @@ import wakeLock from './wakeLock.js';
     pre.textContent = (data.lines || []).join('\n');
     const close = document.createElement('button');
     close.className = 'agent-diff-close';
-    close.textContent = '✕';
+    close.innerHTML = _QSVG.x;
     close.addEventListener('click', () => pop.remove());
     head.appendChild(close);
     pop.appendChild(head);
@@ -355,7 +366,8 @@ import wakeLock from './wakeLock.js';
   }
 
   // ── I1: queue-don't-cancel (send side + compact queued-turn renderer) ────
-  let _queuePending = false;
+  // Session-scoped: a queued message in one chat must never fire in another.
+  const _queuePendingSessions = new Set();
   let _queuedRendererActive = false;
   const _escQ = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -366,7 +378,7 @@ import wakeLock from './wakeLock.js';
     el('message').value = '';
     if (uiModule.autoResize) uiModule.autoResize(el('message'));
     if (window._syncModelPickerAutohide) window._syncModelPickerAutohide();
-    _queuePending = true;
+    _queuePendingSessions.add(sessionId);
     _setQueueChip(1);
     // POST — the backend persists the message and queues it behind the live
     // run; its response is the follower stream (quiet until `turn_resumed`).
@@ -391,7 +403,7 @@ import wakeLock from './wakeLock.js';
           if (m) msg = m[1].replace(/\\"/g, '"');
           else if (t && t.length < 200) msg = t;
         } catch (_) {}
-        _resetQueuedSend();
+        _resetQueuedSend(sessionId);
         if (uiModule.showError) uiModule.showError('Could not queue message: ' + msg);
         return;
       }
@@ -414,7 +426,7 @@ import wakeLock from './wakeLock.js';
             }
             if (j && j.type === 'turn_failed') {
               // The queued turn could not start (cancelled / factory error / timeout).
-              _resetQueuedSend();
+              _resetQueuedSend(sessionId);
               const reason = (j.data && j.data.reason) || 'queued turn failed';
               if (uiModule.showError) uiModule.showError('Queued message did not run: ' + reason);
               return;
@@ -426,13 +438,13 @@ import wakeLock from './wakeLock.js';
       // Network drop while the follower stream was open — the queue itself
       // still holds the message server-side, so reset the local chip but keep
       // the run intact (a refresh shows the queued answer).
-      _resetQueuedSend();
+      _resetQueuedSend(sessionId);
     }
   }
 
   // Reset the optimistic queue state after a failed / aborted queued send.
-  function _resetQueuedSend() {
-    _queuePending = false;
+  function _resetQueuedSend(sessionId) {
+    if (sessionId) _queuePendingSessions.delete(sessionId);
     _setQueueChip(0);
     const sb = document.querySelector('.send-btn');
     if (sb) updateSubmitButton('idle', sb);
@@ -589,7 +601,7 @@ import wakeLock from './wakeLock.js';
       console.warn('queued turn renderer failed:', e);
     } finally {
       _queuedRendererActive = false;
-      _queuePending = false;
+      _queuePendingSessions.delete(sessionId);
       _setQueueChip(0);
       if (submitBtn) updateSubmitButton('idle', submitBtn);
       const inp = uiModule.el('message');
@@ -620,8 +632,8 @@ import wakeLock from './wakeLock.js';
     const v = ta.value || '';
     if (v.trim()) {
       localStorage.setItem('odysseus-draft-' + sid, v);
-      _draftIndicator('💾 draft saved locally');
-      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === '💾 draft saved locally') el.hidden = true; }, 2500);
+      _draftIndicator(_SSVG.save + ' draft saved locally');
+      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === ' draft saved locally') el.hidden = true; }, 2500);
     } else {
       localStorage.removeItem('odysseus-draft-' + sid);
     }
@@ -634,8 +646,8 @@ import wakeLock from './wakeLock.js';
     const ta = document.getElementById('message');
     if (ta && v) {
       ta.value = v;
-      _draftIndicator('💾 draft restored');
-      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === '💾 draft restored') el.hidden = true; }, 2500);
+      _draftIndicator(_SSVG.save + ' draft restored');
+      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === ' draft restored') el.hidden = true; }, 2500);
     }
   }
 
@@ -885,6 +897,7 @@ import wakeLock from './wakeLock.js';
     // fires so the last chunk still renders.
     let _streamRenderQueued = false;
     let _streamRenderLast = 0;
+    let _durationTicker = null;  // Phase 6 — live duration ticker handle (outer scope: referenced in finally)
     function _throttleStreamRender() {
       if (_streamRenderQueued) return;
       const wait = Math.max(0, 80 - (performance.now() - _streamRenderLast));
@@ -1344,7 +1357,6 @@ import wakeLock from './wakeLock.js';
       const decoder = new TextDecoder();
       let buffer = '';
       let metrics = null;
-      let _durationTicker = null;  // Phase 6 — live duration ticker handle
       let isThinking = false;
       let thinkingStartTime = null;
       // Streaming TTS: synthesize sentence-by-sentence during streaming
@@ -2185,7 +2197,7 @@ import wakeLock from './wakeLock.js';
                 if (!_isBg) {
                   var _selM = _shortModel(json.selected_model || '');
                   var _ansM = _shortModel(json.answered_by || '');
-                  uiModule.showToast('⚠ ' + _selM + ' failed — answered by ' + _ansM, 6000);
+                  uiModule.showToast(_SSVG.alert + ' ' + _selM + ' failed — answered by ' + _ansM, 6000);
                   if (holder) {
                     var _rEl = holder.querySelector('.role');
                     if (_rEl) {
@@ -2640,7 +2652,7 @@ import wakeLock from './wakeLock.js';
                 const td = document.createElement('div');
                 td.className = 'status-note tool-timeout-note';
                 td.setAttribute('role', 'status');
-                td.textContent = `⏱ ${json.tool || 'tool'} exceeded its deadline — trying something else.`;
+                td.innerHTML = _SSVG.clock + `<span>${_escQ(json.tool || 'tool')} exceeded its deadline — trying something else.</span>`;
                 document.getElementById('chat-history').appendChild(td);
                 uiModule.scrollHistory();
 
@@ -2652,7 +2664,7 @@ import wakeLock from './wakeLock.js';
                 rd.setAttribute('role', 'status');
                 const _ratt = json.data?.attempt ?? '';
                 const _rmod = json.data?.model ? ` ${esc(json.data.model)}` : '';
-                rd.textContent = `↻ retrying (attempt ${_ratt})${_rmod}…`;
+                rd.innerHTML = _SSVG.retry + `<span>retrying (attempt ${_escQ(_ratt)})${_rmod}…</span>`;
                 document.getElementById('chat-history').appendChild(rd);
                 uiModule.scrollHistory();
 
@@ -2679,9 +2691,9 @@ import wakeLock from './wakeLock.js';
                 sd.className = 'status-note subagent-note subagent-note-clickable';
                 sd.setAttribute('role', 'status');
                 const _sdata = json.data || {};
-                sd.textContent = _sdata.background
-                  ? `🤖 subagent ${_sdata.subagent_id} started in its own chat — it keeps working while this chat continues. Click to open.`
-                  : `🤖 subagent ${_sdata.subagent_id} started (own chat) — waiting for its answer… Click to open.`;
+                sd.innerHTML = _SSVG.bot + `<span>${_sdata.background
+                  ? `subagent ${_escQ(_sdata.subagent_id)} started in its own chat — it keeps working while this chat continues. Click to open.`
+                  : `subagent ${_escQ(_sdata.subagent_id)} started (own chat) — waiting for its answer… Click to open.`}</span>`;
                 if (_sdata.session_id) {
                   sd.dataset.sid = _sdata.session_id;
                   sd.title = 'Open this subagent chat';
@@ -2700,7 +2712,7 @@ import wakeLock from './wakeLock.js';
                 dd.className = 'status-note subagent-done-note';
                 dd.setAttribute('role', 'status');
                 const _ddata = json.data || {};
-                dd.textContent = `✅ subagent ${_ddata.subagent_id} finished (${_ddata.status})${_ddata.summary ? ` — ${_ddata.summary}` : ''}`;
+                dd.innerHTML = _SSVG.checkCircle + `<span>subagent ${_escQ(_ddata.subagent_id)} finished (${_escQ(_ddata.status)})${_ddata.summary ? ` — ${_escQ(_ddata.summary)}` : ''}</span>`;
                 document.getElementById('chat-history').appendChild(dd);
                 uiModule.scrollHistory();
 
@@ -2885,7 +2897,7 @@ import wakeLock from './wakeLock.js';
             const _cont = document.createElement('button');
             _cont.className = 'continue-btn agent-continue-btn';
             _cont.title = 'Continue — pick up where it left off';
-            _cont.textContent = '▸';
+            _cont.innerHTML = _SSVG.chevronRight;
             _cont.addEventListener('click', () => {
               _stall.remove();
               const mi = uiModule.el('message');
@@ -3329,7 +3341,7 @@ import wakeLock from './wakeLock.js';
       // Queue chip — hide once this turn's stream ends (a new turn_queued
       // event re-shows it with the live count). I1: when a queued message is
       // pending, the compact renderer owns the chip.
-      if (!_queuePending && typeof _setQueueChip === 'function') _setQueueChip(0);
+      if (!_queuePendingSessions.has(streamSessionId) && typeof _setQueueChip === 'function') _setQueueChip(0);
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {
@@ -3343,12 +3355,12 @@ import wakeLock from './wakeLock.js';
       if (!_isBgFinally) {
         // Reset button to idle state — I1: with a queued message pending the
         // compact renderer keeps the streaming state until the drain chain ends.
-        if (!_queuePending) updateSubmitButton('idle', submitBtn);
+        if (!_queuePendingSessions.has(streamSessionId)) updateSubmitButton('idle', submitBtn);
 
         // I1 — hand over to the compact renderer for the queued turn(s). Only
         // while the user is viewing this session; background sessions get the
         // persisted answer on the next select.
-        if (_queuePending && !_queuedRendererActive && sessionModule.getCurrentSessionId() === streamSessionId) {
+        if (_queuePendingSessions.has(streamSessionId) && !_queuedRendererActive && sessionModule.getCurrentSessionId() === streamSessionId) {
           _renderQueuedTurn(streamSessionId);
         }
 
@@ -5208,7 +5220,7 @@ import wakeLock from './wakeLock.js';
       const item = document.createElement('div');
       const isActive = b.branch_id === active;
       const when = b.latest ? new Date(b.latest).toLocaleString() : '';
-      item.textContent = `${isActive ? '✓ ' : ''}${b.message_count} messages${when ? ' · ' + when : ''}`;
+      item.innerHTML = `${isActive ? _QSVG.check + ' ' : ''}${b.message_count} messages${when ? ' · ' + when : ''}`;
       item.style.cssText = 'padding:8px 10px;cursor:pointer;border-radius:6px;font-size:13px;margin:2px 0;' +
         (isActive ? 'background:var(--accent,#1a7f37);color:#fff;' : 'background:transparent;');
       item.addEventListener('click', async () => {
