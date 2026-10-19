@@ -150,15 +150,21 @@
 .goal-toast .qsvg { flex: 0 0 auto; }
 @keyframes goalToastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
-/* Banner in-chat */
+/* Banner in-chat — base is a neutral, invisible reset (no color); the phase
+   class supplies the visible state so a paused/blocked/complete goal never
+   keeps the "active" green styling. */
 .goal-banner {
   padding: 7px 14px; font-size: 12px; border-bottom: 1px solid var(--border, #e5e7eb);
-  background: #f0fdf4; color: #15803d; cursor: pointer; white-space: nowrap;
+  background: transparent; color: var(--fg, #111827); cursor: pointer; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
   display: inline-flex; align-items: center; gap: 7px;
 }
 .goal-banner .qsvg { flex: 0 0 auto; }
 .goal-banner span { overflow: hidden; text-overflow: ellipsis; }
+.goal-banner.active   { background: #f0fdf4; color: #15803d; }
+.goal-banner.paused   { background: #fef3c7; color: #b45309; }
+.goal-banner.blocked  { background: #fee2e2; color: #b91c1c; }
+.goal-banner.complete { background: #dbeafe; color: #1d4ed8; }
 
 /* Thumbnail + badge de deliverable */
 .deliverable-thumb {

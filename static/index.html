@@ -1264,11 +1264,20 @@
       bottomBtn.style.right = (window.innerWidth - barRect.right + 8) + 'px';
     }
 
+    // Auto-scroll state lives in ui.js (setAutoScroll/getAutoScroll). The
+    // button only appears when there IS scrollable content AND auto-scroll is
+    // NOT active (i.e. the user scrolled up / auto-scroll was disabled) — it
+    // must never surface while auto-scroll is keeping the view pinned to the
+    // bottom.
+    const _autoScrollOn = () => (window.uiModule && window.uiModule.getAutoScroll)
+      ? window.uiModule.getAutoScroll()
+      : true;
+
     function update() {
       reposition();
       const scrollable = container.scrollHeight > container.clientHeight + 10;
       const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
-      if (scrollable && !atBottom) {
+      if (scrollable && !atBottom && !_autoScrollOn()) {
         bottomBtn.classList.remove('slide-out');
         bottomBtn.classList.add('show');
       } else if (bottomBtn.classList.contains('show')) {
@@ -1280,6 +1289,7 @@
     let _scrollRaf = null;
     let _scrollTimeout = null;
     let _scrollingToBottom = false;
+    let _lastScrollTop = container.scrollTop;
 
     function cancelAutoScroll() {
       if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null; }
@@ -1287,8 +1297,23 @@
       _scrollingToBottom = false;
     }
 
-    container.addEventListener('scroll', update, {passive:true});
-    container.addEventListener('wheel', () => { if (_scrollingToBottom) cancelAutoScroll(); }, {passive:true});
+    // A user scroll UP disables auto-scroll (so the button can appear); a
+    // programmatic scroll-to-bottom only ever increases scrollTop, so it never
+    // trips this. Re-enabled on the next send (chat.js setAutoScroll(true)).
+    function _onScroll() {
+      const st = container.scrollTop;
+      if (st < _lastScrollTop - 1) {
+        if (window.uiModule && window.uiModule.setAutoScroll) window.uiModule.setAutoScroll(false);
+      }
+      _lastScrollTop = st;
+      update();
+    }
+
+    container.addEventListener('scroll', _onScroll, {passive:true});
+    container.addEventListener('wheel', (e) => {
+      if (_scrollingToBottom) cancelAutoScroll();
+      if (e.deltaY < 0 && window.uiModule && window.uiModule.setAutoScroll) window.uiModule.setAutoScroll(false);
+    }, {passive:true});
     container.addEventListener('touchstart', () => { if (_scrollingToBottom) cancelAutoScroll(); }, {passive:true});
 
     bottomBtn.addEventListener('click', () => {

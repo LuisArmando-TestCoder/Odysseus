@@ -130,6 +130,10 @@ export function renderGoal(goal, extra = {}) {
   const banner = document.getElementById('goal-banner');
   if (banner) {
     banner.hidden = false;
+    // Reset any prior phase class so the base (neutral) style is the fallback,
+    // then apply the current phase's class for the visible state.
+    banner.classList.remove('active', 'paused', 'blocked', 'complete');
+    banner.classList.add(phase);
     banner.innerHTML = _GSVG.target + '<span>' + (goal.phase === 'active' ? 'Meta activa' : 'Meta ' + goal.phase) + ': ' + goal.objective + '</span>';
     banner.onclick = () => document.getElementById('goal-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
