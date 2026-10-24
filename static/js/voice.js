@@ -2650,6 +2650,59 @@ async function _restartVoiceForSessionSwitch() {
   await startVoice();
 }
 
+// Acquire the microphone with a robust, device-aware strategy. On some
+// MacBooks (especially newer Apple Silicon models) the built-in mic does not
+// advertise echoCancellation/noiseSuppression, so requesting them as MANDATORY
+// constraints makes getUserMedia fail — or silently pick a dead/aggregate
+// "default" device after a hardware change. We:
+//   1. enumerate devices and prefer a real, non-default audioinput,
+//   2. request the processing features as *ideal* (non-mandatory) so an
+//      unsupported feature degrades instead of failing,
+//   3. fall back to a bare { audio: true } request if the constrained one
+//      throws, and
+//   4. surface the real error name/message instead of a generic "denied".
+async function _acquireMic() {
+  const gUM = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+  if (!gUM) throw new Error('getUserMedia not available');
+
+  // Pick the best microphone: a real audioinput that is not the browser's
+  // "default"/"communications" pseudo-device (which can point at a dead or
+  // aggregate input after a hardware change). Prefer the first non-default
+  // device; fall back to any audioinput.
+  let deviceId = null;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    const real = mics.find(d => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    const any = mics.find(d => d.deviceId);
+    deviceId = (real || any)?.deviceId || null;
+  } catch (e) { /* enumeration is best-effort */ }
+
+  const base = deviceId ? { deviceId: { exact: deviceId } } : {};
+  const attempts = [
+    { ...base, echoCancellation: { ideal: true }, noiseSuppression: { ideal: true }, autoGainControl: { ideal: true } },
+    { ...base },
+    { audio: true },
+  ];
+  let lastErr = null;
+  for (const audio of attempts) {
+    try {
+      const stream = await gUM({ audio });
+      // A broken/aggregate device can resolve with zero audio tracks — treat
+      // that as a failure so the next attempt (or a clear error) runs.
+      if (!stream.getAudioTracks().length) {
+        stream.getTracks().forEach(t => t.stop());
+        lastErr = new Error('No audio track returned by the selected device');
+        continue;
+      }
+      return stream;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('Microphone unavailable');
+}
+
 async function startVoice() {
   if (_active || _connecting) return;
   _connecting = true;
@@ -2661,13 +2714,23 @@ async function startVoice() {
   _bindVoiceToSession(sid);
 
   try {
-    _micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    _micStream = await _acquireMic();
   } catch (e) {
     _connecting = false;
     _setState('error');
-    _setSub('Microphone access denied');
+    const name = e?.name || '';
+    const msg = e?.message || '';
+    console.error('[voice] microphone acquisition failed:', name, msg, e);
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      _setSub('Microphone access denied — allow it in the browser, then retry');
+    } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      _setSub('No microphone found — check your Mac’s input device');
+    } else if (name === 'OverconstrainedError') {
+      _setSub('Microphone constraints unsupported — retrying with defaults');
+    } else {
+      _setSub('Microphone error: ' + (msg || name || 'unknown'));
+    }
+    _systemLine('Microphone unavailable — ' + (msg || name || 'unknown'), 'warn');
     return;
   }
 
