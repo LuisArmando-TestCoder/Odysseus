@@ -845,6 +845,24 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 .vx-toggle input:focus-visible + .vx-sw { outline: 2px solid var(--vx-acc); outline-offset: 2px; }
 .vx-toggle:hover { color: var(--vx-fg); }
 
+/* ── Microphone selector (dock) ─────────────────────────────────────────── */
+.vx-mic-sel {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 50px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--vx-line); background: rgba(255,255,255,.04);
+  cursor: pointer;
+}
+.vx-mic-sel-ic { display: grid; place-items: center; color: var(--vx-dim); flex: none; }
+.vx-mic-sel select {
+  appearance: none; -webkit-appearance: none;
+  max-width: 150px; height: 100%;
+  background: transparent; border: none; outline: none;
+  color: var(--vx-fg); font: 600 11px/1 var(--vx-sans);
+  cursor: pointer; padding-right: 4px;
+}
+.vx-mic-sel select option { background: #0a1420; color: #c8d6e3; }
+.vx-mic-sel:hover { border-color: var(--vx-acc-a); }
+
 /* ── Error notification + dropdown pane ────────────────────────────────── */
 .vx-top-right { position: relative; }
 .vx-err-btn { position: relative; }

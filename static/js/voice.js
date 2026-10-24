@@ -685,6 +685,10 @@ function _buildHUD() {
     <div class="vx-queue" id="vx-queue" aria-label="Forged messages"></div>
     <div class="vx-dock">
       <label class="vx-toggle" title="Review forged messages before they reach the chat"><input type="checkbox" data-opt="review"><span class="vx-sw"></span>${ICON.eye}<em>Review</em></label>
+      <label class="vx-mic-sel" title="Microphone">
+        <span class="vx-mic-sel-ic">${ICON.mic}</span>
+        <select id="vx-mic-select" aria-label="Microphone"></select>
+      </label>
       <button class="vx-dock-btn" data-act="mute" title="Mute (M)" aria-label="Mute microphone">${ICON.mic}</button>
       <button class="vx-dock-btn vx-primary" data-act="core" title="Connect / end (Space)" aria-label="Connect or end call">${ICON.power}</button>
       <button class="vx-dock-btn" data-act="force" title="Forge & send now (Enter)" aria-label="Send now">${ICON.bolt}</button>
@@ -2650,57 +2654,102 @@ async function _restartVoiceForSessionSwitch() {
   await startVoice();
 }
 
-// Acquire the microphone with a robust, device-aware strategy. On some
-// MacBooks (especially newer Apple Silicon models) the built-in mic does not
-// advertise echoCancellation/noiseSuppression, so requesting them as MANDATORY
-// constraints makes getUserMedia fail — or silently pick a dead/aggregate
-// "default" device after a hardware change. We:
-//   1. enumerate devices and prefer a real, non-default audioinput,
-//   2. request the processing features as *ideal* (non-mandatory) so an
-//      unsupported feature degrades instead of failing,
-//   3. fall back to a bare { audio: true } request if the constrained one
-//      throws, and
-//   4. surface the real error name/message instead of a generic "denied".
+// The user's chosen microphone (from the HUD selector), if any.
+function _prefMicId() {
+  try { return localStorage.getItem('odysseus-voice-mic') || null; } catch (e) { return null; }
+}
+
+// Populate the HUD microphone selector with every available audio input, and
+// mark the currently-chosen one. The first entry is always "System default"
+// (the ChatGPT path). This lets the user explicitly pick the physical
+// "MacBook Pro Microphone" when a virtual device (Camo, EMEET, …) is being
+// selected by mistake.
+async function _populateMicSelect() {
+  const sel = $('#vx-mic-select');
+  if (!sel) return;
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (e) { /* best-effort */ }
+  const mics = devices.filter(d => d.kind === 'audioinput');
+  const chosen = _prefMicId();
+  const frag = document.createDocumentFragment();
+  const def = document.createElement('option');
+  def.value = '';
+  def.textContent = 'System default';
+  frag.appendChild(def);
+  for (const d of mics) {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label || ('Microphone ' + (d.deviceId || '').slice(0, 6));
+    frag.appendChild(o);
+  }
+  sel.replaceChildren(frag);
+  sel.value = chosen && mics.some(m => m.deviceId === chosen) ? chosen : '';
+}
+
+// Handle a microphone selection change: persist it and reconnect so the new
+// device takes effect immediately.
+async function _onMicSelectChange() {
+  const sel = $('#vx-mic-select');
+  if (!sel) return;
+  const id = sel.value || '';
+  try {
+    if (id) localStorage.setItem('odysseus-voice-mic', id);
+    else localStorage.removeItem('odysseus-voice-mic');
+  } catch (e) { /* ignore */ }
+  _systemLine(id ? 'Microphone changed — reconnecting…' : 'Using the system default microphone — reconnecting…', 'info');
+  if (_active || _connecting) {
+    await stopVoice();
+    await startVoice();
+  }
+}
+
+// Acquire the microphone. The browser's DEFAULT input is tried FIRST — this is
+// exactly what ChatGPT's mic button uses, and it is what we know works on this
+// machine. We must NOT force-select a device up front: on Macs with virtual
+// audio devices installed (Camo, EMEET, …) the browser's default is the one
+// that actually carries the user's voice, while a guessed deviceId can point
+// at a virtual input with no physical signal. A user-chosen device (from the
+// HUD selector) still takes priority, and a per-device enumeration is only a
+// last-resort fallback.
 async function _acquireMic() {
   const gUM = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
   if (!gUM) throw new Error('getUserMedia not available');
 
-  // Pick the best microphone: a real audioinput that is not the browser's
-  // "default"/"communications" pseudo-device (which can point at a dead or
-  // aggregate input after a hardware change). Prefer the first non-default
-  // device; fall back to any audioinput.
-  let deviceId = null;
+  const tryStream = async (audio) => {
+    const stream = await gUM({ audio });
+    if (stream.getAudioTracks().length) return stream;
+    stream.getTracks().forEach(t => t.stop());
+    return null;
+  };
+
+  // ① Explicit user choice (HUD selector) — highest priority.
+  const chosen = _prefMicId();
+  if (chosen) {
+    try {
+      const s = await tryStream({ deviceId: { exact: chosen } });
+      if (s) return s;
+    } catch (e) { /* fall through */ }
+  }
+
+  // ② Browser default — the ChatGPT path, known to work here.
+  try {
+    const s = await tryStream(true);
+    if (s) return s;
+  } catch (e) { /* fall through */ }
+
+  // ③ Last resort: enumerate and try each real input device in turn.
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = devices.filter(d => d.kind === 'audioinput');
-    const real = mics.find(d => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
-    const any = mics.find(d => d.deviceId);
-    deviceId = (real || any)?.deviceId || null;
-  } catch (e) { /* enumeration is best-effort */ }
-
-  const base = deviceId ? { deviceId: { exact: deviceId } } : {};
-  const attempts = [
-    { ...base, echoCancellation: { ideal: true }, noiseSuppression: { ideal: true }, autoGainControl: { ideal: true } },
-    { ...base },
-    { audio: true },
-  ];
-  let lastErr = null;
-  for (const audio of attempts) {
-    try {
-      const stream = await gUM({ audio });
-      // A broken/aggregate device can resolve with zero audio tracks — treat
-      // that as a failure so the next attempt (or a clear error) runs.
-      if (!stream.getAudioTracks().length) {
-        stream.getTracks().forEach(t => t.stop());
-        lastErr = new Error('No audio track returned by the selected device');
-        continue;
-      }
-      return stream;
-    } catch (e) {
-      lastErr = e;
+    const mics = devices.filter(d => d.kind === 'audioinput' && d.deviceId);
+    for (const d of mics) {
+      try {
+        const s = await tryStream({ deviceId: { exact: d.deviceId } });
+        if (s) return s;
+      } catch (e) { /* try next */ }
     }
-  }
-  throw lastErr || new Error('Microphone unavailable');
+  } catch (e) { /* enumeration best-effort */ }
+
+  throw new Error('Microphone unavailable');
 }
 
 async function startVoice() {
@@ -3016,6 +3065,8 @@ function _bind() {
     if (_audioEl && _audioEl.paused) _audioEl.play().catch(() => {});
   });
   $('#vx-queue').addEventListener('click', _onQueueClick);
+  const micSel = $('#vx-mic-select');
+  if (micSel) micSel.addEventListener('change', _onMicSelectChange);
   // Type / paste box: "Add context" (⌥⏎) or "Ask" (⌘⏎ / Ctrl⏎).
   const ta = $('#vx-inject-ta');
   const submitInject = (mode) => {
@@ -3107,6 +3158,7 @@ export function openVoiceMode({ autostart = true } = {}) {
   _restoreQueue();
   _renderQueue();
   _initVectors();
+  _populateMicSelect();
   _startChatWatch();
   if (autostart && !_active) startVoice();
 }
