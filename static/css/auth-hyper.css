@@ -46,7 +46,10 @@
 
 /* Respect reduced motion globally for auth surfaces. */
 @media (prefers-reduced-motion: reduce) {
-  .auth, .auth * {
+  .auth, .auth *,
+  .auth-aurora, .auth-sea, .auth-sea-waves, .auth-wave,
+  .auth-sea-boat, .auth-grain, .auth-card, .auth-logo-boat,
+  .auth-btn, .auth-btn::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
@@ -55,22 +58,40 @@
 
 /* ── Card ────────────────────────────────────────────────────────────────── */
 .auth-card {
-  background: var(--panel, #111);
-  border: 1px solid var(--auth-input-border);
-  border-radius: var(--auth-radius);
-  padding: var(--auth-padding);
-  width: 380px;
-  max-width: 90vw;
+  background: color-mix(in srgb, var(--panel, #111) 72%, transparent);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--auth-input-border) 70%, transparent);
+  border-radius: 20px;
+  padding: 2.2rem 2rem 2rem;
+  width: 400px;
+  max-width: 92vw;
   position: relative;
   z-index: 1;
-  transition: border-color var(--auth-transition), box-shadow var(--auth-transition);
+  box-shadow:
+    0 30px 80px -20px rgba(0, 0, 0, 0.55),
+    0 0 0 1px color-mix(in srgb, var(--auth-focus-ring) 6%, transparent) inset,
+    0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset;
+  transition: border-color var(--auth-transition), box-shadow var(--auth-transition),
+              transform var(--auth-transition-slow);
+  animation: auth-card-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes auth-card-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: none; }
 }
 .auth-card:hover {
-  border-color: color-mix(in srgb, var(--auth-focus-ring) 35%, var(--auth-input-border));
+  border-color: color-mix(in srgb, var(--auth-focus-ring) 40%, var(--auth-input-border));
+  box-shadow:
+    0 34px 90px -20px rgba(0, 0, 0, 0.6),
+    0 0 0 1px color-mix(in srgb, var(--auth-focus-ring) 10%, transparent) inset,
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset;
 }
 .auth-card:focus-within {
   border-color: color-mix(in srgb, var(--auth-focus-ring) 55%, var(--auth-input-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-focus-ring) 15%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--auth-focus-ring) 15%, transparent),
+    0 30px 80px -20px rgba(0, 0, 0, 0.55);
 }
 
 /* ── Inputs ──────────────────────────────────────────────────────────────── */
@@ -143,28 +164,45 @@
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .auth-btn {
   width: 100%;
-  padding: calc(0.7rem + 1px) 0.7rem calc(0.7rem - 1px);
+  padding: calc(0.78rem + 1px) 0.7rem calc(0.78rem - 1px);
   border: 1px solid transparent;
-  border-radius: var(--auth-radius-sm);
-  background: color-mix(in srgb, var(--auth-accent) 78%, #000);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--auth-accent), color-mix(in srgb, var(--auth-accent) 55%, var(--fg)));
   color: var(--auth-accent-contrast);
   font-size: 1rem;
   font-weight: 600;
   font-family: inherit;
+  letter-spacing: 0.01em;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--auth-accent) 70%, transparent);
   transition: background-color var(--auth-transition), border-color var(--auth-transition),
-              transform var(--auth-transition), box-shadow var(--auth-transition);
+              transform var(--auth-transition), box-shadow var(--auth-transition),
+              filter var(--auth-transition);
+}
+/* Shine sweep across the button. */
+.auth-btn::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -80%;
+  width: 50%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
 }
 .auth-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--auth-accent) 66%, #000);
+  filter: brightness(1.08);
+  box-shadow: 0 14px 34px -10px color-mix(in srgb, var(--auth-accent) 80%, transparent);
 }
+.auth-btn:hover:not(:disabled)::after { left: 130%; }
 .auth-btn:active:not(:disabled) {
   transform: translateY(1px) scale(0.995);
-  background: color-mix(in srgb, var(--auth-accent) 60%, #000);
+  filter: brightness(0.96);
 }
 .auth-btn:focus-visible {
   outline: 2px solid var(--auth-focus-ring);
@@ -428,9 +466,81 @@ body.bg-pattern-synapse {
   padding-top: 15vh;
   transition: padding-top 0.2s ease;
   margin: 0;
+  position: relative;
+  overflow-x: hidden;
 }
 
-.auth-logo { text-align: center; margin-bottom: 1.5rem; font-size: 2rem; font-weight: 600; letter-spacing: 0.04em; }
+/* ── Aurora backdrop ─────────────────────────────────────────────────────── */
+.auth-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 15% 20%, color-mix(in srgb, var(--auth-accent) 22%, transparent), transparent 60%),
+    radial-gradient(50% 45% at 85% 15%, color-mix(in srgb, var(--fg) 16%, transparent), transparent 60%),
+    radial-gradient(55% 50% at 50% 90%, color-mix(in srgb, var(--auth-accent) 14%, transparent), transparent 60%),
+    radial-gradient(40% 40% at 70% 70%, color-mix(in srgb, var(--green) 10%, transparent), transparent 60%);
+  filter: blur(30px) saturate(120%);
+  animation: auth-aurora-drift 18s ease-in-out infinite alternate;
+}
+@keyframes auth-aurora-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-2%, 2%, 0) scale(1.06); }
+  100% { transform: translate3d(2%, -2%, 0) scale(1.02); }
+}
+
+/* ── Sea waves + boat ────────────────────────────────────────────────────── */
+.auth-sea {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 220px;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.auth-sea-waves {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 200%;
+  height: 100%;
+}
+.auth-wave {
+  fill: color-mix(in srgb, var(--auth-accent) 10%, transparent);
+}
+.auth-wave-back { animation: auth-wave-move 14s linear infinite; opacity: 0.5; }
+.auth-wave-mid  { animation: auth-wave-move 10s linear infinite reverse; opacity: 0.7; }
+.auth-wave-front{ animation: auth-wave-move 7s linear infinite; opacity: 0.9; }
+@keyframes auth-wave-move {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.auth-sea-boat {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  width: 34px; height: 34px;
+  color: var(--auth-accent);
+  transform: translateX(-50%);
+  filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--auth-accent) 50%, transparent));
+  animation: auth-boat-bob 4s ease-in-out infinite;
+}
+@keyframes auth-boat-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0) rotate(-2deg); }
+  50% { transform: translateX(-50%) translateY(-7px) rotate(2deg); }
+}
+
+/* ── Film grain overlay ──────────────────────────────────────────────────── */
+.auth-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.auth-logo { text-align: center; margin-bottom: 0.4rem; font-size: 2.1rem; font-weight: 600; letter-spacing: 0.04em; }
 .auth-logo .auth-logo-name {
   font-family: 'Fira Code', monospace;
   background: linear-gradient(135deg, var(--brand-color, var(--red)), color-mix(in srgb, var(--brand-color, var(--red)) 60%, var(--fg)));
@@ -438,7 +548,20 @@ body.bg-pattern-synapse {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-.auth-logo-boat { width: 1.6rem; height: 1.6rem; margin-right: 0.4rem; vertical-align: -0.15em; color: var(--red); }
+.auth-logo-boat {
+  width: 1.7rem; height: 1.7rem; margin-right: 0.4rem; vertical-align: -0.15em; color: var(--red);
+  filter: drop-shadow(0 3px 10px color-mix(in srgb, var(--red) 55%, transparent));
+  animation: auth-boat-bob 4s ease-in-out infinite;
+}
+
+.auth-tagline {
+  text-align: center;
+  font-style: italic;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  margin: 0 0 1.4rem;
+}
 
 .auth-setup-note { color: color-mix(in srgb, var(--fg) 60%, transparent); font-size: 0.8rem; margin-bottom: 1rem; text-align: center; }
 

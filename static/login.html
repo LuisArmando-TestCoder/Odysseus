@@ -64,10 +64,21 @@
 </script>
 </head>
 <body class="auth-body">
+<div class="auth-aurora" aria-hidden="true"></div>
+<div class="auth-sea" aria-hidden="true">
+  <svg class="auth-sea-waves" viewBox="0 0 1440 220" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <path class="auth-wave auth-wave-back" d="M0,120 C240,60 480,180 720,120 C960,60 1200,180 1440,120 L1440,220 L0,220 Z"></path>
+    <path class="auth-wave auth-wave-mid" d="M0,150 C240,90 480,210 720,150 C960,90 1200,210 1440,150 L1440,220 L0,220 Z"></path>
+    <path class="auth-wave auth-wave-front" d="M0,180 C240,130 480,230 720,180 C960,130 1200,230 1440,180 L1440,220 L0,220 Z"></path>
+  </svg>
+  <svg class="auth-sea-boat" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 4L16 22L6 22Z" fill="currentColor"/><path d="M16 8L16 22L24 22Z" fill="currentColor" opacity="0.6"/><path d="M4 24Q10 20 16 24Q22 28 28 24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>
+</div>
+<div class="auth-grain" aria-hidden="true"></div>
 <main class="auth-card">
   <h1 class="auth-logo">
     <svg class="auth-logo-boat" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 4L16 22L6 22Z" fill="currentColor"/><path d="M16 8L16 22L24 22Z" fill="currentColor" opacity="0.6"/><path d="M4 24Q10 20 16 24Q22 28 28 24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg><span class="auth-logo-name">Odysseus</span>
   </h1>
+  <p class="auth-tagline">Yours for the voyage.</p>
   <p class="auth-setup-note" id="setupNote" style="display:none"></p>
 
   <div class="auth-alert auth-alert-error" id="error" role="alert" aria-live="assertive"></div>
