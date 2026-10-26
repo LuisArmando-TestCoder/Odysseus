@@ -539,6 +539,10 @@ app.include_router(setup_session_routes(session_manager, session_config, webhook
 from routes.admin_wipe_routes import setup_admin_wipe_routes
 app.include_router(setup_admin_wipe_routes(session_manager))
 
+# Environment variables (.env) management — admin-gated read/write
+from routes.env_routes import setup_env_routes
+app.include_router(setup_env_routes())
+
 # Memory
 from routes.memory_routes import setup_memory_routes
 app.include_router(setup_memory_routes(memory_manager, session_manager, memory_vector=memory_vector))

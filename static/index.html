@@ -223,6 +223,7 @@
   <link rel="stylesheet" href="/static/css/goals.css">
   <link rel="stylesheet" href="/static/css/voice-mode.css" id="vx-css">
   <link rel="stylesheet" href="/static/css/cinematic-ai.css">
+  <link rel="stylesheet" href="/static/css/env.css">
   <link rel="modulepreload" href="/static/app.js">
   <link rel="modulepreload" href="/static/js/chat.js">
   <link rel="modulepreload" href="/static/js/ui.js">
@@ -2296,9 +2297,32 @@
 
             <div id="adm-wipeMsg" style="margin-top:8px;"></div>
           </div>
+
+          <div class="admin-card">
+            <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>Environment Variables</h2>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">Fill in missing .env values (API keys, hosts, credentials). The modal reopens automatically whenever a required variable is missing.</div>
+            <button class="admin-btn-add" id="env-open-btn">Open Environment Variables</button>
+          </div>
         </div>
 
       </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Environment Variables modal -->
+  <div id="env-modal" class="modal hidden">
+    <div class="modal-content env-modal-content" role="dialog" aria-label="Environment Variables">
+      <div class="modal-header">
+        <h4>Environment Variables</h4>
+        <button type="button" class="modal-close" id="env-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="env-modal-body">
+        <div id="env-form"></div>
+        <div class="env-actions">
+          <span id="env-msg" style="font-size:11px;opacity:0.7;margin-right:auto;"></span>
+          <button class="admin-btn-add" id="env-save">Save</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2347,6 +2371,7 @@
 <script type="module" src="/static/js/theme.js"></script>
 <script type="module" src="/static/js/censor.js"></script>
 <script type="module" src="/static/js/settings.js"></script>
+<script type="module" src="/static/js/env.js"></script>
 <script type="module" src="/static/js/admin.js"></script>
 <script type="module" src="/static/js/assistant.js"></script>
 <script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST -->

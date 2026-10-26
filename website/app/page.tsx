@@ -21,8 +21,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// Single source of truth for the installer. The executable lives at the root
-// of the repo and bootstraps the whole app on every OS.
+// Single source of truth for the installer. Each OS resolves to its own
+// bootstrap executable (a self-contained script that installs git + Python,
+// clones the repo, and runs the credential wizard). These are the raw files
+// served from the repo; swap to GitHub Releases URLs once real binaries exist.
+const RAW_BASE = "https://raw.githubusercontent.com/LuisArmando-TestCoder/Odysseus/main/installer/bootstrap";
 const INSTALLER_URL = "https://github.com/LuisArmando-TestCoder/Odysseus";
 
 type Feature = {
@@ -85,12 +88,11 @@ const OS_LIST: Os[] = [
   { key: "macos", label: "macOS", icon: Apple },
 ];
 
-// Per-OS download targets. Today the single executable is the repo itself, so
-// every OS resolves to the same URL; swap these when real binaries exist.
+// Per-OS download targets. Each points at that OS's bootstrap executable.
 const DOWNLOAD_URLS: Record<OsKey, string> = {
-  linux: INSTALLER_URL,
-  windows: INSTALLER_URL,
-  macos: INSTALLER_URL,
+  linux: `${RAW_BASE}/install-linux.sh`,
+  windows: `${RAW_BASE}/install-windows.ps1`,
+  macos: `${RAW_BASE}/install-macos.sh`,
   unknown: INSTALLER_URL,
 };
 
@@ -203,7 +205,7 @@ export default function HomePage() {
                 <a
                   key={os.key}
                   className="os-pill"
-                  href={INSTALLER_URL}
+                  href={DOWNLOAD_URLS[os.key]}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
