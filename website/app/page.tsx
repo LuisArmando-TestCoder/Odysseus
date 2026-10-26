@@ -23,9 +23,9 @@ import {
 
 // Single source of truth for the installer. Each OS resolves to its own
 // bootstrap executable (a self-contained script that installs git + Python,
-// clones the repo, and runs the credential wizard). These are the raw files
-// served from the repo; swap to GitHub Releases URLs once real binaries exist.
-const RAW_BASE = "https://raw.githubusercontent.com/LuisArmando-TestCoder/Odysseus/main/installer/bootstrap";
+// clones the repo, and runs the credential wizard). The scripts are served
+// same-origin from /public so the `download` attribute forces a real file
+// download instead of the browser rendering the script inline.
 const INSTALLER_URL = "https://github.com/LuisArmando-TestCoder/Odysseus";
 
 type Feature = {
@@ -88,11 +88,12 @@ const OS_LIST: Os[] = [
   { key: "macos", label: "macOS", icon: Apple },
 ];
 
-// Per-OS download targets. Each points at that OS's bootstrap executable.
+// Per-OS download targets. Each points at that OS's bootstrap executable,
+// served same-origin so the `download` attribute triggers a real download.
 const DOWNLOAD_URLS: Record<OsKey, string> = {
-  linux: `${RAW_BASE}/install-linux.sh`,
-  windows: `${RAW_BASE}/install-windows.ps1`,
-  macos: `${RAW_BASE}/install-macos.sh`,
+  linux: "/install-linux.sh",
+  windows: "/install-windows.ps1",
+  macos: "/install-macos.sh",
   unknown: INSTALLER_URL,
 };
 
@@ -148,8 +149,7 @@ export default function HomePage() {
           <a
             className="hero-cta"
             href={DOWNLOAD_URLS[os]}
-            target="_blank"
-            rel="noopener noreferrer"
+            download
           >
             <Download size={18} strokeWidth={2.2} />
             Descargar Odysseus
@@ -206,8 +206,7 @@ export default function HomePage() {
                   key={os.key}
                   className="os-pill"
                   href={DOWNLOAD_URLS[os.key]}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  download
                 >
                   <Icon size={16} strokeWidth={2} />
                   {os.label}
