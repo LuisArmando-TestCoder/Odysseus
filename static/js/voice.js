@@ -54,6 +54,7 @@ let _pc = null, _dc = null, _audioEl = null;
 let _active = false, _connecting = false, _muted = false;
 let _state = 'idle';
 let _callStart = 0, _timerInt = 0;
+let _silentSince = 0, _silentWarned = false;   // Sequoia silent-mic watchdog
 
 // ── Pipeline / queue state ──────────────────────────────────────────────────
 // Never a shared key: until _bindVoiceToSession() runs, use an ephemeral
@@ -511,6 +512,22 @@ function _loop() {
   _lvl += (micLvl - _lvl) * 0.25;
   _out += (outLvl - _out) * 0.25;
   if (_out > 0.07) _lastAudioAt = Date.now();   // wall clock — compared with Date.now() in _drainSay
+
+  // Sequoia silent-mic watchdog: a live-but-silent mic on macOS Sequoia is
+  // almost always Voice Isolation (Mic Mode) or a stale permission grant.
+  if (_active && !_muted && _micStream) {
+    if (_lvl < 0.012) {
+      if (!_silentSince) _silentSince = now;
+      else if (now - _silentSince > 12000 && !_silentWarned) {
+        _silentWarned = true;
+        _warnSequoiaMic();
+      }
+    } else {
+      _silentSince = 0;
+    }
+  } else {
+    _silentSince = 0;
+  }
   _think += (_thinkTarget - _think) * 0.06;
 
   if (_active && !_muted) {
@@ -731,6 +748,14 @@ function _setState(s) {
 function _setSub(text) {
   const sub = $('.vx-state-sub');
   if (sub) sub.textContent = text;
+}
+
+// macOS Sequoia: WebRTC capture can succeed while the mic stays silent — the
+// usual culprits are Voice Isolation (Mic Mode) or a stale permission grant.
+// Surface a targeted, actionable hint once per call.
+function _warnSequoiaMic() {
+  _systemLine('Mic is live but silent — on macOS Sequoia, open Control Center → Mic Mode and set it to “Standard” (not Voice Isolation), and check System Settings → Privacy & Security → Microphone.', 'warn');
+  _setSub('Mic silent — set Mic Mode to “Standard” in Control Center');
 }
 
 function _caption(text, who) {
@@ -2755,6 +2780,7 @@ async function _acquireMic() {
 async function startVoice() {
   if (_active || _connecting) return;
   _connecting = true;
+  _silentSince = 0; _silentWarned = false;   // re-arm the silent-mic watchdog each call
   _setState('connecting');
   // Turning on voice must persist a real chat session (even with no messages),
   // so the voice memory key is always `chat-{sid}` — which the chat can read
