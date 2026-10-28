@@ -1274,6 +1274,63 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "case_file",
+            "description": "Case Files: the organized intel store for investigations, OSINT and research threads. Open one case per thread, then record entities (auto-typed and deduped: person, org, username, email, phone, domain, url, ip, location, crypto…), sourced findings (selectors in the text are auto-extracted into entities), relationships, aliases and next steps. op=pivots returns concrete next moves for what is known so far (queue=true adds them as steps). op=export returns a markdown dossier. op=search finds a selector across ALL cases. Record facts as you discover them — do not keep them only in chat.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "op": {"type": "string", "enum": ["open", "list", "get", "update", "add_entity", "add_finding", "link", "alias", "add_step", "done_step", "pivots", "search", "export", "delete"]},
+                    "case": {"type": "string", "description": "Case id, id prefix, or title (required for all ops except open/list/search)."},
+                    "title": {"type": "string", "description": "open/update: case title."},
+                    "objective": {"type": "string", "description": "open/update: what this case is trying to establish."},
+                    "status": {"type": "string", "enum": ["open", "paused", "closed"], "description": "update: case status; list: filter (default open)."},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "value": {"type": "string", "description": "add_entity: the selector/name, e.g. 'jdoe@example.com'."},
+                    "type": {"type": "string", "description": "add_entity: entity type (auto-detected when omitted)."},
+                    "label": {"type": "string", "description": "add_entity: human label, e.g. 'personal Gmail'."},
+                    "text": {"type": "string", "description": "add_finding/add_step: the fact or step text."},
+                    "source_url": {"type": "string", "description": "add_finding: where the fact came from."},
+                    "source": {"type": "string", "description": "add_entity: where the entity was seen."},
+                    "confidence": {"type": "number", "description": "0..1 confidence (findings default 0.6)."},
+                    "entities": {"type": "array", "items": {"type": "string"}, "description": "add_finding: extra entity values the finding is about."},
+                    "a": {"type": "string", "description": "link: entity id or value."},
+                    "b": {"type": "string", "description": "link: entity id or value."},
+                    "relation": {"type": "string", "description": "link: e.g. owns, alias_of, works_at, registered_by, located_in."},
+                    "evidence": {"type": "string", "description": "link: supporting evidence / URL."},
+                    "entity": {"type": "string", "description": "alias: entity id or value."},
+                    "alias": {"type": "string", "description": "alias: alternative value for the entity."},
+                    "step": {"type": "string", "description": "done_step: step id or text."},
+                    "result": {"type": "string", "description": "done_step: what the step produced."},
+                    "queue": {"type": "boolean", "description": "pivots: also add the suggestions as open steps."},
+                    "query": {"type": "string", "description": "search: text or selector to find across cases."}
+                },
+                "required": ["op"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "watch_target",
+            "description": "Watchlist: proactively monitor a web page for changes. op=add starts watching a URL on an interval (min 15 min, default 360); keywords make it alert only when one appears in newly added text; case links changes into a Case File. A scheduled task re-checks due watches and notifies the user. op=check checks one immediately; list/pause/resume/remove manage watches.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "op": {"type": "string", "enum": ["add", "list", "check", "pause", "resume", "remove"]},
+                    "url": {"type": "string", "description": "add: page to watch; other ops: may identify the watch."},
+                    "id": {"type": "string", "description": "Watch id (from list)."},
+                    "label": {"type": "string"},
+                    "interval_minutes": {"type": "integer"},
+                    "keywords": {"type": "array", "items": {"type": "string"}},
+                    "case": {"type": "string", "description": "Case id/title to file changes into."}
+                },
+                "required": ["op"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_contact",
             "description": "Create, update, delete, or list the user's CardDAV contacts. Use to save a new contact ('save Jonathan's email jon@x.com'), update an existing one ('change Maria's number'), or remove one. For update/delete you need the contact's uid — call action='list' first to find it. Writes go through the same dedupe + validation as the Contacts UI.",
             "parameters": {

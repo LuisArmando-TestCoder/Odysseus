@@ -194,6 +194,7 @@ HOUSEKEEPING_DEFAULTS = {
     "classify_events":      {"name": "Calendar Classify Events", "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 6,18 * * *", "ship_paused": True, "legacy_names": ["Classify Calendar Events"]},
     "mark_email_boundaries": {"name": "Email Mark Boundaries",   "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 */2 * * *", "ship_paused": True, "legacy_names": ["Mark Email Boundaries"]},
     "check_email_urgency":   {"name": "Email Tags",               "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 * * * *", "ship_paused": True, "old_cron_expressions": ["*/15 * * * *"], "legacy_names": ["Email Triage", "Urgent Email"]},
+    "check_watchlist":       {"name": "Intel Watchlist",          "schedule": "cron",  "scheduled_time": None,    "cron_expression": "*/30 * * * *", "legacy_names": []},
     "audit_skills":          {"name": "Skills Audit",             "trigger_type": "event", "trigger_event": "skill_added", "trigger_count": 5, "schedule": None, "scheduled_time": None, "cron_expression": None, "legacy_names": ["Audit Skills"]},
 }
 

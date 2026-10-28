@@ -33,6 +33,19 @@ Done and tested (architecture in `docs/harness-port.md`, plan in the repo histor
 Remaining (small): i18n for the new UI strings, cross-process run resume,
 a workflow-tool equivalent, and the UI niceties tracked in the commit log.
 
+## Intel Board (shipped)
+
+- **Case Files** (`src/casefiles.py`, `case_file` tool, `/api/cases`, `/cases`):
+  organized per-investigation store with deduped entities, sourced findings,
+  relationships, next steps, pivot suggestions, cross-case search and markdown
+  dossier export.
+- **Watchlist** (`src/watchlist.py`, `watch_target` tool, `/api/watchlist`):
+  SSRF-guarded page-change monitoring with keyword alerts and backoff; the
+  **Intel Watchlist** scheduled task (every 30 min) notifies on changes and
+  files them into the linked case. Daily brief includes cases + watchlist.
+- Next: graph view of entity relationships, case ↔ goal binding so a goal can
+  drive a case's open steps autonomously, RSS/JSON-feed watches.
+
 ## High Priority
 
 - SQUASH BUGS

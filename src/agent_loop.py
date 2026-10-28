@@ -406,6 +406,16 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
 {"path": []}
 ```
 Browse the OSINT Framework — a large catalog of OSINT tools organized as nested folders (Username, Email Address, Domain Name, etc.). Navigate ONE level at a time: pass `path` as a JSON list of folder names from the root (empty `[]` = top level). The tool returns ONLY the current level's options (name + type). Descend by appending a chosen option's name to the path and calling again, recursively, until you reach a url leaf — which returns the full tool details (url, description, input, output, opsec, pricing). Use when the user wants to find or browse OSINT tools for a specific purpose (e.g. 'what tools exist for username search'). Do NOT dump the whole tree; navigate level by level.""",
+    "case_file": """\
+```case_file
+{"op": "add_finding", "case": "Acme recon", "text": "Registrant email is ops@acme-holdings.io", "source_url": "https://rdap.org/domain/acme.io", "confidence": 0.8}
+```
+Case Files — the organized intel store. ops: `open` {title, objective}, `list`, `get`, `update`, `add_entity` {value, type?, label?, source?}, `add_finding` {text, source_url?, confidence?} (selectors in the text are auto-extracted and deduped), `link` {a, b, relation}, `alias` {entity, alias}, `add_step`/`done_step`, `pivots` {queue?} (concrete next moves), `search` {query} across all cases, `export` (markdown dossier). For any investigation/OSINT/research task: open (or reuse) a case first, record every sourced fact as you go, and use `pivots` to decide what to chase next.""",
+    "watch_target": """\
+```watch_target
+{"op": "add", "url": "https://example.gov/docket", "keywords": ["Doe"], "interval_minutes": 120, "case": "Doe matter"}
+```
+Watchlist — monitor a page for changes and notify the user (via the Intel Watchlist scheduled task). ops: `add`, `list`, `check` (now), `pause`, `resume`, `remove`. Use for 'tell me when this changes' / 'keep an eye on X'.""",
     "list_served_models": "- ```list_served_models``` — Show what the Cookbook (LLM-serving subsystem) is currently running. NO args. Use this for ANY 'what's running' / 'what's serving' / 'show my cookbook' / 'is anything up' query. DO NOT shell out (`ps aux`, `docker ps`, etc.) — this tool is the source of truth. Failed serve tasks include recent logs plus diagnosis/retry suggestions; use those suggestions to call `serve_model` again with an adjusted command when appropriate.",
     "stop_served_model": "- ```stop_served_model``` — Stop a running model server. Args (JSON): {\"session_id\": \"<from list_served_models>\"}. Use for 'kill my cookbook' / 'stop the model' / 'shut down vLLM'.",
     "download_model": "- ```download_model``` — Download a HuggingFace model. Args (JSON): {\"repo_id\": \"Qwen/Qwen3-8B\", \"host\": \"user@gpu-box\"?, \"include\": \"*Q4_K_M*\"?}.",

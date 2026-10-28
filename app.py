@@ -553,6 +553,10 @@ app.include_router(setup_skills_routes(skills_manager))
 from routes.trusted_claims_routes import setup_trusted_claims_routes
 app.include_router(setup_trusted_claims_routes())
 
+# Case Files (organized intel) + Watchlist (proactive change monitor)
+from routes.case_routes import setup_case_routes
+app.include_router(setup_case_routes())
+
 # Goals (continuous goals — versioned goal state + round driver)
 from routes.goal_routes import setup_goal_routes
 app.include_router(setup_goal_routes())
@@ -798,6 +802,11 @@ async def serve_library(request: Request):
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""
     return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/backgrounds.html"))
+
+@app.get("/cases")
+async def serve_cases(request: Request):
+    """Intel Board — Case Files + Watchlist (auth-protected like the SPA)."""
+    return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/cases.html"))
 
 @app.get("/login")
 async def serve_login(request: Request):

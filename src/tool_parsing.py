@@ -192,6 +192,15 @@ _TOOL_NAME_MAP = {
     "osint_framework": "osint_framework",
     "osint": "osint_framework",
     "osint_framework_navigate": "osint_framework",
+    "case_file": "case_file",
+    "case": "case_file",
+    "cases": "case_file",
+    "casefile": "case_file",
+    "dossier": "case_file",
+    "watch_target": "watch_target",
+    "watch": "watch_target",
+    "watchlist": "watch_target",
+    "monitor_url": "watch_target",
 }
 
 

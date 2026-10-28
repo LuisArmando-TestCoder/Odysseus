@@ -5,7 +5,9 @@ Registry of built-in automation actions that can be executed by the task
 scheduler without needing an LLM call.
 """
 
+import asyncio
 import logging
+import time
 import os
 from datetime import datetime
 from typing import Tuple
@@ -1281,12 +1283,78 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
         else:
             plain.append("Todos: none active.")
 
+        # ----- Intel: open cases + watchlist health -----
+        plain.extend(_intel_brief_lines(owner))
+
         plain_body = "\n".join(plain)
 
         return plain_body, True
     except Exception as e:
         logger.error(f"daily_brief action failed: {e}")
         return str(e), False
+
+
+def _intel_brief_lines(owner: str) -> list:
+    """Open cases + watchlist status for the daily brief. Never raises."""
+    lines: list = []
+    try:
+        from src.casefiles import get_case_store
+        cb = get_case_store().brief(owner)
+        if cb:
+            lines += ["", cb]
+            pivots = []
+            for c in get_case_store().list_cases(owner, status="open")[:3]:
+                p = get_case_store().suggest_pivots(owner, c["id"], limit=1)
+                if p:
+                    pivots.append(f"  → {c['title']}: {p[0]}")
+            if pivots:
+                lines.append("Suggested next moves:")
+                lines += pivots
+    except Exception:
+        logger.debug("daily_brief: case summary failed", exc_info=True)
+    try:
+        from src.watchlist import get_watch_store
+        watches = get_watch_store().list(owner)
+        if watches:
+            active = [w for w in watches if w.get("active")]
+            day_ago = time.time() - 86400
+            changed = [w for w in watches if (w.get("last_changed") or 0) >= day_ago]
+            failing = [w for w in watches if w.get("error_count")]
+            lines += ["", f"Watchlist: {len(active)} active, {len(changed)} changed in 24h"
+                      + (f", {len(failing)} failing" if failing else "")]
+            for w in changed[:5]:
+                lines.append(f"  · {w['label']} — {w['url']}")
+    except Exception:
+        logger.debug("daily_brief: watchlist summary failed", exc_info=True)
+    return lines
+
+
+async def action_check_watchlist(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Re-check every due watch (URL change monitor). Changes are filed into
+    the linked case and returned as the run result, which the scheduler
+    delivers as a notification. No due watches → TaskNoop (silent)."""
+    try:
+        from src.watchlist import get_watch_store, format_events
+        store = get_watch_store()
+        if not any(w.get("active") for w in store.list(owner)):
+            raise TaskNoop("no active watches")
+        res = await asyncio.to_thread(store.check_due, owner)
+    except TaskNoop:
+        raise
+    except Exception as e:
+        logger.exception("check_watchlist action failed")
+        return str(e), False
+    if not res["checked"]:
+        raise TaskNoop("no watches due")
+    if not res["changes"]:
+        if res["errors"] and len(res["errors"]) == res["checked"]:
+            return "All due watches failed: " + "; ".join(
+                f"{e['url']} ({e['error']})" for e in res["errors"][:5]), False
+        raise TaskNoop(f"checked {res['checked']} watch(es), no changes")
+    body = format_events(res["changes"])
+    if res["errors"]:
+        body += f"\n({len(res['errors'])} watch(es) failed to fetch)"
+    return body, True
 
 
 async def action_test_skills(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -2207,6 +2275,7 @@ BUILTIN_ACTIONS = {
     "test_skills": action_test_skills,
     "audit_skills": action_audit_skills,
     "check_email_urgency": action_check_email_urgency,
+    "check_watchlist": action_check_watchlist,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -2227,5 +2296,6 @@ BUILTIN_ACTION_INFO = {
     "run_script": "Run a script locally or on ODYSSEUS_SCRIPT_HOST",
     "test_skills": "Run the per-skill Test on every skill: agent run + LLM judge → records verdict on the skill (pass/needs_work/fail/inconclusive). Advisory only — never rewrites or demotes anything.",
     "audit_skills": "Audit unaudited skills after enough new skills are added: test, narrow metadata, self-edit/retry, optional teacher rewrite, tag duplicates/trivial skills, and publish/draft using the auto-approve threshold.",
+    "check_watchlist": "Re-check watched pages (Intel Watchlist) for changes; file changes into the linked case and notify. Keyword watches only alert when a keyword appears in new text.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
 }

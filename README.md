@@ -20,6 +20,7 @@ A self-hosted AI workspace -- meant to be the self-hosted version of the UI expe
   - **Calendar** -- Local-first calendar with CalDAV sync to Radicale / Nextcloud / Apple / Fastmail.<br>　<sub>CalDAV pull · .ics import/export · per-calendar colors · agent-aware</sub>
   - **Works on mobile** -- looks and runs great on your phone, not just desktop.<br>　<sub>responsive · installable (PWA) · touch gestures</sub>
   - **Extras** -- more to explore, happy if you give it a go!<br>　<sub>image editor · theme editor · file uploads (vision + PDF) · web search · presets · sessions · 2FA</sub>
+  - **Intel Board (Case Files + Watchlist)** -- every investigation gets an organized case: deduped entities, sourced findings, relationships, auto-suggested next pivots and a one-click markdown dossier. Watch any page and get notified when it changes (or only when a keyword appears).<br>　<sub>`/cases` · auto-extracted selectors · confidence + corroboration · keyword alerts · changes filed into the case · daily-brief integration (see `docs/casefiles.md`)</sub>
   - **Harness** -- DeepSeek-Harness-style chat architecture (see `docs/harness-port.md`).<br>　<sub>continuous goals with auto-continuing rounds · background turns + message queue (nothing cancels a live turn) · mid-task questions (`ask_user_question`) · subagents & branching into their own chats · no-truncation spill-to-disk · per-tool deadlines + retry/fallback · response middleman + hook points · Costa Rican + Inter-American legal corpus (SINALEVI / Corte IDH)</sub>
 
 ## Demo

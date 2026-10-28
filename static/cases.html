@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intel Board · Odysseus</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='14' cy='14' r='8' stroke='%235fb3ff' stroke-width='3' fill='none'/%3E%3Cpath d='M20 20L28 28' stroke='%235fb3ff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0f1218;--panel:#161b24;--panel2:#1c2330;--border:#2a3342;--fg:#d7e3f4;--muted:#8a97ab;
+  --accent:#5fb3ff;--good:#5fd39a;--warn:#f0b450;--bad:#ef6b73;--chip:#223047;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: light){:root{
+  --bg:#f5f7fb;--panel:#ffffff;--panel2:#f0f3f8;--border:#d8dee8;--fg:#1d2533;--muted:#5f6b7d;
+  --accent:#1f6fd1;--good:#178a55;--warn:#a86a00;--bad:#c4323d;--chip:#e6eefb;}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent)}
+header{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:2}
+header h1{font-size:16px;margin:0;letter-spacing:.02em}
+header .sp{flex:1}
+input,textarea,select,button{font:inherit;color:inherit}
+input,textarea,select{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;width:100%}
+textarea{resize:vertical;min-height:64px}
+button{background:var(--chip);border:1px solid var(--border);border-radius:8px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.ghost{background:transparent}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.layout{display:grid;grid-template-columns:280px 1fr 320px;gap:14px;padding:14px 16px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+.row{display:flex;gap:8px;align-items:center}
+.stack>*+*{margin-top:8px}
+.list{list-style:none;margin:0;padding:0}
+.list li{padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.list li:hover{background:var(--panel2)}
+.list li.sel{border-color:var(--accent);background:var(--panel2)}
+.meta{color:var(--muted);font-size:12px}
+.chip{display:inline-block;background:var(--chip);border-radius:999px;padding:1px 8px;font-size:11px;margin:0 4px 4px 0}
+.ent{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--border)}
+.ent code{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.conf{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.finding{padding:7px 0;border-bottom:1px dashed var(--border)}
+.step{display:flex;gap:8px;align-items:flex-start;padding:4px 0}
+.step.done span{text-decoration:line-through;color:var(--muted)}
+.pivot{display:flex;justify-content:space-between;gap:8px;padding:4px 0}
+.empty{color:var(--muted);padding:24px;text-align:center}
+.w{padding:8px 0;border-bottom:1px dashed var(--border)}
+.w .url{font-family:var(--mono);font-size:12px;word-break:break-all;color:var(--muted)}
+.bad{color:var(--bad)} .good{color:var(--good)} .warn{color:var(--warn)}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--border);padding:8px 14px;border-radius:10px;display:none;z-index:9}
+@media (max-width:600px){header .meta{display:none}}
+@media (max-width:1100px){.layout{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <a href="/" class="ghost" aria-label="Back to Odysseus">←</a>
+  <h1>Intel Board</h1>
+  <span class="meta">Case Files · Watchlist</span>
+  <span class="sp"></span>
+  <input id="q" type="search" placeholder="Search every case for a name, email, handle, domain…" style="max-width:420px" aria-label="Search all cases">
+</header>
+
+<main class="layout">
+  <section class="stack">
+    <div class="card stack">
+      <h2>New case</h2>
+      <input id="nc-title" placeholder="Title (e.g. Acme Corp recon)">
+      <textarea id="nc-obj" placeholder="Objective — what are we trying to establish?"></textarea>
+      <button class="primary" id="nc-go">Open case</button>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Cases</h2>
+        <select id="st" style="width:auto" aria-label="Filter by status"><option value="open">Open</option><option value="paused">Paused</option><option value="closed">Closed</option><option value="all">All</option></select></div>
+      <ul class="list" id="cases" style="margin-top:8px"></ul>
+    </div>
+    <div class="card" id="search-card" hidden><h2>Search results</h2><ul class="list" id="hits"></ul></div>
+  </section>
+
+  <section id="detail"><div class="card empty">Select or open a case. Everything the agent learns in an investigation lands here, organized.</div></section>
+
+  <section class="stack">
+    <div class="card stack">
+      <h2>Watchlist</h2>
+      <input id="w-url" placeholder="https://page-to-monitor">
+      <div class="row"><input id="w-kw" placeholder="Alert keywords (comma-sep, optional)"><input id="w-int" type="number" min="15" value="360" style="width:90px" aria-label="Interval minutes"></div>
+      <label class="row meta"><input type="checkbox" id="w-link" style="width:auto"> File changes into the selected case</label>
+      <button class="primary" id="w-go">Watch</button>
+      <div id="watches"></div>
+    </div>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+
+<script nonce="{{CSP_NONCE}}">
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const when = (t) => t ? new Date(t * 1000).toLocaleString() : '—';
+  let current = null;
+
+  function toast(msg, bad) {
+    const t = $('#toast'); t.textContent = msg; t.className = bad ? 'bad' : '';
+    t.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 2600);
+  }
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined });
+    if (r.status === 401) { location.href = '/login'; throw new Error('auth'); }
+    const ct = r.headers.get('content-type') || '';
+    const data = ct.includes('json') ? await r.json() : await r.text();
+    if (!r.ok) throw new Error((data && data.detail) || r.statusText);
+    return data;
+  }
+  const run = (fn) => async (...a) => { try { await fn(...a); } catch (e) { if (e.message !== 'auth') toast(e.message, true); } };
+
+  const loadCases = run(async () => {
+    const { cases } = await api('/api/cases?status=' + $('#st').value);
+    const ul = $('#cases');
+    ul.innerHTML = cases.length ? cases.map(c => `<li data-id="${c.id}" class="${current && current.id === c.id ? 'sel' : ''}" tabindex="0">
+      <div>${esc(c.title)}</div><div class="meta">${c.entities} entities · ${c.findings} findings · ${c.open_steps} open</div></li>`).join('')
+      : '<li class="meta">No cases yet.</li>';
+  });
+
+  const openCase = run(async (id) => {
+    const { case: c, pivots } = await api('/api/cases/' + id);
+    current = c; renderCase(c, pivots); loadCases();
+  });
+
+  function renderCase(c, pivots) {
+    const ents = Object.values(c.entities);
+    const byType = {};
+    ents.forEach(e => (byType[e.type] = byType[e.type] || []).push(e));
+    const entHtml = Object.keys(byType).sort().map(t => `<div class="meta" style="margin-top:8px">${esc(t)}</div>` +
+      byType[t].sort((a, b) => b.confidence - a.confidence).map(e => `<div class="ent"><code>${esc(e.value)}</code>
+      <span class="conf" title="${(e.sources||[]).length} source(s)">${e.confidence.toFixed(2)} · ${(e.sources||[]).length}src</span></div>`).join('')).join('')
+      || '<div class="meta">No entities yet — add a finding and selectors are extracted automatically.</div>';
+    const val = (id) => (c.entities[id] || {}).value || id;
+    const links = c.links.map(l => `<div class="meta"><code>${esc(val(l.a))}</code> —<b>${esc(l.relation)}</b>→ <code>${esc(val(l.b))}</code></div>`).join('');
+    const findings = c.findings.slice().reverse().map(f => `<div class="finding">${esc(f.text)}
+      <div class="meta">${f.source_url ? `<a href="${esc(f.source_url)}" target="_blank" rel="noopener noreferrer">source</a> · ` : ''}conf ${f.confidence.toFixed(2)} · ${when(f.ts)}</div></div>`).join('')
+      || '<div class="meta">No findings yet.</div>';
+    const steps = c.next_steps.map(s => `<div class="step ${s.done ? 'done' : ''}"><input type="checkbox" data-step="${s.id}" ${s.done ? 'checked disabled' : ''} style="width:auto" aria-label="Mark done"><span>${esc(s.text)}${s.result ? ` <span class="meta">— ${esc(s.result)}</span>` : ''}</span></div>`).join('')
+      || '<div class="meta">No steps queued.</div>';
+    const piv = (pivots || []).map(p => `<div class="pivot"><span>${esc(p)}</span><button class="ghost" data-pivot="${esc(p)}">+ queue</button></div>`).join('')
+      || '<div class="meta">Every known selector has a queued step.</div>';
+    $('#detail').innerHTML = `<div class="stack">
+      <div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap">
+        <div><div style="font-size:18px;font-weight:600">${esc(c.title)}</div><div class="meta">${esc(c.id)} · updated ${when(c.updated_at)}</div></div>
+        <div class="row"><select id="c-status" style="width:auto">${['open','paused','closed'].map(s => `<option ${s === c.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+        <button id="c-export">Export dossier</button><button id="c-del" class="ghost bad">Delete</button></div></div>
+        ${c.objective ? `<p style="margin:10px 0 0">${esc(c.objective)}</p>` : ''}
+        <div style="margin-top:8px">${(c.tags||[]).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div>
+      <div class="card stack"><h2>Add finding</h2>
+        <textarea id="f-text" placeholder="Paste a fact, a profile blurb, a WHOIS record… emails, handles, phones, domains, URLs and IPs are extracted automatically."></textarea>
+        <div class="row"><input id="f-src" placeholder="Source URL"><input id="f-conf" type="number" min="0" max="1" step="0.05" value="0.6" style="width:90px" aria-label="Confidence"><button class="primary" id="f-go">Record</button></div></div>
+      <div class="grid2">
+        <div class="card"><h2>Entities (${ents.length})</h2>${entHtml}${links ? `<h2 style="margin-top:14px">Relationships</h2>${links}` : ''}</div>
+        <div class="card"><h2>Next steps</h2>${steps}<h2 style="margin-top:14px">Suggested pivots</h2>${piv}
+          ${(pivots||[]).length ? '<button id="p-all" style="margin-top:8px">Queue all</button>' : ''}</div>
+      </div>
+      <div class="card"><h2>Findings (${c.findings.length})</h2>${findings}</div>
+    </div>`;
+  }
+
+  $('#cases').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) openCase(li.dataset.id); });
+  $('#cases').addEventListener('keydown', (e) => { const li = e.target.closest('li[data-id]'); if (li && e.key === 'Enter') openCase(li.dataset.id); });
+  $('#st').addEventListener('change', loadCases);
+  $('#nc-go').addEventListener('click', run(async () => {
+    const title = $('#nc-title').value.trim(); if (!title) return toast('Title required', true);
+    const { case: c } = await api('/api/cases', { method: 'POST', body: { title, objective: $('#nc-obj').value } });
+    $('#nc-title').value = $('#nc-obj').value = ''; openCase(c.id);
+  }));
+
+  $('#detail').addEventListener('click', run(async (e) => {
+    if (!current) return;
+    const id = current.id;
+    if (e.target.id === 'f-go') {
+      const text = $('#f-text').value.trim(); if (!text) return;
+      const { finding } = await api(`/api/cases/${id}/findings`, { method: 'POST', body: { text, source_url: $('#f-src').value.trim(), confidence: parseFloat($('#f-conf').value) || 0.6 } });
+      toast(finding.duplicate ? 'Already recorded' : `Recorded${finding.new_entities.length ? ` · ${finding.new_entities.length} new selector(s)` : ''}`);
+      return openCase(id);
+    }
+    if (e.target.dataset.pivot) { await api(`/api/cases/${id}/steps`, { method: 'POST', body: { text: e.target.dataset.pivot } }); return openCase(id); }
+    if (e.target.id === 'p-all') { await api(`/api/cases/${id}/steps`, { method: 'POST', body: { pivots: true } }); return openCase(id); }
+    if (e.target.dataset.step && e.target.checked) {
+      const result = prompt('Result (optional):') || '';
+      await api(`/api/cases/${id}/steps/${e.target.dataset.step}/done`, { method: 'POST', body: { result } }); return openCase(id);
+    }
+    if (e.target.id === 'c-export') {
+      const md = await api(`/api/cases/${id}/export`);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
+      a.download = current.title.replace(/[^\w.-]+/g, '_') + '.md'; a.click(); return;
+    }
+    if (e.target.id === 'c-del' && confirm(`Delete case "${current.title}"? This cannot be undone.`)) {
+      await api('/api/cases/' + id, { method: 'DELETE' }); current = null;
+      $('#detail').innerHTML = '<div class="card empty">Case deleted.</div>'; return loadCases();
+    }
+  }));
+  $('#detail').addEventListener('change', run(async (e) => {
+    if (e.target.id === 'c-status' && current) { await api('/api/cases/' + current.id, { method: 'PATCH', body: { status: e.target.value } }); openCase(current.id); }
+  }));
+
+  let qt;
+  $('#q').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(run(async () => {
+    const q = $('#q').value.trim(); const card = $('#search-card');
+    if (!q) { card.hidden = true; return; }
+    const { hits } = await api('/api/cases/search?q=' + encodeURIComponent(q));
+    card.hidden = false;
+    $('#hits').innerHTML = hits.map(h => `<li data-id="${h.case_id}"><div>${esc(h.text)}</div><div class="meta">${esc(h.kind)} · ${esc(h.case)}</div></li>`).join('') || '<li class="meta">No matches.</li>';
+  }), 250); });
+  $('#hits').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) openCase(li.dataset.id); });
+
+  const loadWatches = run(async () => {
+    const { watches } = await api('/api/watchlist');
+    $('#watches').innerHTML = watches.map(w => `<div class="w"><div class="row" style="justify-content:space-between"><b>${esc(w.label)}</b>
+      <span class="meta">${w.active ? `every ${w.interval_minutes}m` : '<span class="warn">paused</span>'}</span></div>
+      <div class="url">${esc(w.url)}</div>
+      <div class="meta">checked ${when(w.last_checked)} · ${w.change_count} change(s)${w.keywords.length ? ' · kw: ' + esc(w.keywords.join(', ')) : ''}${w.last_error ? ` · <span class="bad">${esc(w.last_error)}</span>` : ''}</div>
+      ${w.last_diff && w.last_diff.added && w.last_diff.added.length ? `<div class="meta good">+ ${esc(w.last_diff.added.slice(0, 2).join(' · ')).slice(0, 220)}</div>` : ''}
+      <div class="row" style="margin-top:6px"><button data-wc="${w.id}">Check now</button><button data-wa="${w.id}" data-on="${w.active ? 0 : 1}">${w.active ? 'Pause' : 'Resume'}</button><button class="ghost bad" data-wd="${w.id}">Remove</button></div></div>`).join('')
+      || '<div class="meta">Nothing watched. Add a URL and Odysseus will tell you when it changes.</div>';
+  });
+  $('#w-go').addEventListener('click', run(async () => {
+    const url = $('#w-url').value.trim(); if (!url) return;
+    const keywords = $('#w-kw').value.split(',').map(s => s.trim()).filter(Boolean);
+    await api('/api/watchlist', { method: 'POST', body: { url, keywords, interval_minutes: parseInt($('#w-int').value) || 360, case_id: $('#w-link').checked && current ? current.id : '' } });
+    $('#w-url').value = $('#w-kw').value = ''; toast('Watching — baseline captured on first check'); loadWatches();
+  }));
+  $('#watches').addEventListener('click', run(async (e) => {
+    const d = e.target.dataset;
+    if (d.wc) { const { change } = await api(`/api/watchlist/${d.wc}/check`, { method: 'POST' }); toast(change ? `Changed: +${change.n_added}/-${change.n_removed}` : 'No change (or baseline captured)'); if (change && current) openCase(current.id); }
+    if (d.wa) await api(`/api/watchlist/${d.wa}/active`, { method: 'POST', body: { active: d.on === '1' } });
+    if (d.wd && confirm('Stop watching this page?')) await api('/api/watchlist/' + d.wd, { method: 'DELETE' });
+    loadWatches();
+  }));
+
+  loadCases(); loadWatches();
+  const qid = new URLSearchParams(location.search).get('case'); if (qid) openCase(qid);
+})();
+</script>
+</body>
+</html>

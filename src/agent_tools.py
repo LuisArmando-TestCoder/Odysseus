@@ -78,6 +78,8 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "universal_search", "y
              # Other tools the agent reaches for that were also missing.
              "edit_image", "trigger_research", "manage_research",
              "sherlock_osint", "osint_framework",
+             # Case Files (organized intel) + Watchlist (change monitor).
+             "case_file", "watch_target",
              # Generic loopback to any UI-button endpoint (cookbook,
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.

@@ -1269,6 +1269,14 @@ async def execute_tool_block(
     elif tool == "osint_framework":
         desc = "osint_framework"
         result = await do_osint_framework(content, owner=owner)
+    elif tool == "case_file":
+        from src.casefile_tools import do_case_file
+        desc = f"case_file: {content.strip()[:60]}"
+        result = await do_case_file(content, owner=owner)
+    elif tool == "watch_target":
+        from src.casefile_tools import do_watch_target
+        desc = f"watch_target: {content.strip()[:60]}"
+        result = await do_watch_target(content, owner=owner)
     elif tool == "checkpoint":
         desc = f"checkpoint: {content.split(chr(10))[0][:60]}"
         result = do_checkpoint(content, session_id=session_id, owner=owner)
