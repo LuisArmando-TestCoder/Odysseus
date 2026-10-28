@@ -415,7 +415,7 @@ Case Files — the organized intel store. ops: `open` {title, objective}, `list`
 ```watch_target
 {"op": "add", "url": "https://example.gov/docket", "keywords": ["Doe"], "interval_minutes": 120, "case": "Doe matter"}
 ```
-Watchlist — monitor a page for changes and notify the user (via the Intel Watchlist scheduled task). ops: `add`, `list`, `check` (now), `pause`, `resume`, `remove`. Use for 'tell me when this changes' / 'keep an eye on X'.""",
+Watchlist — monitor a page or RSS/Atom/JSON feed (auto-detected; feeds alert on new items) and notify the user (via the Intel Watchlist scheduled task). ops: `add`, `list`, `check` (now), `pause`, `resume`, `remove`. Use for 'tell me when this changes' / 'keep an eye on X'.""",
     "list_served_models": "- ```list_served_models``` — Show what the Cookbook (LLM-serving subsystem) is currently running. NO args. Use this for ANY 'what's running' / 'what's serving' / 'show my cookbook' / 'is anything up' query. DO NOT shell out (`ps aux`, `docker ps`, etc.) — this tool is the source of truth. Failed serve tasks include recent logs plus diagnosis/retry suggestions; use those suggestions to call `serve_model` again with an adjusted command when appropriate.",
     "stop_served_model": "- ```stop_served_model``` — Stop a running model server. Args (JSON): {\"session_id\": \"<from list_served_models>\"}. Use for 'kill my cookbook' / 'stop the model' / 'shut down vLLM'.",
     "download_model": "- ```download_model``` — Download a HuggingFace model. Args (JSON): {\"repo_id\": \"Qwen/Qwen3-8B\", \"host\": \"user@gpu-box\"?, \"include\": \"*Q4_K_M*\"?}.",

@@ -1312,7 +1312,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "watch_target",
-            "description": "Watchlist: proactively monitor a web page for changes. op=add starts watching a URL on an interval (min 15 min, default 360); keywords make it alert only when one appears in newly added text; case links changes into a Case File. A scheduled task re-checks due watches and notifies the user. op=check checks one immediately; list/pause/resume/remove manage watches.",
+            "description": "Watchlist: proactively monitor a web page or RSS/Atom/JSON feed for changes. op=add starts watching a URL on an interval (min 15 min, default 360); feeds are auto-detected and alert on new items (title + link); keywords make it alert only when one appears in newly added text; case links changes into a Case File. A scheduled task re-checks due watches and notifies the user. op=check checks one immediately; list/pause/resume/remove manage watches.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1322,6 +1322,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "label": {"type": "string"},
                     "interval_minutes": {"type": "integer"},
                     "keywords": {"type": "array", "items": {"type": "string"}},
+                    "kind": {"type": "string", "enum": ["auto", "page", "feed"], "description": "auto (default) detects feeds; feed requires one; page forces text diff."},
                     "case": {"type": "string", "description": "Case id/title to file changes into."}
                 },
                 "required": ["op"]

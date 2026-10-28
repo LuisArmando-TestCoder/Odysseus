@@ -162,8 +162,11 @@ def run_watch_target(args: Dict[str, Any], owner: Optional[str], store=None, fet
                 case_id = get_case_store(os.path.dirname(st.root)).resolve_case_id(owner, case_id)
             w = st.add(owner, args.get("url", ""), label=args.get("label", ""),
                        interval_minutes=int(args.get("interval_minutes", 360)),
-                       case_id=case_id, keywords=args.get("keywords"))
+                       case_id=case_id, keywords=args.get("keywords"),
+                       kind=str(args.get("kind") or ""))
             msg = f"Watching {w['url']} every {w['interval_minutes']} min ({w['id']})."
+            if w.get("kind") == "feed":
+                msg += " Feed mode: alerts list new items."
             if w.get("keywords"):
                 msg += f" Alerts only on: {', '.join(w['keywords'])}."
             if w.get("case_id"):
@@ -175,6 +178,7 @@ def run_watch_target(args: Dict[str, Any], owner: Optional[str], store=None, fet
                 return _ok("Watchlist is empty.")
             return _ok("\n".join(
                 f"- {w['id']} · {w['label']} — {w['url']} every {w['interval_minutes']}m"
+                f"{' [feed]' if w.get('is_feed') else ''}"
                 f"{'' if w['active'] else ' (paused)'} · {w['change_count']} change(s)"
                 + (f" · last error: {w['last_error']}" if w.get("last_error") else "") for w in ws))
         if not ref:

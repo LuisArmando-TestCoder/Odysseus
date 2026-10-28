@@ -36,6 +36,14 @@ diffs against the last snapshot.
 - **Failures back off** exponentially (up to 8× the interval) and the watch
   pauses itself after 10 consecutive failures.
 
+- **Feeds**: RSS 2.0/1.0, Atom and JSON feeds (JSON Feed, or a JSON array /
+  `{"items": [...]}` of objects) are auto-detected. A feed watch remembers item
+  ids and alerts on **new items** (title + link) rather than a text diff;
+  keywords match an item's title/summary; each new item becomes its own
+  finding in the linked case, sourced to the item's link. Force a mode with
+  `kind: "page"` or `kind: "feed"` (default `auto`). XML that declares a
+  DOCTYPE/ENTITY is refused, and item links that are not http(s) are dropped.
+
 The built-in scheduled task **Intel Watchlist** (`check_watchlist`, every 30
 minutes) re-checks due watches and delivers changes as notifications. It is a
 silent no-op when nothing is watched or nothing changed.
@@ -58,7 +66,7 @@ id prefix or title.
 {"op": "add", "url": "https://example.gov/docket", "keywords": ["Doe"], "interval_minutes": 120, "case": "Doe matter"}
 ```
 
-ops: `add`, `list`, `check`, `pause`, `resume`, `remove`.
+ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `remove`.
 
 ## REST API
 

@@ -145,7 +145,7 @@ def setup_case_routes() -> APIRouter:
             case_id = _guard(get_case_store().resolve_case_id, owner, case_id)
         w = _guard(get_watch_store().add, owner, b.get("url", ""), label=b.get("label", ""),
                    interval_minutes=int(b.get("interval_minutes") or 360), case_id=case_id,
-                   keywords=b.get("keywords"))
+                   keywords=b.get("keywords"), kind=b.get("kind") or "")
         return {"watch": w}
 
     @router.delete("/api/watchlist/{watch_id}")

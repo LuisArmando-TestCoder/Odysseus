@@ -43,8 +43,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   SSRF-guarded page-change monitoring with keyword alerts and backoff; the
   **Intel Watchlist** scheduled task (every 30 min) notifies on changes and
   files them into the linked case. Daily brief includes cases + watchlist.
-- Next: graph view of entity relationships, case ↔ goal binding so a goal can
-  drive a case's open steps autonomously, RSS/JSON-feed watches.
+- **Feed watches** (`src/feeds.py`): RSS 2.0/1.0, Atom and JSON feeds are
+  auto-detected on any watch (`kind: auto|page|feed`). Feed watches alert on
+  *new items* (title + link) instead of a line diff, keywords match item
+  title/summary, and each new item is filed into the linked case as its own
+  sourced finding. DOCTYPE/ENTITY-bearing XML is refused.
+- Next: a link to /cases from the main SPA, graph view of entity
+  relationships, case ↔ goal binding so a goal can drive a case's open steps
+  autonomously.
 
 ## High Priority
 

@@ -16,6 +16,12 @@ Optional ``keywords`` turn a watch into an alert: the change is only reported
 when a keyword appears in the *added* text (e.g. watch a court docket for a
 surname, a registry page for a company name, a release page for "security").
 
+Feeds: a watch's ``kind`` is ``auto`` (default), ``page`` or ``feed``. When the
+fetched document is an RSS/Atom/JSON feed (``src/feeds.py``), the watch tracks
+item ids instead of diffing text, and a change event lists the *new items*
+(title + link). Keywords then match an item's title/summary. Each new item is
+filed into the linked case as its own sourced finding.
+
 Stdlib only; the fetcher is injectable so tests never touch the network.
 """
 
@@ -38,6 +44,9 @@ DEFAULT_INTERVAL_MIN = 360
 MAX_WATCHES_PER_OWNER = 200
 MAX_SNAPSHOT_CHARS = 200_000
 MAX_DIFF_LINES = 12
+MAX_SEEN_IDS = 1000
+MAX_FEED_FINDINGS = 5
+WATCH_KINDS = ("auto", "page", "feed")
 
 Fetcher = Callable[[str], str]
 
@@ -161,14 +170,20 @@ class WatchStore:
 
     @staticmethod
     def _public(w: Dict[str, Any]) -> Dict[str, Any]:
-        return {k: v for k, v in w.items() if k != "snapshot"}
+        out = {k: v for k, v in w.items() if k not in ("snapshot", "seen_ids")}
+        out.setdefault("kind", "auto")
+        return out
 
     # -- crud ----------------------------------------------------------------
     def add(self, owner, url: str, *, label: str = "", interval_minutes: int = DEFAULT_INTERVAL_MIN,
-            case_id: str = "", keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+            case_id: str = "", keywords: Optional[List[str]] = None,
+            kind: str = "") -> Dict[str, Any]:
         url = (url or "").strip()
         if not re.match(r"^https?://[^\s/]+", url, re.I):
             raise ValueError("url must start with http:// or https://")
+        kind = (kind or "").strip().lower()
+        if kind and kind not in WATCH_KINDS:
+            raise ValueError(f"kind must be one of {', '.join(WATCH_KINDS)}")
         interval = max(MIN_INTERVAL_MIN, int(interval_minutes or DEFAULT_INTERVAL_MIN))
         with self._lock:
             data = self._load(owner)
@@ -181,6 +196,8 @@ class WatchStore:
                         w["case_id"] = case_id
                     if keywords is not None:
                         w["keywords"] = [k.strip() for k in keywords if k and k.strip()][:20]
+                    if kind:
+                        w["kind"] = kind
                     self._save(owner, data)
                     return self._public(w)
             if len(data["watches"]) >= MAX_WATCHES_PER_OWNER:
@@ -189,7 +206,7 @@ class WatchStore:
                 "id": "w_" + uuid.uuid4().hex[:8], "url": url, "label": (label or url)[:200],
                 "interval_minutes": interval, "case_id": case_id or "",
                 "keywords": [k.strip() for k in (keywords or []) if k and k.strip()][:20],
-                "active": True, "created_at": time.time(), "last_checked": 0.0,
+                "kind": kind or "auto", "active": True, "created_at": time.time(), "last_checked": 0.0,
                 "last_changed": 0.0, "hash": "", "snapshot": "", "change_count": 0,
                 "error_count": 0, "last_error": "", "last_diff": {},
             }
@@ -266,8 +283,10 @@ class WatchStore:
     def _check(self, w: Dict[str, Any], fetcher: Fetcher, now: float) -> Optional[Dict[str, Any]]:
         w["last_checked"] = now
         try:
-            text = html_to_text(fetcher(w["url"]))[:MAX_SNAPSHOT_CHARS]
-        except Exception as e:  # network / http / blocked
+            raw = fetcher(w["url"])
+            items = self._feed_items(w, raw)
+            text = "" if items is not None else html_to_text(raw)[:MAX_SNAPSHOT_CHARS]
+        except Exception as e:  # network / http / blocked / not a feed
             w["error_count"] = int(w.get("error_count", 0)) + 1
             w["last_error"] = f"{type(e).__name__}: {e}"[:300]
             # Back off politely on repeated failures (max 8x interval) and
@@ -277,6 +296,9 @@ class WatchStore:
             return None
         w["error_count"] = 0
         w["last_error"] = ""
+        if items is not None:
+            return self._check_feed(w, items, now)
+        w["is_feed"] = False
         h = fingerprint(text)
         if not w.get("hash"):
             w["hash"], w["snapshot"] = h, text
@@ -304,12 +326,74 @@ class WatchStore:
             "keywords_hit": hit_kws, "ts": now,
         }
 
+    @staticmethod
+    def _feed_items(w: Dict[str, Any], raw: str) -> Optional[List[Dict[str, str]]]:
+        """Parsed feed items, or None to treat the document as a page."""
+        kind = w.get("kind") or "auto"
+        if kind == "page":
+            return None
+        from src.feeds import parse_feed
+        try:
+            items = parse_feed(raw)
+        except ValueError:
+            if kind == "feed":
+                raise
+            return None
+        if items is None and kind == "feed":
+            raise ValueError("not an RSS/Atom/JSON feed")
+        return items
+
+    def _check_feed(self, w: Dict[str, Any], items: List[Dict[str, str]], now: float) -> Optional[Dict[str, Any]]:
+        first = not w.get("is_feed") or "seen_ids" not in w
+        seen = list(w.get("seen_ids") or [])
+        seen_set = set(seen)
+        new = [it for it in items if it["id"] not in seen_set]
+        # Newest ids last; cap memory so a busy feed can't grow without bound.
+        w["seen_ids"] = (seen + [it["id"] for it in new])[-MAX_SEEN_IDS:]
+        w["is_feed"] = True
+        w["item_count"] = len(items)
+        w["hash"], w["snapshot"] = "", ""
+        if first or not new:
+            return None  # baseline (or nothing new)
+        kws = [k.lower() for k in w.get("keywords") or []]
+        hit_kws: List[str] = []
+        if kws:
+            matched = []
+            for it in new:
+                blob = (it["title"] + "\n" + it["summary"]).lower()
+                hits = [k for k in kws if k in blob]
+                if hits:
+                    matched.append(it)
+                    hit_kws.extend(k for k in hits if k not in hit_kws)
+            if not matched:
+                return None
+            new = matched
+        lines = [(it["title"] or it["summary"][:120] or it["link"]) + (f" — {it['link']}" if it["link"] else "")
+                 for it in new]
+        w["change_count"] = int(w.get("change_count", 0)) + 1
+        w["last_changed"] = now
+        w["last_diff"] = {"added": lines[:MAX_DIFF_LINES], "removed": []}
+        return {
+            "watch_id": w["id"], "url": w["url"], "label": w["label"], "case_id": w.get("case_id", ""),
+            "added": lines[:MAX_DIFF_LINES], "removed": [], "n_added": len(new), "n_removed": 0,
+            "keywords_hit": hit_kws, "ts": now, "feed": True,
+            "items": [dict(it) for it in new[:MAX_DIFF_LINES]],
+        }
+
     def _file_to_case(self, owner, w, ev) -> None:
         if not w.get("case_id"):
             return
         try:
             from src.casefiles import get_case_store
             store = get_case_store(os.path.dirname(self.root))
+            if ev.get("feed"):
+                for it in ev.get("items", [])[:MAX_FEED_FINDINGS]:
+                    text = f"New in {w['label']}: {it['title'] or it['summary'][:200] or it['link']}"
+                    if it.get("summary") and it.get("title"):
+                        text += f" — {it['summary'][:200]}"
+                    store.add_finding(owner, w["case_id"], text, source_url=it.get("link") or w["url"],
+                                      confidence=0.6, kind="feed_item")
+                return
             sample = "; ".join(ev["added"][:5])
             text = (f"Watched page changed: {w['label']} (+{ev['n_added']}/-{ev['n_removed']} lines)"
                     + (f". Keywords: {', '.join(ev['keywords_hit'])}" if ev["keywords_hit"] else "")
@@ -326,7 +410,11 @@ def format_events(events: List[Dict[str, Any]]) -> str:
         return ""
     out = []
     for ev in events:
-        head = f"🔔 {ev['label']} changed (+{ev['n_added']}/-{ev['n_removed']})"
+        if ev.get("feed"):
+            n = ev["n_added"]
+            head = f"🔔 {ev['label']}: {n} new item{'s' if n != 1 else ''}"
+        else:
+            head = f"🔔 {ev['label']} changed (+{ev['n_added']}/-{ev['n_removed']})"
         if ev.get("keywords_hit"):
             head += f" — matched: {', '.join(ev['keywords_hit'])}"
         out.append(head)

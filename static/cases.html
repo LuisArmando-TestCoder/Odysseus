@@ -86,7 +86,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <section class="stack">
     <div class="card stack">
       <h2>Watchlist</h2>
-      <input id="w-url" placeholder="https://page-to-monitor">
+      <input id="w-url" placeholder="Page or feed URL (RSS/Atom/JSON)">
       <div class="row"><input id="w-kw" placeholder="Alert keywords (comma-sep, optional)"><input id="w-int" type="number" min="15" value="360" style="width:90px" aria-label="Interval minutes"></div>
       <label class="row meta"><input type="checkbox" id="w-link" style="width:auto"> File changes into the selected case</label>
       <button class="primary" id="w-go">Watch</button>
@@ -220,10 +220,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     $('#watches').innerHTML = watches.map(w => `<div class="w"><div class="row" style="justify-content:space-between"><b>${esc(w.label)}</b>
       <span class="meta">${w.active ? `every ${w.interval_minutes}m` : '<span class="warn">paused</span>'}</span></div>
       <div class="url">${esc(w.url)}</div>
-      <div class="meta">checked ${when(w.last_checked)} · ${w.change_count} change(s)${w.keywords.length ? ' · kw: ' + esc(w.keywords.join(', ')) : ''}${w.last_error ? ` · <span class="bad">${esc(w.last_error)}</span>` : ''}</div>
+      <div class="meta">${w.is_feed ? `<span class="good">feed · ${w.item_count || 0} items</span> · ` : ''}checked ${when(w.last_checked)} · ${w.change_count} change(s)${w.keywords.length ? ' · kw: ' + esc(w.keywords.join(', ')) : ''}${w.last_error ? ` · <span class="bad">${esc(w.last_error)}</span>` : ''}</div>
       ${w.last_diff && w.last_diff.added && w.last_diff.added.length ? `<div class="meta good">+ ${esc(w.last_diff.added.slice(0, 2).join(' · ')).slice(0, 220)}</div>` : ''}
       <div class="row" style="margin-top:6px"><button data-wc="${w.id}">Check now</button><button data-wa="${w.id}" data-on="${w.active ? 0 : 1}">${w.active ? 'Pause' : 'Resume'}</button><button class="ghost bad" data-wd="${w.id}">Remove</button></div></div>`).join('')
-      || '<div class="meta">Nothing watched. Add a URL and Odysseus will tell you when it changes.</div>';
+      || '<div class="meta">Nothing watched. Add a page or RSS/Atom/JSON feed and Odysseus will tell you when it changes or posts something new.</div>';
   });
   $('#w-go').addEventListener('click', run(async () => {
     const url = $('#w-url').value.trim(); if (!url) return;
