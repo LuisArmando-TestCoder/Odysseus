@@ -2154,6 +2154,17 @@ async function _ingestChat(busy) {
     turns.push({ speaker: role, text, el });
   }
   if (!turns.length) return;
+  // Messages the user TYPED in the chat while voice is live: the voice gets
+  // them as silent context right away (not only once the agent answers), so
+  // "what did I just ask the chat?" never needs a lookup. Voice-sent requests
+  // are skipped — ALFRED already knows those.
+  if (_active) {
+    for (const t of turns) {
+      if (t.speaker !== 'chat_user' || _voiceInjectedTexts.has(t.text.trim())) continue;
+      _brief('[Context — the user typed this in the chat; do not read it out or reply to it now]\n' +
+        t.text.slice(0, _BRIEF_MAX - 120), false);
+    }
+  }
   // Every chat answer reaches the voice: spoken aloud (unless narration or the
   // dispatcher already spoke it), or as silent context when "Speak results" is off.
   for (const t of turns) {

@@ -20,9 +20,24 @@ touching the functions below must update this doc.
 - **Site:** `routes/realtime_routes.py` `POST /api/realtime/session`
   (`:135-190`).
 - **Composition:** persona + user instructions + `VOICE_CONTRACT` + per-chat
-  trusted claims + `chat_summary_spine(sid, owner)[:4000]`
+  trusted claims + `chat_context_digest(sid, owner, budget)`
   (`=== CURRENT CHAT THREAD ===`) + `session_documents_spine(sid, owner)[:4000]`
   (`=== DOCUMENTS IN THIS CHAT ===`).
+- **Full chat context (V2, 2026-10-29):** `chat_context_digest` replaces the
+  old 6-turn / 4000-char spine so the voice knows the WHOLE chat without asking:
+  the chat's active goal (and the case it drives), compacted summaries, an
+  index of every user request (oldest → newest; the middle is elided only when
+  over budget, first and latest always kept), and the latest exchanges in
+  detail (newest kept first; long code/tool blocks compacted). Budget:
+  `VOICE_CHAT_CONTEXT_CHARS` = 12000, overridable with the
+  `voice_chat_context_chars` setting (clamped 2000–40000). Owner- and
+  session-scoped; never raises (degrades to "").
+- **Live updates during a session:** chat-agent output streams in as silent
+  context (`_streamContext`), finished answers are spoken or briefed
+  (`_ingestChat`), and messages the user TYPES in the chat are briefed as
+  silent context the moment they settle (voice-sent requests are skipped).
+  A chat switch restarts the live session, which rebuilds the instructions for
+  the new chat.
 - **Rule:** the voice session receives everything accessible in the session
   that MATCHES the chat (`chat_session_id`), never another chat's context.
 

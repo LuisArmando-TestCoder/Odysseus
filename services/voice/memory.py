@@ -626,6 +626,142 @@ def chat_summary_spine(session_id: Optional[str], owner: Optional[str] = None) -
     return "\n\n".join(parts)
 
 
+def _chat_history(session_id: Optional[str], owner: Optional[str]) -> Optional[list]:
+    """The chat session's message history, or None when unknown / not the
+    caller's. Owner-scoped: another user's chat is never returned."""
+    if not session_id:
+        return None
+    try:
+        from core import models as _core_models
+        mgr = getattr(_core_models, "_session_manager", None)
+        sess = mgr.get_session(session_id) if mgr and hasattr(mgr, "get_session") else None
+        if sess is None:
+            return None
+        sess_owner = getattr(sess, "owner", None)
+        if owner and sess_owner and sess_owner != owner:
+            return None
+        return list(getattr(sess, "history", None) or [])
+    except Exception:
+        return None
+
+
+_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
+
+
+def _clean_turn(text: str) -> str:
+    """Make a chat message cheap to carry in voice context: long code / tool
+    blocks become a short marker, whitespace collapses."""
+    def _fence(m):
+        body = m.group(1)
+        return m.group(0) if len(body) <= 300 else f"[code/tool block, {len(body)} chars]"
+    text = _FENCE_RE.sub(_fence, text or "")
+    text = re.sub(r"<[^>]{1,200}>", " ", text)          # stray html tags
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _clip(text: str, n: int) -> str:
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+def chat_context_digest(session_id: Optional[str], owner: Optional[str] = None,
+                        budget: int = 12000) -> str:
+    """Everything the voice assistant needs to know about THIS chat, without
+    having to ask: the chat's goal, its compacted summaries, an index of every
+    request the user made in the chat (oldest → newest), and the most recent
+    exchanges in as much detail as the budget allows (newest kept first).
+
+    Owner-scoped and session-scoped like ``chat_summary_spine``; returns "" for
+    an unknown/foreign/empty chat. Never raises.
+    """
+    try:
+        hist = _chat_history(session_id, owner)
+        if not hist:
+            return ""
+        try:
+            from src.context_compactor import _summary_level, _summary_body
+        except Exception:                                   # keep working if the compactor can't load
+            _rx = re.compile(r"^\[(?:Conversation summary|Summary L(\d+))\]", re.IGNORECASE)
+
+            def _summary_level(c):
+                m = _rx.match(c or "")
+                return 0 if not m else int(m.group(1) or 1)
+
+            def _summary_body(c):
+                m = _rx.match(c or "")
+                return c[m.end():].strip() if m else (c or "").strip()
+        summaries: Dict[int, str] = {}
+        turns: List[tuple] = []
+        for m in hist:
+            role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else None)
+            content = getattr(m, "content", None) or (m.get("content") if isinstance(m, dict) else "") or ""
+            if not isinstance(content, str) or not content.strip():
+                continue
+            if role == "system":
+                lvl = _summary_level(content)
+                if lvl:
+                    summaries[lvl] = _summary_body(content)
+            elif role in ("user", "assistant"):
+                turns.append((role, _clean_turn(content)))
+        if not turns and not summaries:
+            return ""
+
+        sections: List[str] = []
+        # 1. Goal driving this chat (if any).
+        try:
+            from src.goal import get_goal_for_session
+            g = get_goal_for_session(session_id, owner)
+            if g and (g.get("status") or "active") not in ("done", "cleared"):
+                line = f"[Chat goal — {g.get('status', 'active')}] {_clip(str(g.get('objective') or g.get('goal') or ''), 400)}"
+                if g.get("case_id"):
+                    line += f" (drives case {g['case_id']})"
+                sections.append(line)
+        except Exception:
+            pass
+        # 2. Compacted summaries, highest level (broadest) first.
+        if summaries:
+            sm = "\n".join(f"L{l}: {b}" for l, b in sorted(summaries.items(), reverse=True))
+            sections.append("[Chat summary — older part of the conversation]\n" + _clip(sm, max(1500, budget // 4)))
+        # 3. Index of every user request, so no topic is invisible.
+        asks = [t for r, t in turns if r == "user"]
+        if asks:
+            idx_budget = max(1200, budget // 4)
+            rows = [f"{i + 1}. {_clip(a.replace(chr(10), ' '), 180)}" for i, a in enumerate(asks)]
+            kept: List[str] = []
+            used = 0
+            for row in reversed(rows):                      # newest first
+                if used + len(row) + 1 > idx_budget:
+                    break
+                kept.insert(0, row)
+                used += len(row) + 1
+            omitted = len(rows) - len(kept)
+            if omitted > 0:
+                head = rows[: min(3, omitted)]
+                rest = omitted - len(head)
+                kept = head + ([f"… {rest} more earlier requests …"] if rest else []) + kept
+            sections.append(f"[Everything the user asked in this chat ({len(asks)} requests, oldest → newest)]\n" + "\n".join(kept))
+        # 4. Recent exchanges, as much as fits, newest kept first.
+        used = sum(len(s) + 2 for s in sections)
+        remaining = max(1500, budget - used - 80)
+        recent: List[str] = []
+        for role, text in reversed(turns):
+            cap = 1800 if role == "assistant" else 700
+            who = "Chat agent" if role == "assistant" else "User"
+            line = f"{who}: {_clip(text, cap)}"
+            if len(line) + 1 > remaining:
+                if not recent:                               # always keep the newest turn
+                    recent.append(_clip(line, remaining))
+                break
+            recent.insert(0, line)
+            remaining -= len(line) + 1
+        if recent:
+            sections.append(f"[Most recent exchanges — last {len(recent)} of {len(turns)} messages]\n" + "\n".join(recent))
+        return _clip("\n\n".join(sections), budget)
+    except Exception:
+        return ""
+
+
 def session_documents_spine(session_id: Optional[str], owner: Optional[str] = None,
                             max_docs: int = 6, max_chars: int = 4000) -> str:
     """Compact record of the documents belonging to a chat session, so the

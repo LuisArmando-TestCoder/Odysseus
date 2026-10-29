@@ -59,6 +59,9 @@ def build_persona(settings: dict) -> str:
     )
 
 
+# How much of the attached chat goes into the live session's instructions.
+VOICE_CHAT_CONTEXT_CHARS = 12000
+
 VOICE_CONTRACT = (
     "How work is split: answer conversation and general-knowledge questions yourself. When the "
     "user asks for something that needs real work (research, files, email, calendar, code), "
@@ -88,7 +91,9 @@ VOICE_CONTRACT = (
     "(username search, email lookup, domain recon, etc.) — and find the right tool for a purpose. When the "
     "user asks 'what OSINT tools exist for X' or 'find me a tool to look up a username/email/domain', forward "
     "it to the chat agent (it navigates the framework and reports the matching tool + its URL). "
-    "CONTEXT: you are always given the current chat thread and the documents of THIS chat session. Reference "
+    "CONTEXT: you are always given the current chat thread (its goal, a summary of older parts, an index of every "
+    "request the user made in it, and the latest exchanges) and the documents of THIS chat session; new chat "
+    "messages — typed by the user or answered by the chat agent — reach you as they happen. Reference "
     "them FIRST and always: when the user asks about something already discussed in the chat, or about a file "
     "they are working on, answer from that context — do not re-ask what is already there. Only ask the user "
     "for information when it is genuinely NOT available in the chat thread or the session's documents. Never "
@@ -171,14 +176,22 @@ def setup_realtime_routes() -> APIRouter:
         # assistant answers from what's already in the chat/documents and only
         # asks the user for what is genuinely missing.
         try:
-            from services.voice.memory import chat_summary_spine, session_documents_spine
+            from services.voice.memory import chat_context_digest, session_documents_spine
             _chat_sid = (body.get("chat_session_id") or None)
             _owner = effective_user(request)
-            _chat_ctx = chat_summary_spine(_chat_sid, _owner)
+            # The whole chat, not just its last few turns: goal, compacted
+            # summaries, an index of every request, and the latest exchanges
+            # in detail — so ALFRED never has to ask what the chat is about.
+            try:
+                _budget = int(settings.get("voice_chat_context_chars") or VOICE_CHAT_CONTEXT_CHARS)
+            except (TypeError, ValueError):
+                _budget = VOICE_CHAT_CONTEXT_CHARS
+            _budget = max(2000, min(_budget, 40000))
+            _chat_ctx = chat_context_digest(_chat_sid, _owner, budget=_budget)
             _docs_ctx = session_documents_spine(_chat_sid, _owner)
             _ctx_parts = []
             if _chat_ctx:
-                _ctx_parts.append("=== CURRENT CHAT THREAD ===\n" + _chat_ctx[:4000])
+                _ctx_parts.append("=== CURRENT CHAT THREAD ===\n" + _chat_ctx)
             if _docs_ctx:
                 _ctx_parts.append("=== DOCUMENTS IN THIS CHAT ===\n" + _docs_ctx[:4000])
             if _ctx_parts:
