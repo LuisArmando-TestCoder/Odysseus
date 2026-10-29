@@ -22,6 +22,18 @@ for the agent, `GET /api/cases/{id}/export`).
 
 Storage: `data/cases/<owner>/<case_id>.json`, written atomically, owner-scoped.
 
+### Link graph
+
+`CaseStore.graph()` turns a case into an entity graph, rendered on `/cases` as
+the **Link graph** card (dependency-free SVG, deterministic layout, no
+animation). Edges come from explicit relationships (solid, typed, directional)
+and from co-mention — two selectors named in the same finding (dashed, weight
+= shared findings; fan-out capped at 25 entities per finding). Big cases keep
+the best-connected `max_nodes`; the response reports how many were hidden.
+`hubs` (most connected) and `isolated` (no edge) are surfaced under the graph
+as "where to dig next". Tap/Enter on a node focuses it and lists its
+neighbours.
+
 ## Watchlist (`src/watchlist.py`)
 
 Watch any URL on an interval (min 15 min). Each check fetches the page
@@ -77,6 +89,7 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | GET/PATCH/DELETE | `/api/cases/{id}` | read (+pivots) / update / delete |
 | POST | `/api/cases/{id}/entities` · `/findings` · `/links` · `/steps` | add (`/steps` with `{"pivots": true}` queues all pivots) |
 | POST | `/api/cases/{id}/steps/{step}/done` | complete a step |
+| GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes, typed + co-mention edges, hubs, isolated |
 | GET | `/api/cases/{id}/export` | markdown dossier |
 | GET/POST | `/api/watchlist` | list / add |
 | DELETE | `/api/watchlist/{id}` | remove |

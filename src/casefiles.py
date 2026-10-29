@@ -588,6 +588,80 @@ class CaseStore:
             out.append(f"Identify the initial selectors (names, handles, emails, domains) for: {case['objective'][:200]}")
         return out
 
+    # -- graph -------------------------------------------------------------
+    def graph(self, owner, case_ref: str, max_nodes: int = 80) -> Dict[str, Any]:
+        """Entity-relationship graph for the /cases graph view.
+
+        Edges come from two places: explicit ``links`` (typed, ``kind="link"``)
+        and co-occurrence — two entities mentioned in the same finding
+        (``kind="co"``, ``weight`` = number of shared findings). When a pair has
+        both, the explicit link wins and carries the co-occurrence weight.
+
+        Large cases are capped to the ``max_nodes`` best-connected entities
+        (degree, then mentions); ``truncated`` says how many were dropped.
+        ``hubs`` lists the most connected entities, ``isolated`` the ones with
+        no edge at all — both are useful "where to dig next" signals.
+        """
+        case = self.get_case(owner, case_ref)
+        ents = case.get("entities") or {}
+        max_nodes = max(1, min(int(max_nodes or 80), 300))
+
+        edges: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+        def _key(a: str, b: str) -> Tuple[str, str]:
+            return (a, b) if a <= b else (b, a)
+
+        for f in case.get("findings") or []:
+            ids = [i for i in dict.fromkeys(f.get("entity_ids") or []) if i in ents]
+            # Cap per-finding fan-out so one giant paste can't create O(n²) edges.
+            ids = ids[:25]
+            for i in range(len(ids)):
+                for j in range(i + 1, len(ids)):
+                    k = _key(ids[i], ids[j])
+                    e = edges.get(k)
+                    if e is None:
+                        e = edges[k] = {"a": k[0], "b": k[1], "kind": "co",
+                                        "relation": "co_mentioned", "weight": 0, "evidence": 0}
+                    e["weight"] += 1
+        for l in case.get("links") or []:
+            a, b = l.get("a"), l.get("b")
+            if a not in ents or b not in ents or a == b:
+                continue
+            k = _key(a, b)
+            prev = edges.get(k)
+            if prev is not None and prev["kind"] == "link":
+                # Several typed relations between the same pair: keep them all in the label.
+                if l["relation"] not in prev["relation"].split(", "):
+                    prev["relation"] += ", " + l["relation"]
+                prev["evidence"] += len(l.get("evidence") or [])
+                continue
+            # Keep the stored direction for typed relations (a —owns→ b).
+            edges[k] = {"a": a, "b": b, "kind": "link", "relation": l["relation"],
+                        "weight": max(1, prev["weight"] if prev else 1),
+                        "evidence": len(l.get("evidence") or [])}
+
+        degree: Dict[str, int] = {i: 0 for i in ents}
+        for e in edges.values():
+            degree[e["a"]] += 1
+            degree[e["b"]] += 1
+
+        ranked = sorted(ents.values(), key=lambda e: (-degree[e["id"]], -int(e.get("mentions", 0)),
+                                                      e.get("value", "")))
+        keep = {e["id"] for e in ranked[:max_nodes]}
+        nodes = [{
+            "id": e["id"], "type": e["type"], "value": e["value"], "label": e.get("label", ""),
+            "confidence": round(float(e.get("confidence", 0.0)), 3),
+            "sources": len(e.get("sources") or []), "mentions": int(e.get("mentions", 0)),
+            "degree": degree[e["id"]],
+        } for e in ranked if e["id"] in keep]
+        out_edges = sorted((e for e in edges.values() if e["a"] in keep and e["b"] in keep),
+                           key=lambda e: (e["kind"] != "link", -e["weight"], e["a"], e["b"]))
+        hubs = [{"id": n["id"], "value": n["value"], "degree": n["degree"]}
+                for n in nodes if n["degree"] > 0][:5]
+        isolated = [n["id"] for n in nodes if n["degree"] == 0]
+        return {"case_id": case["id"], "nodes": nodes, "edges": out_edges, "hubs": hubs,
+                "isolated": isolated, "truncated": max(0, len(ents) - len(nodes))}
+
     # -- search / export ---------------------------------------------------
     def search(self, owner, query: str, limit: int = 25) -> List[Dict[str, Any]]:
         q = (query or "").strip().lower()

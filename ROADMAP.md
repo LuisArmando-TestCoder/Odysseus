@@ -48,9 +48,12 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   *new items* (title + link) instead of a line diff, keywords match item
   title/summary, and each new item is filed into the linked case as its own
   sourced finding. DOCTYPE/ENTITY-bearing XML is refused.
-- Next: a link to /cases from the main SPA, graph view of entity
-  relationships, case ↔ goal binding so a goal can drive a case's open steps
-  autonomously.
+- **Link graph** (`CaseStore.graph`, `GET /api/cases/{id}/graph`): SVG entity
+  graph on `/cases` from typed relationships + finding co-mentions, with hubs,
+  unconnected selectors, node focus, and a node cap for big cases.
+- Next: case ↔ goal binding so a goal can drive a case's open steps
+  autonomously; a link to /cases from the main SPA; cross-case entity overlap
+  ("this email also appears in case X") in the graph.
 
 ## Jarvis UI (in progress)
 

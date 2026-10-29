@@ -126,6 +126,10 @@ def setup_case_routes() -> APIRouter:
                    (b or {}).get("result", ""))
         return {"step": s}
 
+    @router.get("/api/cases/{case_id}/graph")
+    def case_graph(case_id: str, request: Request, max_nodes: int = 80):
+        return _guard(get_case_store().graph, _owner(request), case_id, max_nodes=max_nodes)
+
     @router.get("/api/cases/{case_id}/export")
     def export_case(case_id: str, request: Request):
         md = _guard(get_case_store().export_markdown, _owner(request), case_id)

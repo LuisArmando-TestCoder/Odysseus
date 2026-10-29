@@ -50,8 +50,20 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .w{padding:8px 0;border-bottom:1px dashed var(--border)}
 .w .url{font-family:var(--mono);font-size:12px;word-break:break-all;color:var(--muted)}
 .bad{color:var(--bad)} .good{color:var(--good)} .warn{color:var(--warn)}
+.graph-wrap{position:relative;width:100%;aspect-ratio:16/10;max-height:460px;background:var(--panel2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.graph-wrap svg{width:100%;height:100%;display:block;touch-action:manipulation}
+.graph-wrap .g-edge{stroke:var(--muted);stroke-opacity:.45}
+.graph-wrap .g-edge.link{stroke:var(--accent);stroke-opacity:.85}
+.graph-wrap .g-edge.co{stroke-dasharray:4 3}
+.graph-wrap .g-node{cursor:pointer;stroke:var(--bg);stroke-width:1.5}
+.graph-wrap .g-node:focus{outline:none}.graph-wrap .g-node:focus-visible{stroke:var(--fg);stroke-width:3}
+.graph-wrap text{font:13px var(--mono);fill:var(--fg);pointer-events:none;paint-order:stroke;stroke:var(--panel2);stroke-width:3px}
+.graph-wrap .dim{opacity:.15}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px}
+.legend span{font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--border);padding:8px 14px;border-radius:10px;display:none;z-index:9}
-@media (max-width:600px){header .meta{display:none}}
+@media (max-width:600px){header .meta{display:none}.graph-wrap{aspect-ratio:4/3}.graph-wrap text{font-size:24px}}
 @media (max-width:1100px){.layout{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -128,7 +140,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 
   const openCase = run(async (id) => {
     const { case: c, pivots } = await api('/api/cases/' + id);
-    current = c; renderCase(c, pivots); loadCases();
+    current = c; renderCase(c, pivots); loadGraph(c.id); loadCases();
   });
 
   function renderCase(c, pivots) {
@@ -158,6 +170,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="card stack"><h2>Add finding</h2>
         <textarea id="f-text" placeholder="Paste a fact, a profile blurb, a WHOIS record… emails, handles, phones, domains, URLs and IPs are extracted automatically."></textarea>
         <div class="row"><input id="f-src" placeholder="Source URL"><input id="f-conf" type="number" min="0" max="1" step="0.05" value="0.6" style="width:90px" aria-label="Confidence"><button class="primary" id="f-go">Record</button></div></div>
+      <div class="card" id="graph-card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Link graph</h2><span class="meta" id="g-meta"></span></div>
+        <div id="graph" style="margin-top:8px"><div class="meta">Loading graph…</div></div></div>
       <div class="grid2">
         <div class="card"><h2>Entities (${ents.length})</h2>${entHtml}${links ? `<h2 style="margin-top:14px">Relationships</h2>${links}` : ''}</div>
         <div class="card"><h2>Next steps</h2>${steps}<h2 style="margin-top:14px">Suggested pivots</h2>${piv}
@@ -166,6 +180,99 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="card"><h2>Findings (${c.findings.length})</h2>${findings}</div>
     </div>`;
   }
+
+  // ----- entity graph ------------------------------------------------------
+  const TYPE_COLORS = { person:'#ff8a65', org:'#ba68c8', username:'#4fc3f7', email:'#81c784', phone:'#ffd54f',
+    domain:'#4db6ac', url:'#90a4ae', ip:'#f06292', location:'#aed581', crypto:'#ffb74d', vehicle:'#a1887f',
+    document:'#9575cd', other:'#b0bec5' };
+  const SVGNS = 'http://www.w3.org/2000/svg';
+
+  // Deterministic Fruchterman–Reingold: same graph → same picture, no animation.
+  function layoutGraph(nodes, edges, W, H) {
+    const n = nodes.length, pos = new Map();
+    nodes.forEach((nd, i) => { const a = (2 * Math.PI * i) / Math.max(1, n);
+      const r = Math.min(W, H) * (nd.degree ? 0.3 : 0.44);
+      pos.set(nd.id, { x: W / 2 + r * Math.cos(a), y: H / 2 + r * Math.sin(a), dx: 0, dy: 0 }); });
+    if (n < 2) { if (n) Object.assign(pos.get(nodes[0].id), { x: W / 2, y: H / 2 }); return pos; }
+    const k = Math.sqrt((W * H) / n) * 0.75; let t = W / 8;
+    for (let it = 0; it < 220; it++) {
+      for (const p of pos.values()) { p.dx = 0; p.dy = 0; }
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const a = pos.get(nodes[i].id), b = pos.get(nodes[j].id);
+        let dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) || 0.01;
+        const f = (k * k) / d; dx = dx / d * f; dy = dy / d * f;
+        a.dx += dx; a.dy += dy; b.dx -= dx; b.dy -= dy;
+      }
+      for (const e of edges) {
+        const a = pos.get(e.a), b = pos.get(e.b); if (!a || !b) continue;
+        let dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) || 0.01;
+        const f = (d * d) / k * Math.min(2, 0.6 + 0.2 * e.weight); dx = dx / d * f; dy = dy / d * f;
+        a.dx -= dx; a.dy -= dy; b.dx += dx; b.dy += dy;
+      }
+      for (const p of pos.values()) {
+        // Gentle gravity keeps disconnected islands on screen.
+        p.dx += (W / 2 - p.x) * 0.02 * k / 10; p.dy += (H / 2 - p.y) * 0.02 * k / 10;
+        const d = Math.hypot(p.dx, p.dy) || 1, s = Math.min(d, t) / d;
+        p.x = Math.min(W - 24, Math.max(24, p.x + p.dx * s)); p.y = Math.min(H - 18, Math.max(18, p.y + p.dy * s));
+      }
+      t *= 0.975;
+    }
+    return pos;
+  }
+
+  function renderGraph(g) {
+    const box = $('#graph'); if (!box) return;
+    const meta = $('#g-meta');
+    if (!g.nodes.length) { box.innerHTML = '<div class="meta">No entities yet — record a finding and the selectors it mentions appear here, connected.</div>'; if (meta) meta.textContent = ''; return; }
+    if (meta) meta.textContent = `${g.nodes.length} nodes · ${g.edges.length} edges${g.truncated ? ` · ${g.truncated} hidden` : ''}`;
+    const W = 800, H = 500, pos = layoutGraph(g.nodes, g.edges, W, H);
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', `Entity graph with ${g.nodes.length} entities and ${g.edges.length} connections`);
+    const mk = (tag, attrs) => { const el = document.createElementNS(SVGNS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); return el; };
+    const byId = new Map(g.nodes.map(nd => [nd.id, nd]));
+    const edgeEls = g.edges.map(e => { const a = pos.get(e.a), b = pos.get(e.b);
+      const ln = mk('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: `g-edge ${e.kind}`, 'stroke-width': Math.min(4, 1 + 0.5 * e.weight) });
+      const tt = mk('title', {}); tt.textContent = e.kind === 'link' ? `${byId.get(e.a).value} —${e.relation}→ ${byId.get(e.b).value}` : `co-mentioned in ${e.weight} finding(s)`;
+      ln.appendChild(tt); svg.appendChild(ln); return { e, el: ln }; });
+    const showLabels = g.nodes.length <= 30;
+    const nodeEls = g.nodes.map(nd => { const p = pos.get(nd.id), r = 5 + Math.min(9, nd.degree * 1.5);
+      const c = mk('circle', { cx: p.x, cy: p.y, r, fill: TYPE_COLORS[nd.type] || TYPE_COLORS.other, class: 'g-node', tabindex: 0, 'data-node': nd.id });
+      const tt = mk('title', {}); tt.textContent = `[${nd.type}] ${nd.value} · ${nd.degree} link(s) · conf ${nd.confidence.toFixed(2)}`; c.appendChild(tt);
+      svg.appendChild(c);
+      let lbl = null;
+      if (showLabels || nd.degree >= 3) { const right = p.x > W * 0.68; lbl = mk('text', { x: right ? p.x - r - 3 : p.x + r + 3, y: p.y + 4, 'text-anchor': right ? 'end' : 'start' }); lbl.textContent = nd.value.length > 28 ? nd.value.slice(0, 27) + '…' : nd.value; svg.appendChild(lbl); }
+      return { nd, el: c, lbl }; });
+    const info = document.createElement('div'); info.className = 'meta'; info.style.marginTop = '6px';
+    const idle = g.hubs.length ? `Hubs: ${g.hubs.map(h => esc(h.value)).join(', ')}${g.isolated.length ? ` · ${g.isolated.length} unconnected` : ''} — tap a node to focus.` : 'No connections yet — findings that mention two selectors link them.';
+    info.innerHTML = idle;
+    let focused = null;
+    const focus = (id) => {
+      focused = focused === id ? null : id;
+      const nb = new Set(focused ? [focused] : []);
+      if (focused) g.edges.forEach(e => { if (e.a === focused) nb.add(e.b); if (e.b === focused) nb.add(e.a); });
+      nodeEls.forEach(({ nd, el, lbl }) => { const d = focused && !nb.has(nd.id); el.classList.toggle('dim', !!d); if (lbl) lbl.classList.toggle('dim', !!d); });
+      edgeEls.forEach(({ e, el }) => el.classList.toggle('dim', !!focused && e.a !== focused && e.b !== focused));
+      if (!focused) { info.innerHTML = idle; return; }
+      const nd = byId.get(focused);
+      const rel = g.edges.filter(e => e.a === focused || e.b === focused).map(e => { const o = byId.get(e.a === focused ? e.b : e.a);
+        return e.kind === 'link' ? `<b>${esc(e.relation)}</b> ${esc(o.value)}` : esc(o.value); });
+      info.innerHTML = `<code>${esc(nd.value)}</code> <span class="chip">${esc(nd.type)}</span> conf ${nd.confidence.toFixed(2)} · ${nd.sources} src${rel.length ? ` · ${rel.slice(0, 8).join(' · ')}${rel.length > 8 ? ` · +${rel.length - 8}` : ''}` : ' · no connections'}`;
+    };
+    svg.addEventListener('click', (ev) => { const id = ev.target.getAttribute && ev.target.getAttribute('data-node'); focus(id || focused); });
+    svg.addEventListener('keydown', (ev) => { const id = ev.target.getAttribute && ev.target.getAttribute('data-node'); if (id && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); focus(id); } });
+    const wrap = document.createElement('div'); wrap.className = 'graph-wrap'; wrap.appendChild(svg);
+    const types = [...new Set(g.nodes.map(nd => nd.type))].sort();
+    const legend = document.createElement('div'); legend.className = 'legend';
+    legend.innerHTML = types.map(t => `<span><i style="background:${TYPE_COLORS[t] || TYPE_COLORS.other}"></i>${esc(t)}</span>`).join('') +
+      '<span>— relation</span><span>┄ co-mentioned</span>';
+    box.replaceChildren(wrap, legend, info);
+  }
+
+  const loadGraph = async (id) => {
+    try { const g = await api(`/api/cases/${id}/graph`); if (current && current.id === id) renderGraph(g); }
+    catch (e) { const box = $('#graph'); if (box && e.message !== 'auth') box.innerHTML = `<div class="meta bad">Graph unavailable: ${esc(e.message)}</div>`; }
+  };
 
   $('#cases').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) openCase(li.dataset.id); });
   $('#cases').addEventListener('keydown', (e) => { const li = e.target.closest('li[data-id]'); if (li && e.key === 'Enter') openCase(li.dataset.id); });
