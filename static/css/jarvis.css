@@ -218,6 +218,223 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   4. SHELL — sidebar + icon rail (Run 2, "Tron" pass)
+   Geometry: tight 4px radii, one neon edge where the shell meets the canvas
+   (a light-cycle trail), neon bars instead of filled pills for state.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .sidebar,
+:root[data-odx-theme="jarvis"] .icon-rail {
+  --jv-edge: color-mix(in srgb, var(--jv-cyan) 70%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 0, transparent 140px),
+    linear-gradient(180deg, color-mix(in srgb, var(--jv-panel) 92%, transparent), color-mix(in srgb, var(--jv-void) 94%, transparent)) !important;
+  border: 1px solid transparent !important;
+  border-radius: 0;
+  box-shadow: 0 0 40px -8px color-mix(in srgb, var(--jv-cyan) 14%, transparent) !important;
+  font-family: var(--jv-ui);
+}
+
+/* The neon edge — a 1px light line, brightest at mid-height, with a
+   tight inner bloom. Lives in ::after (cinematic-ai hides it; we re-enable). */
+:root[data-odx-theme="jarvis"] .sidebar::after,
+:root[data-odx-theme="jarvis"] .icon-rail::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: auto;
+  width: 1px;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    var(--jv-edge) 18%,
+    var(--jv-cyan) 50%,
+    var(--jv-edge) 82%,
+    transparent 100%);
+  box-shadow: 0 0 6px var(--jv-glow), 0 0 18px var(--jv-glow-soft);
+  animation: none !important;
+  opacity: 0.85;
+}
+:root[data-odx-theme="jarvis"] .icon-rail { position: relative; }
+:root[data-odx-theme="jarvis"] .sidebar.right-side::after {
+  right: auto;
+  left: 0;
+}
+:root[data-odx-theme="jarvis"] .sidebar::before {
+  display: none !important;
+}
+
+/* Header — brand as a wide-tracked HUD wordmark over a fading circuit line. */
+:root[data-odx-theme="jarvis"] .sidebar .sidebar-header {
+  background: transparent;
+}
+:root[data-odx-theme="jarvis"] .sidebar .sidebar-header::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -10px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--jv-cyan) 45%, transparent) 30%, color-mix(in srgb, var(--jv-cyan) 45%, transparent) 70%, transparent);
+}
+:root[data-odx-theme="jarvis"] .sidebar .sidebar-brand-title {
+  font-family: var(--jv-ui);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  margin-right: -0.32em;               /* optical: trailing tracking */
+  color: var(--jv-cyan-hi);
+  text-shadow: 0 0 10px var(--jv-glow), 0 0 28px var(--jv-glow-soft);
+}
+:root[data-odx-theme="jarvis"] .sidebar .sidebar-hamburger,
+:root[data-odx-theme="jarvis"] .hamburger-btn {
+  color: var(--jv-cyan);
+}
+
+/* Section headers — mono micro-labels on a fading neon rule. */
+:root[data-odx-theme="jarvis"] .sidebar .section-title {
+  font-family: var(--jv-mono);
+  font-size: var(--jv-label-size);
+  letter-spacing: var(--jv-label-track);
+  text-transform: uppercase;
+  color: var(--jv-text-faint);
+}
+:root[data-odx-theme="jarvis"] .sidebar .section-title .section-icon {
+  color: var(--jv-cyan);
+  filter: drop-shadow(0 0 4px var(--jv-glow-soft));
+}
+:root[data-odx-theme="jarvis"] .sidebar .section-header-flex {
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(90deg, color-mix(in srgb, var(--jv-cyan) 32%, transparent), transparent 85%) 1;
+}
+
+/* Rows — crisp sans, tight geometry, neon bar on hover/active. */
+:root[data-odx-theme="jarvis"] .sidebar .list-item {
+  font-family: var(--jv-ui);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  color: var(--jv-text-dim);
+  transform: none !important;
+  transition: color var(--jv-fast) var(--jv-ease),
+              background-color var(--jv-fast) var(--jv-ease),
+              box-shadow var(--jv-base) var(--jv-ease),
+              border-color var(--jv-base) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .sidebar .list-item svg {
+  transition: color var(--jv-fast) var(--jv-ease), filter var(--jv-base) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .sidebar .list-item:hover {
+  color: var(--jv-text);
+  background: color-mix(in srgb, var(--jv-cyan) 6%, transparent);
+  border-color: transparent;
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--jv-cyan) 55%, transparent);
+}
+:root[data-odx-theme="jarvis"] .sidebar .list-item:hover > svg,
+:root[data-odx-theme="jarvis"] .sidebar .list-item:hover .sidebar-action-icon {
+  color: var(--jv-cyan);
+  filter: drop-shadow(0 0 4px var(--jv-glow));
+}
+:root[data-odx-theme="jarvis"] .sidebar .list-item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--jv-cyan), 0 0 0 1px var(--jv-void);
+}
+:root[data-odx-theme="jarvis"] .sidebar .list-item.active-session,
+:root[data-odx-theme="jarvis"] .sidebar .session-item.active {
+  color: #ffffff;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--jv-cyan) 16%, transparent) 0%,
+    color-mix(in srgb, var(--jv-cyan) 5%, transparent) 65%,
+    transparent 100%);
+  border-color: color-mix(in srgb, var(--jv-cyan) 30%, transparent);
+  box-shadow: inset 2px 0 0 var(--jv-cyan),
+              0 0 16px -4px var(--jv-glow);
+}
+:root[data-odx-theme="jarvis"] .sidebar .session-cost,
+:root[data-odx-theme="jarvis"] .sidebar .session-meta {
+  font-family: var(--jv-mono);
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--jv-cyan) 62%, var(--jv-void));
+}
+/* Background-run indicator: amber is attention, so a working session pulses amber. */
+:root[data-odx-theme="jarvis"] .run-dot.active {
+  background: var(--jv-amber);
+  box-shadow: 0 0 8px var(--jv-amber-glow);
+}
+:root[data-odx-theme="jarvis"] .run-dot.queued {
+  background: color-mix(in srgb, var(--jv-cyan) 60%, var(--jv-void));
+}
+:root[data-odx-theme="jarvis"] .sidebar .sidebar-notif-dot {
+  background: var(--jv-amber);
+  box-shadow: 0 0 8px var(--jv-amber-glow);
+}
+
+/* Dropdowns that live in the sidebar — glass + hairline. */
+:root[data-odx-theme="jarvis"] .sidebar .dropdown,
+:root[data-odx-theme="jarvis"] .sidebar #session-actions-dropdown {
+  background: var(--jv-glass-strong);
+  border: 1px solid var(--jv-line);
+  border-radius: var(--jv-radius-sm);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--jv-cyan) 10%, transparent),
+              0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+/* User bar — a docking strip: neon rule on top, ringed avatar. */
+:root[data-odx-theme="jarvis"] .sidebar .sidebar-user-bar {
+  border-top: 1px solid transparent;
+  border-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--jv-cyan) 40%, transparent) 50%, transparent) 1;
+  background: color-mix(in srgb, var(--jv-cyan) 3%, transparent);
+  font-family: var(--jv-mono);
+  letter-spacing: 0.08em;
+}
+:root[data-odx-theme="jarvis"] .sidebar .user-bar-avatar {
+  border: 1px solid var(--jv-cyan);
+  color: var(--jv-cyan-hi);
+  background: color-mix(in srgb, var(--jv-cyan) 8%, var(--jv-void));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--jv-cyan) 10%, transparent),
+              0 0 12px var(--jv-glow-soft);
+}
+
+/* Icon rail — same neon bar language. */
+:root[data-odx-theme="jarvis"] .icon-rail .icon-rail-btn {
+  border-radius: 4px;
+  color: var(--jv-text-dim);
+  transform: none !important;
+  transition: color var(--jv-fast) var(--jv-ease), background-color var(--jv-fast) var(--jv-ease),
+              box-shadow var(--jv-base) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .icon-rail .icon-rail-btn:hover {
+  color: var(--jv-cyan);
+  background: color-mix(in srgb, var(--jv-cyan) 7%, transparent);
+  box-shadow: none;
+}
+:root[data-odx-theme="jarvis"] .icon-rail .icon-rail-btn.active {
+  color: var(--jv-cyan-hi);
+  background: color-mix(in srgb, var(--jv-cyan) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--jv-cyan), 0 0 14px -4px var(--jv-glow);
+}
+
+/* Touch: 44px rows, slightly larger type, mobile drawer gets a deep shadow. */
+@media (max-width: 768px), (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] .sidebar .list-item { min-height: 44px; font-size: 14px; }
+  :root[data-odx-theme="jarvis"] .icon-rail .icon-rail-btn { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] .sidebar {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 0, transparent 140px),
+      var(--jv-panel) !important;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.7), 0 0 30px -6px color-mix(in srgb, var(--jv-cyan) 18%, transparent) !important;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
    3. ACCESSIBILITY GATES
    ─────────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -226,6 +443,12 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  :root[data-odx-theme="jarvis"] .sidebar,
+  :root[data-odx-theme="jarvis"] .icon-rail {
+    background: var(--jv-panel) !important;
+    -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+  }
   :root[data-odx-theme="jarvis"] .chat-container::before,
   :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
   :root[data-odx-theme="jarvis"] .jv-glass {
@@ -242,6 +465,13 @@
     --jv-line: var(--jv-line-strong);
     --jv-glow-k: 0;
   }
+  :root[data-odx-theme="jarvis"] .sidebar::after,
+  :root[data-odx-theme="jarvis"] .icon-rail::after {
+    background: var(--jv-cyan);
+    box-shadow: none;
+    opacity: 1;
+  }
+  :root[data-odx-theme="jarvis"] .sidebar .list-item { color: var(--jv-text); }
   :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
 }
 

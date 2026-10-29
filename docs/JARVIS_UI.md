@@ -46,7 +46,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 ## Area order (one per run)
 
 1. ✅ Foundation — preset, default, tokens, canvas, global primitives
-2. Shell / sidebar
+2. ✅ Shell / sidebar (Tron pass)
 3. Chat canvas + message bubbles
 4. Composer + voice/core indicator
 5. Modals / windows / dropdowns
@@ -76,5 +76,29 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 - Known pre-existing (not jarvis): with `/api/*` mocked, an 8px unpainted
   strip shows above the chat column in headless Chromium in every theme.
 
-**Next:** shell / sidebar — glass rail, mono micro-label section titles,
-cyan active-session indicator, 44px rows on mobile, collapse/expand motion.
+### Run 2 — 2026-10-29 · Shell / sidebar ("blue Tron")
+Direction from the user: *blue, Tron-like*. Recorded as part of the language:
+tight 4px radii, a single 1px **neon edge** where the shell meets the canvas
+(light-cycle trail, brightest mid-height), and **neon bars** (inset 2px cyan)
+instead of filled pills for hover/active state.
+- `.sidebar` / `.icon-rail`: dark glass with a cyan top-light, neon edge in
+  `::after` (flips to the left edge for `.sidebar.right-side`).
+- Brand: uppercase, 0.32em tracked wordmark in `--jv-cyan-hi` with a soft
+  bloom, over a fading circuit rule.
+- Section headers: mono micro-labels, cyan icons, gradient hairline rule.
+- Rows: Inter 13px (14px on touch), dim → full text on hover with a neon bar;
+  active session = cyan bar + gradient wash + hairline + soft glow; focus ring
+  is an inset cyan hairline.
+- Status: background-run dot and notification dots are **amber** (attention),
+  queued runs dim cyan. User bar: neon top rule, ringed avatar, mono name.
+- Touch: 44px rows / rail buttons; mobile drawer gets an opaque panel.
+- A11y: reduced-transparency → solid panel; more-contrast → solid edge, no
+  glow, full-strength row text.
+- Note: inside jarvis, sidebar rows use Inter regardless of the font setting
+  (the font setting still drives chat content).
+- Verified at 1440×900 + 390×844 (drawer open) in jarvis and light; light is
+  pixel-identical apart from ambient animation; hover state checked.
+
+**Next:** chat canvas + message bubbles — HUD transcript: hairline-framed AI
+turns with a mono role label + timestamp, user turns as right-aligned cyan
+glass, Tron-style code blocks, welcome hero wordmark.
