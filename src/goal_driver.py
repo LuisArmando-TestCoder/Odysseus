@@ -120,9 +120,11 @@ async def _round_stream(sess, messages, owner: str):
     except Exception:
         pass
 
+    yield f'data: {json.dumps({"type": "turn_resumed", "data": {"session_id": sess.id, "goal_round": True}})}\n\n'
     yield f'data: {json.dumps({"type": "model_info", "model": sess.model, "suffix": "Goal round"})}\n\n'
 
     full = ""
+    _metrics = {}
     tool_events = []
     round_num = 1
     async for chunk in stream_agent_loop(
@@ -145,6 +147,8 @@ async def _round_stream(sess, messages, owner: str):
                     if "delta" in d:
                         if not d.get("thinking"):
                             full += d["delta"]
+                    elif d.get("type") == "metrics" and isinstance(d.get("data"), dict):
+                        _metrics = dict(d["data"])
                     elif d.get("type") == "agent_step":
                         round_num = d.get("round", round_num)
                     elif d.get("type") == "tool_output":
@@ -159,10 +163,9 @@ async def _round_stream(sess, messages, owner: str):
 
     if full.strip():
         try:
-            sess.add_message(ChatMessage("assistant", full.strip(),
-                                         metadata={"goal_round": True,
-                                                   "tool_events": tool_events,
-                                                   "model": sess.model}))
+            _md = dict(_metrics) if _metrics else {"tool_events": tool_events}
+            _md.update({"goal_round": True, "model": sess.model})
+            sess.add_message(ChatMessage("assistant", full.strip(), metadata=_md))
         except Exception as e:
             logger.warning("[goal-driver] persisting round output failed: %s", e)
         yield f'data: {json.dumps({"type": "message_saved"})}\n\n'
@@ -247,7 +250,8 @@ async def _start_round(owner: Optional[str], goal: Optional[Dict[str, Any]]):
         messages = _round_messages(goal, owner)
         try:
             from src import agent_runs
-            agent_runs.start(session_id, _round_stream(sess, messages, owner), owner=owner)
+            agent_runs.start(session_id, _round_stream(sess, messages, owner), owner=owner,
+                             kind="goal", label=f"Goal round {goal.get('roundsStarted', 0)}")
         except Exception as e:
             logger.error("[goal-driver] round start failed: %s", e)
             return

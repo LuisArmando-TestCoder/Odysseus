@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Live document · Odysseus</title>
+<style>
+  :root {
+    --bg: #f6f8fa; --panel: #ffffff; --ink: #0d1b24; --dim: #5b6b75; --line: rgba(13, 27, 36, .12);
+    --accent: #0a84b8; --ok: #1a7f37; --warn: #b26b00; --code: #eef2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #01060c; --panel: #04111c; --ink: #dff8ff; --dim: #7f9fae; --line: rgba(79, 216, 255, .18);
+            --accent: #4fd8ff; --ok: #5be49b; --warn: #ffc069; --code: #061826; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); flex: none; }
+  header .dot.stale { background: var(--warn); box-shadow: none; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .meta { font-size: 12px; color: var(--dim); white-space: nowrap; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
+  article { background: var(--panel); border: 1px solid var(--line); padding: 28px clamp(16px, 4vw, 40px); }
+  article h1, article h2, article h3 { line-height: 1.25; }
+  article a { color: var(--accent); }
+  article pre { background: var(--code); padding: 12px 14px; overflow-x: auto; font-size: 13.5px; border: 1px solid var(--line); }
+  article code { font-family: "Fira Code", ui-monospace, Menlo, monospace; font-size: .92em; }
+  article table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
+  article th, article td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  article img { max-width: 100%; }
+  article.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
+  .mcp { border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 10px 12px; margin: 14px 0; background: var(--code); }
+  .mcp-head { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+  .mcp-head b { color: var(--ink); font-weight: 600; }
+  .mcp-head button { margin-left: auto; font: inherit; color: var(--accent); background: none; border: 1px solid var(--line); padding: 2px 10px; cursor: pointer; }
+  .mcp pre { margin: 0; max-height: 360px; overflow: auto; background: transparent; border: 0; padding: 0; white-space: pre-wrap; }
+  .err { color: var(--warn); }
+  footer { text-align: center; font-size: 12px; color: var(--dim); margin-top: 18px; }
+</style>
+</head>
+<body>
+<header><span class="dot" id="dot" title="live"></span><h1 id="title">Loading…</h1><span class="meta" id="meta"></span></header>
+<main><article id="doc" aria-live="polite"></article>
+<footer>Live document from Odysseus — updates automatically while it is being worked on.</footer></main>
+<script nonce="{{CSP_NONCE}}" src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script nonce="{{CSP_NONCE}}" src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script nonce="{{CSP_NONCE}}">
+(() => {
+  const TOKEN = "{{TOKEN}}";
+  const $ = (id) => document.getElementById(id);
+  let version = null, content = null, lastOk = Date.now();
+  const mcpTimers = [];
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const sanitize = (h) => (window.DOMPurify ? DOMPurify.sanitize(h) : esc(h));
+
+  function render(d) {
+    mcpTimers.splice(0).forEach(clearInterval);
+    document.title = (d.title || 'Live document') + ' · Odysseus';
+    $('title').textContent = d.title || 'Untitled';
+    const lang = (d.language || 'markdown').toLowerCase();
+    let html, safe = false;   // safe = built only from escaped text
+    let mcpIndex = 0;
+    if (lang === 'markdown' || lang === 'text' || lang === 'plain' || !lang) {
+      if (window.marked) {
+        const r = new marked.Renderer();
+        const baseCode = r.code.bind(r);
+        r.code = (code, info) => {
+          const text = typeof code === 'object' ? code.text : code;
+          const l = (typeof code === 'object' ? code.lang : info) || '';
+          if (l.trim() === 'mcp-live') return `<div class="mcp" data-mcp="${mcpIndex++}"></div>`;
+          return baseCode(code, info);
+        };
+        html = marked.parse(d.content || '', { renderer: r, gfm: true });
+      } else {
+        html = '<pre style="white-space:pre-wrap">' + esc(d.content || '') + '</pre>'; safe = true;
+      }
+    } else if ((lang === 'html' || lang === 'svg') && window.DOMPurify) {
+      html = d.content || '';
+    } else {
+      html = '<pre><code>' + esc(d.content || '') + '</code></pre>'; safe = true;
+    }
+    const art = $('doc');
+    art.innerHTML = safe ? html : (window.DOMPurify ? DOMPurify.sanitize(html) : '<pre>' + esc(d.content || '') + '</pre>');
+    art.classList.remove('flash'); void art.offsetWidth; art.classList.add('flash');
+    art.querySelectorAll('.mcp[data-mcp]').forEach(el => mountMcp(el, +el.dataset.mcp));
+  }
+
+  function mountMcp(el, i) {
+    el.innerHTML = '<div class="mcp-head"><span>live data</span><b>…</b><button type="button">Refresh</button></div><pre>loading…</pre>';
+    const pre = el.querySelector('pre'), name = el.querySelector('b'), btn = el.querySelector('button');
+    const run = async () => {
+      try {
+        const r = await fetch(`/live/${TOKEN}/mcp/${i}`, { method: 'POST', credentials: 'same-origin' });
+        const j = await r.json();
+        if (j.error) { pre.innerHTML = '<span class="err">' + esc(j.error) + '</span>'; return; }
+        name.textContent = j.tool || '';
+        const res = j.result;
+        let txt = res;
+        if (res && Array.isArray(res.content)) txt = res.content.map(c => c.text || JSON.stringify(c)).join('\n');
+        else if (typeof res !== 'string') txt = JSON.stringify(res, null, 2);
+        pre.textContent = txt;
+      } catch (e) { pre.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; }
+    };
+    btn.addEventListener('click', run);
+    run();
+    mcpTimers.push(setInterval(run, 60000));
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(`/live/${TOKEN}/data`, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      lastOk = Date.now();
+      if (d.version !== version || d.content !== content) {
+        version = d.version; content = d.content;
+        render(d);
+      }
+      $('meta').textContent = `v${d.version} · updated ${new Date((d.updated_at || '').replace(' ', 'T') + 'Z').toLocaleString()}`;
+      $('dot').classList.remove('stale');
+    } catch (e) {
+      if (Date.now() - lastOk > 15000) $('dot').classList.add('stale');
+    }
+  }
+  poll();
+  setInterval(() => { if (!document.hidden) poll(); }, 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+})();
+</script>
+</body>
+</html>

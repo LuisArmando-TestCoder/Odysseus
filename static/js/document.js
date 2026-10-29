@@ -3906,6 +3906,7 @@ import * as Modals from './modalManager.js';
             <button type="button" class="md-view-opt" data-renderview="run" title="Run / Preview"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
           </span>
           <button id="doc-fontsize-btn" class="doc-action-icon-btn" title="Font size" style="position:relative;width:28px;height:26px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7;"><path d="M4 7V4h16v3"/><path d="M12 4v16"/><path d="M8 20h8"/></svg><span class="doc-fontsize-levels"><i data-sz="s">S</i><i data-sz="m">M</i><i data-sz="l">L</i></span></button>
+          <button id="doc-live-btn" class="doc-action-icon-btn" title="Publish as a live page (updates in real time)" style="opacity:0.7;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/></svg></button>
           <button id="doc-diff-toggle-btn" class="doc-action-icon-btn" title="Compare changes" style="opacity:0.7;display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 12H2l5-5 5 5H9"/><path d="M19 12h3l-5 5-5-5h3"/></svg></button>
           <span class="md-toolbar-sep"></span>
           <button type="button" data-md="bold" title="Bold (Ctrl+B)"><b>B</b></button>
@@ -4625,6 +4626,22 @@ import * as Modals from './modalManager.js';
     });
 
     // Diff toggle button — compare current content against previous version
+    // Live artifact: publish the active document as /live/<token> and open it.
+    const liveBtn = document.getElementById('doc-live-btn');
+    if (liveBtn) liveBtn.addEventListener('click', async () => {
+      if (!activeDocId || String(activeDocId).startsWith('_')) return;
+      try { await saveDocument({ silent: true }); } catch (_) {}
+      try {
+        const r = await fetch(`${API_BASE}/api/hub/live`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify({ doc_id: activeDocId, allow_mcp: true }) });
+        const j = await r.json();
+        if (!r.ok || !j.url) throw new Error(j.detail || 'publish failed');
+        const full = location.origin + j.url;
+        try { await navigator.clipboard.writeText(full); } catch (_) {}
+        window.open(j.url, '_blank', 'noopener');
+        if (uiModule) uiModule.showToast('Live page published — link copied');
+      } catch (e) { if (uiModule) uiModule.showError('Could not publish: ' + e.message); }
+    });
     const diffToggleBtn = document.getElementById('doc-diff-toggle-btn');
     if (diffToggleBtn) diffToggleBtn.addEventListener('click', async () => {
       if (_diffModeActive) {

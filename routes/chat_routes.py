@@ -519,6 +519,23 @@ def setup_chat_routes(
             # index would be useless / unwanted noise.
             agent_mode=(chat_mode == "agent"),
         )
+        # Knowledge hub: @-mentioned chats + messages/findings from other chats.
+        try:
+            from src import hub as _hub
+            # Project-scoped: only chats in the same sidebar folder share context.
+            _hub_on = not incognito
+            for _blk in ((_hub.mention_context(ctx.user, message, session), _hub.inbox_context(ctx.user, session)) if _hub_on else ()):
+                if _blk:
+                    _m = {"role": "system", "content": _blk}
+                    ctx.messages.insert(len(ctx.preface), _m)
+                    ctx.preface.append(_m)
+        except Exception as _he:
+            logger.debug(f"hub context injection skipped: {_he}")
+        try:
+            from src import autopilot as _autopilot
+            _autopilot.on_user_message(session, ctx.preface, getattr(ctx, "user", None))
+        except Exception:
+            pass
 
         _research_flags = {"do": do_research}  # Mutable container for generator scope
 
@@ -587,6 +604,7 @@ def setup_chat_routes(
             disabled_tools.update({
                 "manage_memory",      # persistent memory store
                 "search_chats",       # past chat history
+                "session_read", "share_finding",
                 "manage_skills",      # skill presets tied to user
             })
 
@@ -616,9 +634,15 @@ def setup_chat_routes(
         _global_disabled = get_setting("disabled_tools", [])
         if _global_disabled and isinstance(_global_disabled, list):
             disabled_tools.update(_global_disabled)
-        # Strict per-chat isolation: search_chats reads other chats' messages
-        # into this one — a cross-chat context channel. Never offered.
-        disabled_tools.add("search_chats")
+        # Scoped to the chat's PROJECT (sidebar folder): a chat outside any
+        # project — or with the setting off — gets no cross-chat tools at all.
+        try:
+            from src import hub as _hub_scope
+            _peers = _hub_scope.peers(ctx.user, session)
+            if _peers is not None and not _peers:
+                disabled_tools.update({"search_chats", "session_read", "share_finding"})
+        except Exception:
+            disabled_tools.update({"search_chats", "session_read", "share_finding"})
 
         # Light auto-escalation: the user is in chat mode and just expressed a
         # notes/calendar/email intent. Grant the relevant managers but withhold
@@ -1161,6 +1185,12 @@ def setup_chat_routes(
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
         stopped = agent_runs.stop(session_id)
+        # Stop means stop: no autopilot turn / goal round restarts on its own.
+        try:
+            from src import autopilot
+            autopilot.disarm(session_id)
+        except Exception:
+            pass
         return {"stopped": stopped}
 
     # ------------------------------------------------------------------ #
@@ -1493,6 +1523,11 @@ def setup_chat_routes(
         # preface (system/memory/RAG/web/persona) + live history (ends with the
         # queued user message). Never re-append the message.
         _msgs = list(preface) + sess.get_context_messages()
+        try:
+            from src import autopilot as _autopilot
+            _autopilot.on_user_message(session_id, list(preface), owner)
+        except Exception:
+            pass
         # I1 queue UX — mark the queued-turn boundary so frontends can hand the
         # renderer over from the finished turn to this one.
         agent_runs.publish(

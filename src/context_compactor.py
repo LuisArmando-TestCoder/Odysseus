@@ -450,6 +450,12 @@ def _update_session_history(session, split_point: int, summary_levels: Dict[int,
     except Exception:
         manager = None
     if manager and getattr(session, "id", None):
+        # Rewind: keep the uncompacted history restorable (/rewind).
+        try:
+            from src import hub as _hub
+            _hub.snapshot(session.id, "before auto-compaction")
+        except Exception:
+            pass
         if manager.replace_messages(session.id, new_history):
             return
     session.history = new_history

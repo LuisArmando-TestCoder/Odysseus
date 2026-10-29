@@ -1759,8 +1759,43 @@ async function _cmdWebSearch(args, ctx) {
 
 // ── Search ──
 
+async function _hub() { return window.hubDashboard || (await import('./hubDashboard.js')).default; }
+async function _cmdDashboard(args) { (await _hub()).open('overview'); return true; }
+async function _cmdUsage(args) { (await _hub()).open('usage'); return true; }
+async function _cmdBoard(args) {
+  const text = args.join(' ').trim();
+  if (text) {
+    const sid = sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId();
+    const r = await fetch(`${API_BASE}/api/hub/board`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, kind: 'note', from_session: sid }) });
+    slashReply(r.ok ? 'Shared with your other chats.' : 'Could not share.');
+    return true;
+  }
+  (await _hub()).open('board'); return true;
+}
+async function _cmdRewind(args) { (await _hub()).openRewind(); return true; }
+async function _cmdAutopilot(args) {
+  const sid = sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId();
+  if (!sid) { slashReply('Open a chat first.'); return true; }
+  const sub = (args[0] || 'status').toLowerCase();
+  let r;
+  if (sub === 'on' || sub === 'off') {
+    r = await fetch(`${API_BASE}/api/hub/autopilot/${encodeURIComponent(sid)}`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ armed: sub === 'on' }) });
+  } else {
+    r = await fetch(`${API_BASE}/api/hub/autopilot/${encodeURIComponent(sid)}`, { credentials: 'same-origin' });
+  }
+  const st = r.ok ? await r.json() : null;
+  if (!st) { slashReply('Autopilot status unavailable.'); return true; }
+  slashReply(`Autopilot is <b>${st.enabled && st.armed ? 'on' : 'off'}</b> for this chat` +
+    (st.state ? ` · ${st.state}${st.reason ? ' (' + st.reason + ')' : ''}` : '') +
+    ` · ${st.auto_turns}/${st.max_turns} automatic turns. It keeps working through the plan on its own; Stop halts it, any message re-arms it. <code>/autopilot on|off</code>`);
+  return true;
+}
+
 async function _cmdSearch(args, ctx) {
   const query = args.join(' ');
+  if (query || !query) { (await _hub()).open('search', query); return true; }
   if (!query) { slashReply('Usage: /find &lt;query&gt;'); return true; }
   const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=20`, { credentials: 'same-origin' });
   if (res.ok) {
@@ -5701,11 +5736,50 @@ const COMMANDS = {
     noUserBubble: true,
     usage: '/search query'
   },
+  dashboard: {
+    alias: ['dash', 'agents', 'status'],
+    category: 'Productivity',
+    help: 'Agent dashboard: everything running, plans, goal, sub-agents, research, outputs',
+    handler: _cmdDashboard,
+    noUserBubble: true,
+    usage: '/dashboard',
+  },
+  usage: {
+    alias: ['cost', 'costs', 'spend'],
+    category: 'Productivity',
+    help: 'Cost & usage analytics by source, model, tool, MCP server and chat',
+    handler: _cmdUsage,
+    noUserBubble: true,
+    usage: '/usage',
+  },
+  board: {
+    alias: ['share'],
+    category: 'Productivity',
+    help: 'Cross-session board — /board opens it, /board <text> shares a note with every chat',
+    handler: _cmdBoard,
+    noUserBubble: true,
+    usage: '/board [text]',
+  },
+  rewind: {
+    alias: ['snapshots', 'restore'],
+    category: 'Productivity',
+    help: 'Rewind this chat to a snapshot taken before compaction / truncation / edits',
+    handler: _cmdRewind,
+    noUserBubble: true,
+    usage: '/rewind',
+  },
+  autopilot: {
+    alias: ['auto'],
+    category: 'Productivity',
+    help: 'Autopilot for this chat — keeps working through the plan on its own (on by default)',
+    handler: _cmdAutopilot,
+    noUserBubble: true,
+    usage: '/autopilot [on|off]',
+  },
   find: {
-    alias: ['search-history'],
-    category: 'Utility',
-    hidden: true,
-    help: 'Search all conversations',
+    alias: ['search-history', 'history'],
+    category: 'Productivity',
+    help: 'Search every chat\'s full transcript ("phrase", in:, role:, tool:, after:, PR URL)',
     handler: _cmdSearch,
     usage: '/find query'
   },

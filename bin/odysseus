@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""odysseus — command-line access to your Odysseus chats.
+
+  odysseus list [-n 20]                     recent chats
+  odysseus search <query…>                  full-transcript search (same syntax as the app:
+                                            "phrase", -exclude, in:, role:, tool:, after:, before:)
+  odysseus resume <id | id-prefix | PR URL | words> [--open] [--chat] [-n 20]
+                                            find a chat (a pull-request URL finds the chats that
+                                            touched it), print its recent history, then optionally
+                                            open it in the browser (--open) or keep talking to it
+                                            here (--chat; streams the agent's reply)
+  odysseus dashboard                        what is running right now (runs, plans, goal)
+  odysseus usage [--days 30]                cost / tokens by source, model and tool
+
+Auth: create an API token in Odysseus (Settings → API tokens) and export it:
+  export ODYSSEUS_TOKEN=ody_…        (optional when the server allows localhost bypass)
+  export ODYSSEUS_URL=http://127.0.0.1:7860
+"""
+import json
+import os
+import sys
+import textwrap
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+import webbrowser
+
+BASE = os.environ.get("ODYSSEUS_URL", "http://127.0.0.1:7860").rstrip("/")
+TOKEN = os.environ.get("ODYSSEUS_TOKEN", "")
+C = sys.stdout.isatty()
+def _c(code, s): return f"\033[{code}m{s}\033[0m" if C else s
+dim = lambda s: _c("2", s); bold = lambda s: _c("1", s); cyan = lambda s: _c("36", s); orange = lambda s: _c("33", s)
+
+
+def _req(path, data=None, method=None, headers=None, stream=False):
+    h = {"Accept": "application/json"}
+    if TOKEN:
+        h["Authorization"] = "Bearer " + TOKEN
+    h.update(headers or {})
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers=h)
+    try:
+        r = urllib.request.urlopen(req, timeout=None if stream else 60)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")[:300]
+        sys.exit(f"odysseus: {e.code} {e.reason} — {body}\n(set ODYSSEUS_TOKEN to an API token if this is an auth error)")
+    except urllib.error.URLError as e:
+        sys.exit(f"odysseus: cannot reach {BASE} ({e.reason}). Is Odysseus running?")
+    return r if stream else json.loads(r.read().decode() or "null")
+
+
+def get(path, **q):
+    qs = ("?" + urllib.parse.urlencode({k: v for k, v in q.items() if v is not None})) if q else ""
+    return _req(path + qs)
+
+
+def cmd_list(args):
+    n = int(_opt(args, "-n", 20))
+    d = get("/api/hub/sessions", limit=n)
+    for s in d["sessions"]:
+        print(f"{cyan(s['id'][:8])}  {bold(s['name'])}  {dim(str(s['messages']) + ' msgs · ' + s['updated'][:16])}")
+
+
+def cmd_search(args):
+    q = " ".join(args)
+    if not q:
+        sys.exit("usage: odysseus search <query>")
+    d = get("/api/hub/search", q=q, limit=40)
+    if not d["results"]:
+        print("No matches.")
+        return
+    for s in d["sessions"][:8]:
+        print(f"{cyan(s['session_id'][:8])}  {bold(s['name'])}  {dim(str(s['hits']) + ' hit(s)')}")
+    print()
+    for r in d["results"]:
+        who = "AI" if r["role"] == "assistant" else r["role"]
+        print(f"{cyan(r['session_id'][:8])} {dim(r['session_name'] + ' · ' + who + ' · ' + str(r['timestamp'])[:16])}")
+        print(textwrap.indent(textwrap.fill(r["snippet"], 100), "    "))
+
+
+def _resolve(target):
+    """id / id-prefix → that chat; URL or words → best search hit."""
+    sessions = get("/api/hub/sessions", limit=50)["sessions"]
+    for s in sessions:
+        if s["id"] == target or (len(target) >= 4 and s["id"].startswith(target)):
+            return s["id"], s["name"]
+    d = get("/api/hub/search", q=target, limit=5)
+    if d["sessions"]:
+        return d["sessions"][0]["session_id"], d["sessions"][0]["name"]
+    sys.exit(f"odysseus: no chat matches {target!r}")
+
+
+def cmd_resume(args):
+    flags = {a for a in args if a.startswith("--")}
+    n = int(_opt(args, "-n", 20))
+    target = " ".join(a for a in args if not a.startswith("-"))
+    if not target:
+        sys.exit("usage: odysseus resume <id | PR URL | words> [--open] [--chat]")
+    sid, name = _resolve(target)
+    hist = get(f"/api/history/{sid}").get("history", [])
+    print(bold(f"── {name} ") + dim(f"({sid}) · {len(hist)} messages"))
+    for m in hist[-n:]:
+        role = m.get("role")
+        content = m.get("content")
+        if isinstance(content, list):
+            content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
+        label = orange("you") if role == "user" else cyan("odysseus") if role == "assistant" else dim(role)
+        print(f"\n{label}")
+        print(textwrap.indent(str(content or "").strip()[:4000], "  "))
+    url = f"{BASE}/#{sid}"
+    print("\n" + dim("open in the app: " + url))
+    if "--open" in flags:
+        webbrowser.open(url)
+    if "--chat" in flags:
+        chat_loop(sid)
+
+
+def _stream_turn(sid, text):
+    boundary = uuid.uuid4().hex
+    parts = []
+    for k, v in (("message", text), ("session", sid), ("mode", "agent")):
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n')
+    body = ("".join(parts) + f"--{boundary}--\r\n").encode()
+    r = _req("/api/chat_stream", data=body, method="POST", stream=True,
+             headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Accept": "text/event-stream"})
+    buf = ""
+    for raw in r:
+        buf += raw.decode(errors="replace")
+        while "\n\n" in buf:
+            ev, buf = buf.split("\n\n", 1)
+            for line in ev.splitlines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    print()
+                    return
+                try:
+                    j = json.loads(data)
+                except ValueError:
+                    continue
+                if "delta" in j and not j.get("thinking") and not j.get("round_sep"):
+                    sys.stdout.write(j["delta"]); sys.stdout.flush()
+                elif j.get("type") == "tool_start":
+                    print(dim(f"\n  ⚙ {j.get('tool')} {str(j.get('command') or '')[:80]}"))
+                elif j.get("type") == "model_wait":
+                    sys.stdout.write(dim(f"\r  … waiting for the model {j.get('seconds')}s")); sys.stdout.flush()
+    print()
+
+
+def chat_loop(sid):
+    print(dim("\nchat mode — type a message, empty line or Ctrl-D to quit"))
+    while True:
+        try:
+            text = input(orange("you › "))
+        except EOFError:
+            break
+        if not text.strip():
+            break
+        print(cyan("odysseus › "), end="")
+        _stream_turn(sid, text)
+
+
+def cmd_dashboard(args):
+    d = get("/api/hub/dashboard")
+    runs = [r for r in d.get("runs", []) if r["status"] == "running"]
+    print(bold("Running"))
+    for r in runs or []:
+        print(f"  {cyan(r['session_id'][:8])} {r['name']} {dim(r['kind'] + (' · ' + r['label'] if r.get('label') else ''))}")
+    if not runs:
+        print(dim("  nothing running"))
+    print(bold("Plans"))
+    for p in d.get("plans", [])[:10]:
+        tot = len(p["done"]) + len(p["remaining"])
+        nd = len(p["done"])
+        print(f"  {cyan(p['session_id'][:8])} {p['name']} " + dim(f"{nd}/{tot} done")
+              + (f" · now: {p['current'] or p['remaining'][0]}" if p["remaining"] else ""))
+    g = d.get("goal")
+    print(bold("Goal"), (f"{g['objective']} {dim(g['phase'])}" if g else dim("none")))
+
+
+def cmd_usage(args):
+    days = int(_opt(args, "--days", 30))
+    d = get("/api/hub/usage", days=days)
+    t = d["totals"]
+    print(bold(f"{days} days: ${t['usd']:.2f} · {t['calls']} calls · {t['in']:,} in / {t['out']:,} out tokens"))
+    print(bold("By source"))
+    for k, v in d["by_source"].items():
+        print(f"  {k:<18} ${v['usd']:>8.3f}  {v['calls']:>6} calls")
+    print(bold("Top tools"))
+    for k, v in list(d["by_tool"].items())[:15]:
+        print(f"  {k:<24} {v['calls']:>6} calls  ≈{v['approx_tokens']:,} tokens  {dim(v['bucket'])}")
+
+
+def _opt(args, name, default):
+    if name in args:
+        i = args.index(name)
+        if i + 1 < len(args):
+            v = args[i + 1]
+            del args[i:i + 2]
+            return v
+    return default
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print(__doc__)
+        return
+    cmd, args = sys.argv[1], sys.argv[2:]
+    fn = {"list": cmd_list, "ls": cmd_list, "search": cmd_search, "find": cmd_search,
+          "resume": cmd_resume, "open": cmd_resume, "dashboard": cmd_dashboard, "status": cmd_dashboard,
+          "usage": cmd_usage, "cost": cmd_usage}.get(cmd)
+    if not fn:
+        sys.exit(f"odysseus: unknown command {cmd!r} (try --help)")
+    fn(args)
+
+
+if __name__ == "__main__":
+    main()

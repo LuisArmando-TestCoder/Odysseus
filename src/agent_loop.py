@@ -158,6 +158,7 @@ _API_AGENT_RULES = """\
 - Keep answers concise unless the user asks for depth.
 - PLAN VISIBLY: for any task with 3+ steps, your FIRST action is `todo_write` with every step ({"text","status"}); the user watches that checklist live in the chat. Re-send the full list (marking steps done / in_progress) each time a step finishes, and finish with all steps done. Use `create_goal` only for long-running objectives that must keep going across many rounds/turns (deep research, monitoring, large builds). Skip planning for quick one-shot answers.
 - NARRATE BRIEFLY, THINK PRIVATELY: text you write between tool calls is shown to the user as live progress — at most one or two short sentences (what you found / what you'll do next). Never put scratch work in the visible reply: no drafts you then revise, no syllable/character counting, no 'wait, actually…', no self-verification transcripts. Work those out in your reasoning (or with a tool), then show only the result. The final reply is the polished answer, not the path to it.
+- USE THE PROJECT'S WORKSPACE: chats in the same project (sidebar folder) share context. When the user refers to earlier work, another chat in the project or a past decision, `search_chats` / `session_read` first instead of asking them to repeat it (chats outside the project are off-limits). When you reach a key finding, decision or result that other lines of work need, `share_finding` it (one self-contained line or two). Reports and research deliverables go into a document, which is published as a live page automatically — give its link in your summary.
 - For long code or content, use document tools instead of pasting large blocks into chat.
 - Editing an existing document: ALWAYS use `edit_document` with find/replace. Only use `update_document` for genuine full rewrites (>50% changed) — do NOT echo the entire file back for small edits.
 - If the active editor document is an email draft/compose window, treat that open email as the target for "write this", "write the email", "reply with...", "make it say...", "draft this", and similar requests. Do NOT create another document, search/list/manage documents, or open a different reply unless the user explicitly asks. Edit the open email draft with `edit_document` or `update_document`; preserve To/Cc/Bcc/Subject/In-Reply-To/References/X-* header lines unless the user asks to change them.
@@ -562,7 +563,7 @@ _ADMIN_SCHEMA_NAMES = frozenset([
     "manage_session", "manage_skills", "manage_tasks",
     "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens",
     "create_session", "list_sessions", "send_to_session", "pipeline",
-    "ask_teacher", "list_models", "search_chats",
+    "ask_teacher", "list_models",
 ])
 _TOOL_SELECTION_TIMEOUT_SECONDS = 1.5
 
@@ -715,6 +716,20 @@ def _build_system_prompt(
             f"subtract the offset above from the user's local time "
             f"(local {_now.strftime('%H:%M')} = {_utc.strftime('%H:%M')} UTC right now).\n\n"
         ) + agent_prompt
+    except Exception:
+        pass
+
+    # Concise output style (default on; setting `output_style`: concise|normal).
+    try:
+        if str(get_setting("output_style", "concise") or "concise").lower() == "concise":
+            agent_prompt = (
+                "## Output style: concise\n"
+                "Lead with the answer or the key findings in the first line. No preamble "
+                "(no 'Great question', 'Sure, I'll…', no restating the request) and no filler "
+                "closings. Prefer short bullets or a small table for several items. Anything "
+                "long (a report, a write-up, code over ~15 lines) goes into a document; in chat "
+                "give a 2–4 line summary of what it says and where it is.\n\n"
+            ) + agent_prompt
     except Exception:
         pass
 
@@ -2755,6 +2770,8 @@ async def stream_agent_loop(
                     output_text = f'Document edited: "{title}" (v{ver}, {result.get("applied", 0)} edit(s))'
                 elif action == "update":
                     output_text = f'Document updated: "{title}" (v{ver})'
+                if result.get("live_url"):
+                    output_text += f' · live page: {result["live_url"]}'
             elif "stdout" in result:
                 # On a bash/python timeout the result carries error + (often
                 # empty) stdout/stderr; fall back to the error so the "timed

@@ -214,19 +214,45 @@ export function renderChatGoal(goal, extra = {}) {
   const trail = String(extra.checkpoint || '').trim().split('\n').filter(Boolean).slice(-4).join('\n');
   const tw = host.querySelector('.gd-trail-wrap');
   if (trail && !planMode) host.querySelector('.gd-trail').textContent = trail; else tw.hidden = true;
-  if (planMode) { host.querySelector('.gd-acts').style.display = 'none'; host.querySelector('.gd-bar-r').style.width = '0'; }
+  if (planMode) {
+    host.querySelector('.gd-bar-r').style.width = '0';
+    // Plan mode: the only control is Autopilot (keeps working through the
+    // remaining steps on its own; Stop / this toggle halts it).
+    const acts = host.querySelector('.gd-acts');
+    acts.innerHTML = '';
+    if (remaining.length && sid) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'gd-autopilot';
+      const paint = (st) => {
+        const on = st && st.enabled && st.armed;
+        b.dataset.on = on ? '1' : '0';
+        b.innerHTML = (on ? _GSVG.play : _GSVG.pause) + `<span>Autopilot ${on ? 'on' : 'off'}</span>`
+          + (st && st.state ? `<small>${st.state}${st.auto_turns ? ' · ' + st.auto_turns + '/' + st.max_turns : ''}</small>` : '');
+        b.title = on ? 'Odysseus continues the remaining steps on its own. Click (or Stop) to halt.' : 'Click to let Odysseus continue the remaining steps on its own.';
+      };
+      fetch('/api/hub/autopilot/' + encodeURIComponent(sid), { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).then(paint).catch(() => {});
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const r = await fetch('/api/hub/autopilot/' + encodeURIComponent(sid), { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ armed: b.dataset.on !== '1' }) });
+        if (r.ok) paint(await r.json());
+      });
+      acts.appendChild(b);
+    } else acts.style.display = 'none';
+  }
   const reason = goal.blockedReason?.message || '';
   const bl = host.querySelector('.gd-blocked'); bl.hidden = !reason; bl.textContent = reason;
-  host.querySelector('[data-act="pause"]').hidden = phase !== 'active';
-  host.querySelector('[data-act="resume"]').hidden = phase !== 'paused';
-  host.querySelector('[data-act="complete"]').hidden = phase === 'complete';
+  const _ab = (a) => host.querySelector(`[data-act="${a}"]`) || {};
+  _ab('pause').hidden = phase !== 'active';
+  _ab('resume').hidden = phase !== 'paused';
+  _ab('complete').hidden = phase === 'complete';
   const head = host.querySelector('.gd-head');
   head.addEventListener('click', () => {
     const o = host.classList.toggle('open');
     head.setAttribute('aria-expanded', String(o));
     try { localStorage.setItem(_openKey(goal.id), o ? '1' : '0'); } catch (_) {}
   });
-  host.querySelectorAll('.gd-acts button').forEach(b => b.addEventListener('click', async (e) => {
+  host.querySelectorAll('.gd-acts button[data-act]').forEach(b => b.addEventListener('click', async (e) => {
     e.stopPropagation();
     await fetch('/api/goal/' + b.dataset.act, { method: 'POST', credentials: 'same-origin' });
     refreshGoal();

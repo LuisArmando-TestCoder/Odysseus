@@ -123,6 +123,16 @@ if [ -z "$ODYSSEUS_NO_OPEN" ] && command -v open >/dev/null 2>&1; then
   fi
 fi
 
+# Keep the Mac awake while Odysseus runs, so autonomous work (autopilot turns,
+# goal rounds, scheduled tasks) never stalls because the machine slept.
+# -i idle sleep, -m disk sleep, -s system sleep on AC power. The display may
+# still sleep. Ends automatically when the server exits (-w).
+# Opt out with ODYSSEUS_ALLOW_SLEEP=1.
+if [ -z "$ODYSSEUS_ALLOW_SLEEP" ] && command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -ims -w $$ >/dev/null 2>&1 &
+  log "  keep-awake on (caffeinate pid $!) — the Mac won't sleep while Odysseus runs"
+fi
+
 # exec keeps this PID, so the PID file points at the server itself.
 echo $$ > "$PIDFILE"
 exec "$PY" -m uvicorn app:app --host "$HOST" --port "$PORT"

@@ -344,3 +344,5 @@
 .goal-dock.plan .gd-bar-r { display: none; }
 .goal-dock.plan .gd-ico { opacity: .8; }
 .goal-dock.plan.complete .gd-obj { opacity: .7; }
+.goal-dock .gd-autopilot small { margin-left: 6px; opacity: .65; font-size: 10.5px; }
+.goal-dock .gd-autopilot[data-on="1"] { color: var(--accent-primary, #4fd8ff); }

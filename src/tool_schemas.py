@@ -549,13 +549,60 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "search_chats",
-            "description": "Search the user's past chat conversations by keyword. Use when the user asks about previous chats, past conversations, or wants to find a discussion they had before. Returns matching sessions with clickable links.",
+            "description": "Search ALL of the user's chats (full transcripts) and get matching passages with chat ids. Syntax: words, \"exact phrase\", -exclude, in:<chat>, role:user|ai, tool:<tool>, after:YYYY-MM-DD, before:YYYY-MM-DD. Paste a URL (e.g. a pull-request link) to find the chats that touched it. Use whenever the user refers to earlier work, a past decision or another chat.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search keyword(s) to find in past conversations"}
+                    "query": {"type": "string", "description": "Search query in the syntax above"}
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "session_read",
+            "description": "Read a dense recap of another chat (its summary + latest exchanges, or only passages matching `query`). Use to pull context from another chat instead of asking the user to re-explain.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Chat id or id prefix (from search_chats / list_sessions)"},
+                    "query": {"type": "string", "description": "Optional: only passages mentioning this"}
+                },
+                "required": ["session_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "share_finding",
+            "description": "Share a key finding, decision or result with the user's OTHER chats via the cross-session board (they receive it automatically in their context). Optionally address it to one chat.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The finding / decision, self-contained (1-6 sentences)"},
+                    "title": {"type": "string", "description": "Short title"},
+                    "kind": {"type": "string", "enum": ["finding", "decision", "result", "question"]},
+                    "to_session": {"type": "string", "description": "Optional chat id to deliver it to directly"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "publish_live",
+            "description": "Publish a document as a live, shareable web page that updates in real time as the document changes. Markdown documents may contain ```mcp-live blocks ({\"tool\": \"server.tool\", \"args\": {...}, \"refresh\": 60}) that fetch live data from MCP servers when the page is opened (needs allow_mcp).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "string", "description": "Document id (defaults to the active / most recent document)"},
+                    "allow_mcp": {"type": "boolean", "description": "Let mcp-live blocks fetch data for readers"}
+                },
+                "required": []
             }
         }
     },

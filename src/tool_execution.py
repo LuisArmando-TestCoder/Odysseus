@@ -1113,6 +1113,19 @@ async def execute_tool_block(
         title = content.split("\n")[0].strip()[:60]
         desc = f"create_document: {title}"
         result = await do_create_document(content, session_id=session_id, owner=owner)
+        # Live artifacts: substantial reports are published as live pages
+        # automatically (setting live_artifacts_auto, default on).
+        try:
+            from src.settings import get_setting as _gs_live
+            if (isinstance(result, dict) and result.get("doc_id")
+                    and str(_gs_live("live_artifacts_auto", True)).lower() not in ("false", "0")
+                    and (result.get("language") or "markdown") in ("markdown", "html", "text", "plain")
+                    and len(result.get("content") or "") >= 1200):
+                from src import hub as _hub_live
+                _it = _hub_live.publish_live(owner, result["doc_id"])
+                result["live_url"] = f"/live/{_it['token']}"
+        except Exception as _le:
+            logger.debug(f"auto live publish skipped: {_le}")
     elif tool == "update_document":
         desc = f"update_document: {content.split(chr(10))[0][:60]}"
         result = await do_update_document(content, owner=owner)
@@ -1122,15 +1135,73 @@ async def execute_tool_block(
     elif tool == "suggest_document":
         result = await do_suggest_document(content, owner=owner)
         desc = f"suggest_document: {result.get('count', 0)} suggestions"
-    elif tool == "search_chats":
-        # Disabled: it reads OTHER chats' messages into the current one, which
-        # breaks strict per-chat isolation. Blocked here for every caller
-        # (chat, scheduler, teacher) regardless of disabled_tools.
-        desc = "search_chats: BLOCKED"
-        result = {
-            "error": "search_chats is disabled — each chat only sees its own context.",
-            "exit_code": 1,
-        }
+    elif tool in ("search_chats", "session_read", "share_finding", "publish_live"):
+        # Knowledge hub (src/hub.py) — cross-session context, always scoped to
+        # the caller's own chats. Turn off with setting cross_session_context=false.
+        from src import hub as _hub
+        try:
+            _a = json.loads(content) if content.strip().startswith("{") else None
+        except (json.JSONDecodeError, TypeError):
+            _a = None
+        _allowed = _hub.peers(owner, session_id) if tool != "publish_live" else None
+        if _allowed is not None and not _allowed:
+            desc = f"{tool}: outside a project"
+            result = {"error": "Cross-chat context only works between chats in the same project (sidebar "
+                               "folder), and this chat isn't in a project with other chats. Ask the user to "
+                               "move the related chats into one project folder.", "exit_code": 1}
+        elif tool == "search_chats":
+            q = (_a or {}).get("query") if _a else content.strip()
+            desc = f"search_chats: {str(q)[:60]}"
+            r = _hub.search(owner, q or "", 25, allowed=_allowed)
+            lines = []
+            for s_ in r["sessions"][:10]:
+                lines.append(f"- [{s_['name']}](#{s_['session_id']}) — {s_['hits']} hit(s) · id {s_['session_id'][:8]}")
+            lines.append("")
+            for h in r["results"][:20]:
+                lines.append(f"[{h['session_name']} · {h['role']} · {str(h['timestamp'])[:16]}] {h['snippet']}")
+            result = {"output": "\n".join(lines) if r["results"] else "No matches.", "exit_code": 0,
+                      "hits": len(r["results"])}
+        elif tool == "session_read":
+            a = _a or {"session_id": content.strip().split()[0] if content.strip() else ""}
+            desc = f"session_read: {str(a.get('session_id'))[:12]}"
+            r = _hub.recap(owner, str(a.get("session_id") or ""), query=a.get("query"), allowed=_allowed)
+            result = ({"output": f"Chat “{r['name']}” ({r['messages']} messages):\n{r['recap']}", "exit_code": 0}
+                      if r else {"error": "Chat not found in this project (use search_chats for ids).", "exit_code": 1})
+        elif tool == "share_finding":
+            a = _a or {"text": content}
+            desc = f"share_finding: {str(a.get('title') or a.get('text'))[:60]}"
+            to = a.get("to_session")
+            if to:
+                _r = _hub.recap(owner, to, max_chars=10, allowed=_allowed)
+                to = _r["session_id"] if _r else None
+            try:
+                it = _hub.share(owner, session_id, a.get("text") or "", to_session=to,
+                                kind=a.get("kind") or "finding", title=a.get("title"))
+                result = {"output": f"Shared ({it['kind']}){' with chat ' + to[:8] if to else ' on the board'} — the other chats in this project will see it.",
+                          "exit_code": 0}
+            except ValueError as e:
+                result = {"error": str(e), "exit_code": 1}
+        else:  # publish_live
+            a = _a or {}
+            doc_id = a.get("doc_id")
+            if not doc_id:
+                try:
+                    from src.tool_implementations import _active_document_id as _adi
+                    doc_id = _adi
+                except Exception:
+                    doc_id = None
+            if not doc_id:
+                with _hub._db() as _c:
+                    _row = _c.execute("SELECT id FROM documents WHERE session_id=? ORDER BY updated_at DESC LIMIT 1",
+                                      (session_id,)).fetchone()
+                doc_id = _row["id"] if _row else None
+            desc = f"publish_live: {str(doc_id)[:8]}"
+            if not doc_id:
+                result = {"error": "No document to publish — create one first.", "exit_code": 1}
+            else:
+                it = _hub.publish_live(owner, doc_id, allow_mcp=bool(a.get("allow_mcp")))
+                result = {"output": f"Live page: /live/{it['token']} (updates automatically as the document changes)",
+                          "exit_code": 0, "live_url": f"/live/{it['token']}"}
     elif tool in ("chat_with_model", "create_session", "list_sessions",
                   "send_to_session", "pipeline",
                   "manage_session", "manage_memory", "list_models",

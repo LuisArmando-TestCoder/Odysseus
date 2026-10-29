@@ -761,6 +761,11 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         """Summarize older messages into one compacted history entry."""
         _verify_session_owner(request, session_id)
         try:
+            from src import hub as _hub
+            _hub.snapshot(session_id, 'before compaction')
+        except Exception:
+            pass
+        try:
             session = session_manager.get_session(session_id)
         except KeyError:
             raise HTTPException(404, f"Session {session_id} not found")

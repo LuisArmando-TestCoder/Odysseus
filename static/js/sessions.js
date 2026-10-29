@@ -819,7 +819,7 @@ window.refreshSessionCosts = refreshSessionCosts;
 let _runsPoll = null;
 function _ensureRunsPoll() {
   if (_runsPoll) return;
-  _runsPoll = setInterval(_refreshRunDots, 5000);
+  _runsPoll = setInterval(_refreshRunDots, 3000);
   _refreshRunDots();
 }
 async function _refreshRunDots() {
@@ -828,6 +828,7 @@ async function _refreshRunDots() {
     if (!res.ok) return;
     const data = await res.json();
     const byId = new Map((data.runs || []).map(r => [r.session_id, r]));
+    try { window.dispatchEvent(new CustomEvent('odysseus:runs', { detail: data.runs || [] })); } catch (_) {}
     document.querySelectorAll('.session-item[data-session-id]').forEach(item => {
       const r = byId.get(item.dataset.sessionId);
       const dot = item.querySelector('.run-dot');

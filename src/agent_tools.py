@@ -41,6 +41,7 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "universal_search", "y
               "job_output",
               "job_kill",
               "todo_write",
+              "session_read", "share_finding", "publish_live",
               "sinalevi_search",
               "corteidh_search",
               "corteidh_case",

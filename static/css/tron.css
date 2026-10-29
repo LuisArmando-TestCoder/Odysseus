@@ -30,7 +30,7 @@
   .msg.msg-ai, .msg.msg-user, .chat-input-bar, .modal-content, .edit-summary,
   .act-group, .goal-card, .deliverable-card, .queue-tray, .admin-card,
   .agent-diff-popover, .es-popover, .question-card, .research-job, .rs-panel,
-  .goal-new-btn, .stall-banner, [id="stall-banner"], .deep-dive
+  .goal-new-btn, .hub-dash-btn, .hubdash, .stall-banner, [id="stall-banner"], .deep-dive
 ) {
   --c: 10px;
   --ln: var(--tr-ln);
@@ -48,7 +48,7 @@
   .msg.msg-ai, .msg.msg-user, .chat-input-bar, .modal-content, .edit-summary,
   .act-group, .goal-card, .deliverable-card, .queue-tray, .admin-card,
   .agent-diff-popover, .es-popover, .question-card, .research-job, .rs-panel,
-  .goal-new-btn, .stall-banner, [id="stall-banner"], .deep-dive
+  .goal-new-btn, .hub-dash-btn, .hubdash, .stall-banner, [id="stall-banner"], .deep-dive
 )::before {
   content: "" !important;
   display: block !important;

@@ -163,6 +163,17 @@ function handleInput(e) {
 
   debounceTimer = setTimeout(async () => {
     try {
+      // Search syntax (in:, role:, tool:, after:, "phrase", -exclude) or a
+      // pasted URL / PR link → full-transcript hub search.
+      if (/(^|\s)(in|role|tool|after|before|since|until):|"|(^|\s)-\w|https?:\/\//.test(query)) {
+        const r2 = await fetch(`${API_BASE}/api/hub/search?q=${encodeURIComponent(query)}&limit=30`, { credentials: 'same-origin' });
+        if (!r2.ok) return;
+        const d2 = await r2.json();
+        const hl = (d2.query && d2.query.terms && d2.query.terms[0]) || '';
+        renderResults((d2.results || []).map(x => ({ session_id: x.session_id, session_name: x.session_name,
+          role: x.role, content_snippet: x.snippet, timestamp: x.timestamp })), hl);
+        return;
+      }
       const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=20`);
       if (!res.ok) return;
       const data = await res.json();

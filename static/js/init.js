@@ -3,6 +3,7 @@
 
 import Storage from './storage.js';
 import { initGoalCard } from './goalCard.js';
+import { initHub } from './hubDashboard.js';
 
 function clearFreshComposerRestore() {
   const msgInput = document.getElementById('message');
@@ -411,6 +412,7 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
    index.html; this just hydrates it. */
 try {
   initGoalCard();
+  try { initHub(); } catch (e) { console.warn('hub init failed', e); }
 } catch (_e) {
   // The goal card is optional — never let its init break the rest of the UI.
   console.warn('[init] goal card init failed:', _e);

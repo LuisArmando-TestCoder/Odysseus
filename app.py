@@ -180,6 +180,9 @@ if AUTH_ENABLED:
     import re as _re
     AUTH_EXEMPT_PATTERNS = [
         _re.compile(r"^/api/tasks/[^/]+/webhook/[^/]+/?$"),
+        # Live artifacts: the unguessable token in the path is the credential
+        # (routes/hub_routes.py returns 404 for unknown tokens).
+        _re.compile(r"^/live/[A-Za-z0-9_-]{16,64}(/data|/mcp/\d+)?/?$"),
     ]
 
     def _is_auth_exempt(path: str) -> bool:
@@ -560,6 +563,11 @@ app.include_router(setup_case_routes())
 # Goals (continuous goals — versioned goal state + round driver)
 from routes.goal_routes import setup_goal_routes
 app.include_router(setup_goal_routes())
+try:
+    from routes.hub_routes import setup_hub_routes
+    app.include_router(setup_hub_routes(session_manager, components.get("research_handler")))
+except Exception as _hub_e:
+    logger.warning(f"hub routes failed to load: {_hub_e}")
 
 # Ask-user questions (Cluster B / Q4 — pending mid-task question + answer)
 from routes.question_routes import setup_question_routes
@@ -897,6 +905,11 @@ async def startup_event():
         agent_runs.on_finish(turn_inbox.drain_on_finish)
         from src import goal_driver
         agent_runs.on_finish(goal_driver.on_run_finished)
+        try:
+            from src import autopilot as _autopilot
+            agent_runs.on_finish(_autopilot.on_run_finished)
+        except Exception as _e:
+            logger.warning(f"autopilot hook failed: {_e}")
         _startup_tasks.append(goal_driver.start_daemon())
         logger.info("Turn inbox + goal round driver wired")
     except Exception as _e:

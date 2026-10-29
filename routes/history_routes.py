@@ -98,6 +98,11 @@ def setup_history_routes(session_manager) -> APIRouter:
     async def truncate_session(request: Request, session_id: str):
         _verify_session_owner(request, session_id)
         try:
+            from src import hub as _hub
+            _hub.snapshot(session_id, 'before truncate')
+        except Exception:
+            pass
+        try:
             body = await request.json()
             keep_count = body.get("keep_count", 0)
             result = session_manager.truncate_messages(session_id, keep_count)
@@ -168,6 +173,11 @@ def setup_history_routes(session_manager) -> APIRouter:
         """Delete specific messages by DB ID (or legacy index)."""
         _verify_session_owner(request, session_id)
         try:
+            from src import hub as _hub
+            _hub.snapshot(session_id, 'before deleting messages')
+        except Exception:
+            pass
+        try:
             body = await request.json()
             msg_ids = body.get("msg_ids", [])
             indices = body.get("indices")  # legacy fallback
@@ -230,6 +240,11 @@ def setup_history_routes(session_manager) -> APIRouter:
     async def edit_message(request: Request, session_id: str):
         """Edit the content of a message by its database ID."""
         _verify_session_owner(request, session_id)
+        try:
+            from src import hub as _hub
+            _hub.snapshot(session_id, 'before editing a message')
+        except Exception:
+            pass
         try:
             body = await request.json()
             msg_id = body.get("msg_id")
@@ -532,6 +547,11 @@ def setup_history_routes(session_manager) -> APIRouter:
     async def compact_session(request: Request, session_id: str):
         """Manually trigger context compaction for a session."""
         _verify_session_owner(request, session_id)
+        try:
+            from src import hub as _hub
+            _hub.snapshot(session_id, 'before compaction')
+        except Exception:
+            pass
         try:
             session = session_manager.get_session(session_id)
         except KeyError:

@@ -619,7 +619,17 @@ import agentActivity from './agentActivity.js';
               const n = document.createElement('div');
               n.className = 'status-note queue-resumed-note';
               n.setAttribute('role', 'status');
-              n.innerHTML = _QSVG.play + '<span>queued message now running</span>';
+              const _rd = j.data || {};
+              n.innerHTML = _QSVG.play + `<span>${_rd.autopilot ? 'autopilot — continuing the plan on its own (Stop to halt)' : _rd.goal_round ? 'goal round — working toward the goal (Stop to pause)' : 'queued message now running'}</span>`;
+              if (_rd.autopilot || _rd.goal_round) n.classList.add('autopilot-note');
+              _hist().appendChild(n);
+              continue;
+            }
+            if (j.type === 'autopilot' && j.data && (j.data.step || j.data.note)) {
+              const n = document.createElement('div');
+              n.className = 'status-note autopilot-note';
+              n.setAttribute('role', 'status');
+              n.innerHTML = _QSVG.play + `<span>${_escQ(j.data.note || ('step: ' + j.data.step))}</span>`;
               _hist().appendChild(n);
               continue;
             }
@@ -4086,6 +4096,16 @@ import agentActivity from './agentActivity.js';
    * Initialize event listeners
    */
   export function initListeners() {
+    // Detached autopilot turns / goal rounds start server-side on their own:
+    // attach the live view when one is running in the chat on screen.
+    window.addEventListener('odysseus:runs', (ev) => {
+      try {
+        const sid = sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId();
+        if (!sid || isStreaming || _queuedRendererActive) return;
+        const r = (ev.detail || []).find(x => x.session_id === sid && x.status === 'running');
+        if (r && (r.kind === 'autopilot' || r.kind === 'goal')) _renderQueuedTurn(sid);
+      } catch (_) {}
+    });
     // Global event delegation for copy-code buttons
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.copy-code');
