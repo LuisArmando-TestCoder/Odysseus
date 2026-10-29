@@ -64,9 +64,13 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   `POST /api/cases/{id}/drive`, "Drive with goal" on `/cases`): a goal works a
   case's open steps round after round — record findings, close steps, queue
   pivots, finish when resolved — with the case text fenced as untrusted data.
+- **Cold-case nudges** (`src/case_nudges.py`, `check_stale_cases` scheduled
+  task "Intel Cold Cases", daily brief section): open cases idle 3+ days with
+  no goal driving them get one concrete next move (drive with goal / top
+  pivot), nudged once per quiet spell.
 - Next: a link to /cases from the main SPA; cross-case entity overlap ("this
-  email also appears in case X") in the graph; daily brief nudge for open
-  cases with no goal and stale open steps.
+  email also appears in case X") in the graph; one-click "Drive with goal"
+  from a cold-case notification.
 
 ## Jarvis UI (in progress)
 

@@ -79,7 +79,20 @@ minutes) re-checks due watches and delivers changes as notifications. It is a
 silent no-op when nothing is watched or nothing changed.
 
 The **Daily brief** now includes open cases, one suggested next move per case,
-and watchlist health.
+watchlist health, and **cases going cold**.
+
+### Cold-case nudges
+
+`src/case_nudges.py` flags open cases with no activity (finding, step, link,
+status change) for 3+ days that no live goal is driving. Each gets one next
+move: *drive it with a goal* when it has open steps, otherwise its top
+suggested pivot (or "add a step / close it"). They appear in the daily brief,
+and the built-in scheduled task **Intel Cold Cases** (`check_stale_cases`,
+daily at 09:23) notifies about them. A case is nudged once per quiet spell —
+again only after it was touched and went quiet again, or after 7 days ignored.
+Dedup state lives in `data/cases/<owner>/.nudges.json`; titles/steps are
+cleaned and capped before they reach a notification. Silent no-op when nothing
+is cold.
 
 ## Agent tools
 

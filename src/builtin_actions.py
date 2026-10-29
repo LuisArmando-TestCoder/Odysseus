@@ -1313,6 +1313,13 @@ def _intel_brief_lines(owner: str) -> list:
     except Exception:
         logger.debug("daily_brief: case summary failed", exc_info=True)
     try:
+        from src.case_nudges import format_nudges, stale_cases
+        cold = format_nudges(stale_cases(owner, limit=5))
+        if cold:
+            lines += ["", cold]
+    except Exception:
+        logger.debug("daily_brief: stale case nudges failed", exc_info=True)
+    try:
         from src.watchlist import get_watch_store
         watches = get_watch_store().list(owner)
         if watches:
@@ -1355,6 +1362,22 @@ async def action_check_watchlist(owner: str, **kwargs) -> Tuple[str, bool]:
     if res["errors"]:
         body += f"\n({len(res['errors'])} watch(es) failed to fetch)"
     return body, True
+
+
+async def action_check_stale_cases(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Nudge about open Case Files that went quiet (no activity for a few
+    days and no goal driving them), each with one concrete next move. A case
+    is nudged once per quiet spell (again after a week if still ignored).
+    Nothing new to say → TaskNoop (silent)."""
+    try:
+        from src.case_nudges import due_nudges, format_nudges
+        due = await asyncio.to_thread(due_nudges, owner)
+    except Exception as e:
+        logger.exception("check_stale_cases action failed")
+        return str(e), False
+    if not due:
+        raise TaskNoop("no cases going cold")
+    return format_nudges(due, header=f"{len(due)} open case(s) going cold:"), True
 
 
 async def action_test_skills(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -2276,6 +2299,7 @@ BUILTIN_ACTIONS = {
     "audit_skills": action_audit_skills,
     "check_email_urgency": action_check_email_urgency,
     "check_watchlist": action_check_watchlist,
+    "check_stale_cases": action_check_stale_cases,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -2297,5 +2321,6 @@ BUILTIN_ACTION_INFO = {
     "test_skills": "Run the per-skill Test on every skill: agent run + LLM judge → records verdict on the skill (pass/needs_work/fail/inconclusive). Advisory only — never rewrites or demotes anything.",
     "audit_skills": "Audit unaudited skills after enough new skills are added: test, narrow metadata, self-edit/retry, optional teacher rewrite, tag duplicates/trivial skills, and publish/draft using the auto-approve threshold.",
     "check_watchlist": "Re-check watched pages (Intel Watchlist) for changes; file changes into the linked case and notify. Keyword watches only alert when a keyword appears in new text.",
+    "check_stale_cases": "Daily: point out open Case Files with no activity for 3+ days and no goal driving them, with one concrete next move each (drive with a goal, or a suggested pivot). Each case is nudged once per quiet spell.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
 }
