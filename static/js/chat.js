@@ -573,7 +573,36 @@ import agentActivity from './agentActivity.js';
     const submitBtn = document.querySelector('.send-btn');
     const _hist = () => document.getElementById('chat-history');
     updateSubmitButton('streaming', submitBtn);
-    let holder = null, acc = '', lastRender = 0;
+    let holder = null, acc = '', lastRender = 0, thinkAcc = '';
+    // Autonomous rounds stream their thinking live (not hidden): a live tail
+    // above the bubble body while it thinks, folded into a <think> block (the
+    // usual "View thinking process" section) once the answer text starts.
+    const _ensureHolder = () => {
+      if (holder) return holder;
+      holder = document.createElement('div');
+      holder.className = 'msg msg-ai streaming';
+      holder.innerHTML = '<div class="role"></div><div class="body"></div>';
+      _hist().appendChild(holder);
+      return holder;
+    };
+    const _liveThink = (on) => {
+      if (!holder) return;
+      let el = holder.querySelector('.live-thinking');
+      if (!on) { if (el) el.remove(); return; }
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'live-thinking';
+        el.setAttribute('aria-live', 'off');
+        holder.insertBefore(el, holder.querySelector('.body'));
+      }
+      el.textContent = thinkAcc.length > 1400 ? '…' + thinkAcc.slice(-1400) : thinkAcc;
+    };
+    const _flushThink = () => {
+      if (!thinkAcc) return;
+      acc += '<think>' + thinkAcc + '</think>';
+      thinkAcc = '';
+      _liveThink(false);
+    };
     const render = () => {
       if (!holder) return;
       holder.querySelector('.body').innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(acc));
@@ -592,7 +621,7 @@ import agentActivity from './agentActivity.js';
         }
         if (!res || !res.ok) break;
         // New turn: reset per-run state.
-        holder = null; acc = '';
+        holder = null; acc = ''; thinkAcc = '';
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = '';
@@ -623,14 +652,25 @@ import agentActivity from './agentActivity.js';
               n.innerHTML = _QSVG.play + `<span>${_rd.autopilot ? 'autopilot — continuing the plan on its own (Stop to halt)' : _rd.goal_round ? 'goal round — working toward the goal (Stop to pause)' : 'queued message now running'}</span>`;
               if (_rd.autopilot || _rd.goal_round) n.classList.add('autopilot-note');
               _hist().appendChild(n);
+              // The round's own prompt, shown as Odysseus' message to itself.
+              if (_rd.goal_round && _rd.self_message && chatRenderer.buildSelfMessage) {
+                _hist().appendChild(chatRenderer.buildSelfMessage(_rd.self_message, 'goal'));
+              }
+              uiModule.scrollHistory();
               continue;
             }
             if (j.type === 'autopilot' && j.data && (j.data.step || j.data.note)) {
-              const n = document.createElement('div');
-              n.className = 'status-note autopilot-note';
-              n.setAttribute('role', 'status');
-              n.innerHTML = _QSVG.play + `<span>${_escQ(j.data.note || ('step: ' + j.data.step))}</span>`;
-              _hist().appendChild(n);
+              if (j.data.step && !j.data.note && chatRenderer.buildSelfMessage) {
+                _hist().appendChild(chatRenderer.buildSelfMessage(
+                  `Autopilot turn ${j.data.turn || ''} — continuing on my own with: ${j.data.step}`, 'autopilot'));
+              } else {
+                const n = document.createElement('div');
+                n.className = 'status-note autopilot-note';
+                n.setAttribute('role', 'status');
+                n.innerHTML = _QSVG.play + `<span>${_escQ(j.data.note || ('step: ' + j.data.step))}</span>`;
+                _hist().appendChild(n);
+              }
+              uiModule.scrollHistory();
               continue;
             }
             if (j.type === 'turn_failed') {
@@ -644,6 +684,7 @@ import agentActivity from './agentActivity.js';
             }
             if (!sawResumed) continue;
             if (j.type === 'agent_step') {
+              if (holder) { _flushThink(); render(); holder.classList.remove('streaming'); }
               const sep = chatRenderer.addRoundSeparator(j.round, j.round_ms);
               if (sep) _hist().appendChild(sep);
               holder = document.createElement('div');
@@ -657,14 +698,16 @@ import agentActivity from './agentActivity.js';
               _hist().appendChild(holder);
               acc = '';
             } else if (j.delta !== undefined && !j.type) {
-              if (j.thinking || j.round_sep) continue;
-              if (!holder) {
-                // First round has no agent_step — open its bubble on first text.
-                holder = document.createElement('div');
-                holder.className = 'msg msg-ai streaming';
-                holder.innerHTML = '<div class="role"></div><div class="body"></div>';
-                _hist().appendChild(holder);
+              if (j.round_sep) continue;
+              // First round has no agent_step — open its bubble on first token.
+              _ensureHolder();
+              if (j.thinking) {
+                thinkAcc += (j.delta || '');
+                const nowT = performance.now();
+                if (nowT - lastRender > 120) { lastRender = nowT; _liveThink(true); uiModule.scrollHistory(); }
+                continue;
               }
+              _flushThink();
               acc += (j.delta || '');
               const now = performance.now();
               if (now - lastRender > 80) { lastRender = now; render(); }
@@ -672,8 +715,25 @@ import agentActivity from './agentActivity.js';
               const n = document.createElement('div');
               n.className = 'status-note queued-tool-note';
               n.setAttribute('role', 'status');
-              n.innerHTML = _QSVG.wrench + `<span class="queued-tool-label">${_escQ(j.tool || 'tool')}…</span>`;
+              const _cmd = j.command ? String(j.command).slice(0, 400) : '';
+              n.innerHTML = _QSVG.wrench + `<span class="queued-tool-label">${_escQ(j.tool || 'tool')}…</span>` +
+                (_cmd ? `<code class="queued-tool-cmd">${_escQ(_cmd)}</code>` : '');
+              n.dataset.tool = j.tool || '';
               _hist().appendChild(n);
+              uiModule.scrollHistory();
+            } else if (j.type === 'tool_progress') {
+              // Browser JS bridge works in autonomous rounds too (the agent's
+              // run_javascript awaits this page's answer).
+              if (j.eval_request && j.eval_token) { handleEvalRequest(j); continue; }
+              // Live command output while a long tool runs (bash/python).
+              const _p = j.data || j;
+              const notes = _hist().querySelectorAll('.queued-tool-note:not(.ok):not(.err)');
+              const n = notes[notes.length - 1];
+              if (n && (_p.tail || _p.elapsed_s != null)) {
+                let t = n.querySelector('.queued-tool-tail');
+                if (!t) { t = document.createElement('pre'); t.className = 'queued-tool-tail'; n.appendChild(t); }
+                t.textContent = (_p.elapsed_s != null ? `[${Math.round(_p.elapsed_s)}s] ` : '') + String(_p.tail || '').slice(-600);
+              }
             } else if (j.type === 'tool_output') {
               const n = document.createElement('div');
               n.className = 'status-note queued-tool-note';
@@ -719,7 +779,7 @@ import agentActivity from './agentActivity.js';
           if (runDone) break;
         }
         // [DONE] for this run: freeze what we rendered.
-        if (holder) { render(); holder.classList.remove('streaming'); }
+        if (holder) { _flushThink(); render(); holder.classList.remove('streaming'); }
         // Next queued turn (drain chain) or exit?
         let stillActive = false;
         try {
@@ -2979,6 +3039,26 @@ import agentActivity from './agentActivity.js';
                   const act = m.setGoalActivity || (m.default && m.default.setGoalActivity);
                   const rf = m.refreshGoal || (m.default && m.default.refreshGoal);
                   if (act) act((json.data && json.data.phase === 'blocked') ? 'blocked' : 'idle');
+                  if (rf) rf();
+                }).catch(() => {});
+
+              } else if (json.type === 'goal_auto') {
+                // Long-horizon request detected: a goal was started for it in
+                // this chat (or one is suggested). Say so in the thread.
+                const _ga = json.data || {};
+                const _box = document.getElementById('chat-history');
+                if (_box && !_isBg) {
+                  const n = document.createElement('div');
+                  n.className = 'status-note autopilot-note goal-auto-note';
+                  n.setAttribute('role', 'status');
+                  const _what = _ga.action === 'started'
+                    ? 'Long-horizon task detected — running it as a goal; rounds will keep streaming here (Stop pauses)'
+                    : 'Long-horizon task detected — ' + (_ga.why || 'a goal can take it over');
+                  n.innerHTML = _QSVG.play + `<span>${_escQ(_what)}${_ga.objective ? ': <em>' + _escQ(String(_ga.objective).slice(0, 160)) + '</em>' : ''}</span>`;
+                  _box.appendChild(n);
+                }
+                import('./goalCard.js').then(m => {
+                  const rf = m.refreshGoal || (m.default && m.default.refreshGoal);
                   if (rf) rf();
                 }).catch(() => {});
 

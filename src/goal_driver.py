@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,43 @@ def _bump_rounds(owner: str) -> Optional[Dict[str, Any]]:
     return goal_mod.get_goal(owner)
 
 
-def _round_messages(goal: Dict[str, Any], owner: str) -> list:
+def _hist_items(sess) -> list:
+    out = []
+    for m in list(getattr(sess, "history", None) or []):
+        role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else None)
+        content = getattr(m, "content", None) or (m.get("content") if isinstance(m, dict) else "") or ""
+        meta = getattr(m, "metadata", None) or (m.get("metadata") if isinstance(m, dict) else None) or {}
+        if isinstance(content, str) and content.strip():
+            out.append((role, content, meta))
+    return out
+
+
+def _steering_block(sess, max_user: int = 3) -> str:
+    """The chat's latest user messages (they steer the goal) and the tail of
+    the previous visible round, so each round continues the conversation the
+    user can see instead of starting from the checkpoint alone."""
+    if sess is None:
+        return ""
+    items = _hist_items(sess)
+    users = [c for r, c, _ in items if r == "user"][-max_user:]
+    last_round = next((c for r, c, md in reversed(items)
+                       if r == "assistant" and isinstance(md, dict) and md.get("goal_round")), "")
+    parts = []
+    if users:
+        parts.append("=== LATEST USER MESSAGES IN THIS CHAT (newest last — they steer the goal) ===\n"
+                     + "\n---\n".join(u[:1500] for u in users))
+    if last_round:
+        parts.append("=== YOUR PREVIOUS ROUND'S VISIBLE OUTPUT (tail) ===\n" + last_round[-1500:])
+    return "\n\n".join(parts)
+
+
+def self_message(goal: Dict[str, Any]) -> str:
+    """The round's self-prompt, shown in the chat so nothing runs hidden."""
+    return (f"Goal round {goal.get('roundsStarted', 0)}/{goal.get('maxGoalRounds', 256)} — "
+            f"continuing on my own toward: {str(goal.get('objective', ''))[:300]}")
+
+
+def _round_messages(goal: Dict[str, Any], owner: str, sess=None) -> list:
     """Goal frame + checkpoint + synthetic continue message (DSH goal-source)."""
     from src.checkpoint import checkpoint_read
     try:
@@ -104,6 +141,12 @@ def _round_messages(goal: Dict[str, Any], owner: str) -> list:
         case_block = ""
     if case_block:
         frame += "\n\n" + case_block
+    try:
+        steer = _steering_block(sess)
+    except Exception:
+        steer = ""
+    if steer:
+        frame += "\n\n" + steer
     messages = [{"role": "system", "content": frame}]
     if cp and cp.strip():
         messages.append({"role": "system", "content":
@@ -127,7 +170,14 @@ async def _round_stream(sess, messages, owner: str):
     except Exception:
         pass
 
-    yield f'data: {json.dumps({"type": "turn_resumed", "data": {"session_id": sess.id, "goal_round": True}})}\n\n'
+    _self = ""
+    try:
+        from src import goal as _goal_mod
+        _g = _goal_mod.get_goal(owner) or {}
+        _self = self_message(_g)
+    except Exception:
+        _g = {}
+    yield f'data: {json.dumps({"type": "turn_resumed", "data": {"session_id": sess.id, "goal_round": True, "round": _g.get("roundsStarted"), "max": _g.get("maxGoalRounds"), "objective": str(_g.get("objective", ""))[:300], "self_message": _self}})}\n\n'
     yield f'data: {json.dumps({"type": "model_info", "model": sess.model, "suffix": "Goal round"})}\n\n'
 
     full = ""
@@ -171,7 +221,8 @@ async def _round_stream(sess, messages, owner: str):
     if full.strip():
         try:
             _md = dict(_metrics) if _metrics else {"tool_events": tool_events}
-            _md.update({"goal_round": True, "model": sess.model})
+            _md.update({"goal_round": True, "model": sess.model, "goal_round_n": _g.get("roundsStarted"),
+                        "self_message": _self})
             sess.add_message(ChatMessage("assistant", full.strip(), metadata=_md))
         except Exception as e:
             logger.warning("[goal-driver] persisting round output failed: %s", e)
@@ -216,6 +267,8 @@ async def _start_round(owner: Optional[str], goal: Optional[Dict[str, Any]]):
             return
         if goal.get("activation") != "armed":
             return  # human-only re-arm (DSH rule)
+        if float(goal.get("holdUntil") or 0) > time.time():
+            return  # auto-started goal: the user's own turn goes first
 
         session_id = goal.get("session_id")
         if not session_id:
@@ -254,7 +307,7 @@ async def _start_round(owner: Optional[str], goal: Optional[Dict[str, Any]]):
         if not goal or goal.get("phase") != "active":
             return
 
-        messages = _round_messages(goal, owner)
+        messages = _round_messages(goal, owner, sess)
         try:
             from src import agent_runs
             agent_runs.start(session_id, _round_stream(sess, messages, owner), owner=owner,

@@ -33,6 +33,15 @@ Done and tested (architecture in `docs/harness-port.md`, plan in the repo histor
 Remaining (small): i18n for the new UI strings, cross-process run resume,
 a workflow-tool equivalent, and the UI niceties tracked in the commit log.
 
+## Long-horizon autonomy (shipped)
+
+- Requests that need sustained work are detected and run as a goal on their
+  own (`src/long_horizon.py`, settings `auto_goal_mode` / `auto_goal_threshold`);
+  a goal running in the chat is steered by new messages instead of replaced.
+- Goal rounds and autopilot turns stream visibly: self-messages, live thinking,
+  commands and their output; `run_javascript` works inside them. See
+  `docs/long-horizon.md`.
+
 ## Intel Board (shipped)
 
 - **Case Files** (`src/casefiles.py`, `case_file` tool, `/api/cases`, `/cases`):

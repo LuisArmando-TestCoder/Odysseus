@@ -274,7 +274,8 @@ async def _stream(sess, messages, owner, n: int, step: str):
             yield chunk
     finally:
         if full.strip():
-            meta.update({"autopilot": True, "autopilot_turn": n, "model": sess.model})
+            meta.update({"autopilot": True, "autopilot_turn": n, "model": sess.model,
+                         "self_message": f"Autopilot turn {n} — continuing on my own with: {str(step or 'the plan')[:300]}"})
             try:
                 sess.add_message(ChatMessage("assistant", full.strip(), metadata=meta))
             except Exception as e:

@@ -539,6 +539,31 @@ def setup_chat_routes(
                     ctx.preface.append(_m)
         except Exception as _he:
             logger.debug(f"hub context injection skipped: {_he}")
+        # Long-horizon detection: a request that clearly needs many rounds
+        # starts a goal in THIS chat on its own (or steers the goal already
+        # running here); the rounds then stream into the chat while it's idle.
+        _lh_event = None
+        if not do_research and isinstance(message, str) and message.strip():
+            try:
+                from src import long_horizon as _lh
+                _lh_dec = _lh.decide(message, getattr(ctx, "user", None), session, incognito=incognito)
+                _lh_txt = _lh.turn_context(_lh_dec)
+                if _lh_txt:
+                    _m = {"role": "system", "content": _lh_txt}
+                    ctx.messages.insert(len(ctx.preface), _m)
+                    ctx.preface.append(_m)
+                if _lh_dec.get("action") in ("started", "suggest"):
+                    _g = _lh_dec.get("goal") or {}
+                    _lh_event = {"type": "goal_auto", "data": {
+                        "action": _lh_dec["action"], "objective": _lh_dec.get("objective") or _g.get("objective", ""),
+                        "reasons": _lh_dec.get("reasons", [])[:4], "score": _lh_dec.get("score"),
+                        "why": _lh_dec.get("why", "")}}
+                if _lh_dec.get("action") == "started":
+                    logger.info("[long-horizon] goal auto-started in %s (score %s)", session, _lh_dec.get("score"))
+                    from src import goal_driver as _gd
+                    _gd._publish_goal_update(getattr(ctx, "user", None))
+            except Exception as _lhe:
+                logger.debug(f"long-horizon detection skipped: {_lhe}")
         try:
             from src import autopilot as _autopilot
             _autopilot.on_user_message(session, ctx.preface, getattr(ctx, "user", None))
@@ -862,6 +887,8 @@ def setup_chat_routes(
             if ctx.preset.character_name:
                 _model_info["character_name"] = ctx.preset.character_name
             yield f'data: {json.dumps(_model_info)}\n\n'
+            if _lh_event:
+                yield f'data: {json.dumps(_lh_event)}\n\n'
 
             if _is_image_generation_session(sess):
                 from src.settings import get_setting

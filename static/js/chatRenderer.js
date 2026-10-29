@@ -2073,6 +2073,21 @@ export function displayMetrics(messageElement, metrics) {
 /**
  * Add a message to the chat history.
  */
+/** Odysseus talking to itself: the visible prompt of an autonomous turn. */
+export function buildSelfMessage(text, kind) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-self' + (kind ? ' msg-self-' + kind : '');
+  el.setAttribute('role', 'note');
+  const who = document.createElement('div');
+  who.className = 'role self-role';
+  who.textContent = kind === 'goal' ? 'Odysseus → itself · goal round' : 'Odysseus → itself · autopilot';
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.textContent = text || '';
+  el.append(who, body);
+  return el;
+}
+
 export function addMessage(role, content, modelName, metadata, _target) {
   try {
     hideWelcomeScreen();
@@ -2084,6 +2099,12 @@ export function addMessage(role, content, modelName, metadata, _target) {
 
     var esc = uiModule.esc;
     const textRaw = Array.isArray(content) ? markdownModule.renderContent(content) : content;
+
+    // Autonomous turns (goal rounds / autopilot) are never hidden: their
+    // self-prompt is shown as Odysseus' own message before the output.
+    if (role === 'assistant' && metadata && metadata.self_message) {
+      target.appendChild(buildSelfMessage(metadata.self_message, metadata.goal_round ? 'goal' : 'autopilot'));
+    }
 
     // --- Agent multi-bubble reconstruction from saved metadata ---
     if (role === 'assistant' && metadata && metadata.tool_events && metadata.tool_events.length > 0) {
@@ -2595,6 +2616,7 @@ const chatRenderer = {
   updateMessageAttachments,
   addRoundSeparator,
   buildDeliverableCard,
+  buildSelfMessage,
 };
 
 export default chatRenderer;
