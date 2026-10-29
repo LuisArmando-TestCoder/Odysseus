@@ -52,6 +52,16 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   relationships, case ↔ goal binding so a goal can drive a case's open steps
   autonomously.
 
+## Jarvis UI (in progress)
+
+`jarvis` — a calm holographic-HUD theme — is now the default preset
+(users with a saved theme keep theirs). Foundation shipped: tokens, canvas,
+global primitives in `static/css/jarvis.css`, scoped to
+`:root[data-odx-theme="jarvis"]`. Next areas, one per pass: sidebar → chat
+bubbles → composer/voice core → modals → settings → notes/tasks/calendar →
+documents → email → cookbook/research/compare → login/landing → /cases →
+mobile. Spec + log: `docs/JARVIS_UI.md`.
+
 ## High Priority
 
 - SQUASH BUGS

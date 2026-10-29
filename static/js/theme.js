@@ -29,9 +29,18 @@ export const THEMES = {
                             inputBg: '#2f2f2f' } },
   claude:     { bg:'#262624', fg:'#f5f4f0', panel:'#30302e', border:'#4a4a47', red:'#c6613f' },
   cute:       { bg:'#fff0f5', fg:'#d4608a', panel:'#fff8fa', border:'#f0c0d0', red:'#ff6b9d' },
+  // Holographic HUD — near-black blue canvas, one arc-reactor cyan light
+  // source. Structural chrome lives in static/css/jarvis.css, scoped to
+  // :root[data-odx-theme="jarvis"]. See docs/JARVIS_UI.md.
+  jarvis:     { bg:'#060b14', fg:'#d3e9f5', panel:'#0a1424', border:'#1f3d57', red:'#4fd8ff',
+                advanced: { userBubbleBg: '#0d1d31', aiBubbleBg: '#081221',
+                            bubbleBorder: '#1f3d57', sidebarBg: '#070e1a',
+                            inputBg: '#0a1526', inputBorder: '#25506e',
+                            sendBtnBg: '#4fd8ff', sendBtnHover: '#8be6ff',
+                            codeBg: '#050a12', toggleActive: '#4fd8ff' } },
 };
 
-const DEFAULT_THEME = 'dark';
+const DEFAULT_THEME = 'jarvis';
 const LS_KEY = 'odysseus-theme';
 const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
 
@@ -58,6 +67,7 @@ const THEME_DEFAULT_PATTERN = {
   organs:     'rain',
   ume:        'petals',
   cute:       'sparkles',
+  jarvis:     'constellations',
 };
 
 // Default effect colors for specific themes (overrides --fg)
@@ -66,6 +76,7 @@ const THEME_DEFAULT_EFFECT_COLOR = {
   organs:     '#451616',
   cute:       '#ff8cb8',
   ume:        '#f5a0c0',
+  jarvis:     '#4fd8ff',
 };
 
 // Default effect intensity (0..1) per theme. Any theme not listed defaults to 1.
@@ -73,6 +84,7 @@ const THEME_DEFAULT_INTENSITY = {
   midnight:   0.5,
   terminal:   0.8,
   organs:     0.65,
+  jarvis:     0.35,
 };
 
 // Default frosted-glass state per theme. Themes not listed default to false.
@@ -249,6 +261,14 @@ function generateHarmonyColors(accentHex, harmonyType, mode) {
     border: hslToHex(borderH, borderS, borderL),
     red: accentHex,
   };
+}
+
+/** Expose the active theme's name on <html data-odx-theme> so theme-scoped
+ *  stylesheets (static/css/jarvis.css) can target a preset without JS. */
+export function applyThemeName(name) {
+  const n = String(name || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (n) document.documentElement.setAttribute('data-odx-theme', n);
+  else document.documentElement.removeAttribute('data-odx-theme');
 }
 
 export function applyColors(colors) {
@@ -450,6 +470,7 @@ export function getSaved() {
 }
 
 export function save(name, colors, opts) {
+  applyThemeName(name);
   const obj = { name, colors };
   if (opts) {
     if (opts.font && opts.font !== DEFAULT_FONT) obj.font = opts.font;
@@ -738,6 +759,7 @@ export function initThemeUI() {
 
   // Init color pickers from current theme and apply syntax colors
   const currentColors = saved ? saved.colors : THEMES[DEFAULT_THEME];
+  applyThemeName(saved ? saved.name : DEFAULT_THEME);
   applyColors(currentColors);
   syncPickers(currentColors);
 
@@ -919,18 +941,21 @@ export function initThemeUI() {
     newReset.addEventListener('click', () => {
       Storage.remove(LS_KEY);
       const colors = THEMES[DEFAULT_THEME];
+      applyThemeName(DEFAULT_THEME);
       applyColors(colors);
       syncPickers(colors);
       applyFontDensity(DEFAULT_FONT, DEFAULT_DENSITY);
-      applyBgPattern('none');
+      applyBgEffectColor(THEME_DEFAULT_EFFECT_COLOR[DEFAULT_THEME] || '');
+      applyBgEffectIntensity(THEME_DEFAULT_INTENSITY[DEFAULT_THEME] !== undefined ? THEME_DEFAULT_INTENSITY[DEFAULT_THEME] : 1);
+      applyBgPattern(THEME_DEFAULT_PATTERN[DEFAULT_THEME] || 'none');
       const fs = document.getElementById('theme-font-select');
       const ds = document.getElementById('theme-density-select');
       const ps = document.getElementById('theme-bg-pattern-select');
       if (fs) fs.value = DEFAULT_FONT;
       if (ds) ds.value = DEFAULT_DENSITY;
-      if (ps) ps.value = 'none';
+      if (ps) ps.value = THEME_DEFAULT_PATTERN[DEFAULT_THEME] || 'none';
       grid.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
-      const darkSwatch = grid.querySelector('[data-theme="dark"]');
+      const darkSwatch = grid.querySelector(`[data-theme="${DEFAULT_THEME}"]`);
       if (darkSwatch) darkSwatch.classList.add('active');
     });
   }
@@ -1077,11 +1102,12 @@ export function initThemeUI() {
   // Font, density, background pattern controls
   const _initFont = (saved && saved.font) || DEFAULT_FONT;
   const _initDensity = (saved && saved.density) || DEFAULT_DENSITY;
-  const _initPattern = (saved && saved.bgPattern) || (saved && THEME_DEFAULT_PATTERN[saved.name]) || 'none';
-  const _initEffectColor = (saved && saved.bgEffectColor) || (saved && THEME_DEFAULT_EFFECT_COLOR[saved.name]) || '';
+  const _themeName = saved ? saved.name : DEFAULT_THEME;
+  const _initPattern = (saved && saved.bgPattern) || THEME_DEFAULT_PATTERN[_themeName] || 'none';
+  const _initEffectColor = (saved && saved.bgEffectColor) || THEME_DEFAULT_EFFECT_COLOR[_themeName] || '';
   const _initEffectIntensity = (saved && saved.bgEffectIntensity !== undefined)
     ? saved.bgEffectIntensity
-    : (saved && THEME_DEFAULT_INTENSITY[saved.name] !== undefined ? THEME_DEFAULT_INTENSITY[saved.name] : 1);
+    : (THEME_DEFAULT_INTENSITY[_themeName] !== undefined ? THEME_DEFAULT_INTENSITY[_themeName] : 1);
   const _initEffectSize = (saved && saved.bgEffectSize !== undefined) ? saved.bgEffectSize : 1;
   const _initFrosted = (saved && saved.frosted !== undefined)
     ? !!saved.frosted
@@ -2043,7 +2069,7 @@ function _initEmbers() {
 }
 
 const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
-                       THEMES, applyColors, applyFontDensity, applyBgPattern,
+                       THEMES, applyColors, applyThemeName, applyFontDensity, applyBgPattern,
                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize,
                        applyFrostedGlass,
                        save, getSaved, saveCustomTheme, deleteCustomTheme,
@@ -2059,6 +2085,7 @@ async function _initWithSync() {
     if (serverTheme && serverTheme.colors) {
       if (serverTheme.name === 'sakura') serverTheme.name = 'ume';
       Storage.setJSON(LS_KEY, serverTheme);
+      applyThemeName(serverTheme.name);
       applyColors(serverTheme.colors);
     }
   }

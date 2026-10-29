@@ -18,6 +18,22 @@
   (function(){
     try {
       var t = JSON.parse(localStorage.getItem('odysseus-theme'));
+      // Expose the theme name for theme-scoped sheets (css/jarvis.css).
+      // No saved theme = the default preset, jarvis (keep in sync with
+      // THEMES.jarvis / DEFAULT_THEME in js/theme.js).
+      var _tn = (t && t.name) ? String(t.name).toLowerCase().replace(/[^a-z0-9_-]/g, '') : 'jarvis';
+      if (_tn) document.documentElement.setAttribute('data-odx-theme', _tn);
+      if (!t || !t.colors) {
+        var _js = document.documentElement.style;
+        _js.setProperty('--bg', '#060b14');
+        _js.setProperty('--fg', '#d3e9f5');
+        _js.setProperty('--panel', '#0a1424');
+        _js.setProperty('--border', '#1f3d57');
+        _js.setProperty('--red', '#4fd8ff');
+        _js.setProperty('--brand-color', '#4fd8ff');
+        var _jm = document.querySelector('meta[name="theme-color"]');
+        if (_jm) _jm.setAttribute('content', '#060b14');
+      }
       if (t && t.colors) {
         var s = document.documentElement.style;
         var c = t.colors;
@@ -224,6 +240,9 @@
   <link rel="stylesheet" href="/static/css/voice-mode.css" id="vx-css">
   <link rel="stylesheet" href="/static/css/cinematic-ai.css">
   <link rel="stylesheet" href="/static/css/env.css">
+  <!-- Jarvis HUD theme — loaded last; every rule is scoped to
+       :root[data-odx-theme="jarvis"], so other themes are untouched. -->
+  <link rel="stylesheet" href="/static/css/jarvis.css">
   <link rel="modulepreload" href="/static/app.js">
   <link rel="modulepreload" href="/static/js/chat.js">
   <link rel="modulepreload" href="/static/js/ui.js">

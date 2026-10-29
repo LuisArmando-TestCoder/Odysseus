@@ -1,0 +1,250 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · JARVIS — calm, cinematic holographic HUD
+   ───────────────────────────────────────────────────────────────────────────
+   Loaded LAST (after cinematic-ai.css). Every rule is scoped to
+   :root[data-odx-theme="jarvis"] — the attribute is set by the early head
+   script in index.html and by applyThemeName() in js/theme.js — so every
+   other preset and every custom theme renders exactly as before.
+
+   Spec + progress log: docs/JARVIS_UI.md. Grammar in one breath:
+     • near-black blue canvas, ONE light source (arc-reactor cyan), amber
+       reserved for alerts/attention — content is the light, not decoration
+     • holographic glass: 1px luminous hairlines, faint inner gradient,
+       corner ticks only on key surfaces, grid/scanline at very low opacity
+     • Inter for UI, technical mono for data + uppercase micro-labels,
+       tabular numbers
+     • motion: expo-out, 120–240 ms; everything gated on reduced-motion /
+       reduced-transparency / more-contrast
+
+   Run 1 (this file's first slice): token layer, canvas atmosphere, global
+   focus / selection / scrollbar / micro-label primitives. Component
+   surfaces (sidebar, bubbles, composer, modals…) land in later runs, one
+   area per run, in the order listed in docs/JARVIS_UI.md.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────────────────────────────────────────────────────
+   0. TOKENS — the only place raw colours live. Components use --jv-*.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] {
+  color-scheme: dark;
+
+  /* Light sources */
+  --jv-cyan: var(--red, #4fd8ff);                 /* primary, theme-aware */
+  --jv-cyan-hi: color-mix(in srgb, var(--jv-cyan) 55%, #ffffff);
+  --jv-amber: #ffb347;                             /* alerts / attention   */
+  --jv-danger: #ff6b6b;                            /* destructive only     */
+  --jv-ok: #5ef2b3;
+
+  /* Surfaces (darkest → lightest) */
+  --jv-void: var(--bg, #060b14);
+  --jv-panel: var(--panel, #0a1424);
+  --jv-raised: color-mix(in srgb, var(--jv-panel) 82%, var(--jv-cyan) 4%);
+  --jv-glass: color-mix(in srgb, var(--jv-panel) 70%, transparent);
+  --jv-glass-strong: color-mix(in srgb, var(--jv-panel) 88%, transparent);
+
+  /* Text — all ≥ 4.5:1 on --jv-void / --jv-panel */
+  --jv-text: var(--fg, #d3e9f5);
+  --jv-text-dim: color-mix(in srgb, var(--jv-text) 72%, var(--jv-void));
+  --jv-text-faint: color-mix(in srgb, var(--jv-text) 58%, var(--jv-void));
+
+  /* Hairlines + glow budget (one knob scales every glow) */
+  --jv-line: color-mix(in srgb, var(--jv-cyan) 22%, var(--border, #1f3d57));
+  --jv-line-strong: color-mix(in srgb, var(--jv-cyan) 48%, var(--border, #1f3d57));
+  --jv-glow-k: 1;
+  --jv-glow: color-mix(in srgb, var(--jv-cyan) calc(28% * var(--jv-glow-k)), transparent);
+  --jv-glow-soft: color-mix(in srgb, var(--jv-cyan) calc(10% * var(--jv-glow-k)), transparent);
+  --jv-amber-glow: color-mix(in srgb, var(--jv-amber) 30%, transparent);
+
+  /* Type */
+  --jv-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --jv-mono: "Fira Code", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --jv-label-size: 10.5px;
+  --jv-label-track: 0.14em;
+
+  /* Shape + motion */
+  --jv-radius: 10px;
+  --jv-radius-sm: 6px;
+  --jv-ease: cubic-bezier(0.16, 1, 0.3, 1);       /* expo-out */
+  --jv-fast: 120ms;
+  --jv-base: 180ms;
+  --jv-slow: 240ms;
+  --jv-focus: 0 0 0 2px var(--jv-void), 0 0 0 4px var(--jv-cyan);
+
+  /* Re-point the shared accent tokens other sheets already consume, so the
+     whole interface picks up the single cyan light source + amber alerts. */
+  --accent-primary: var(--jv-cyan);
+  --accent-warm: var(--jv-amber);
+  --color-warning: var(--jv-amber);
+  --warn: var(--jv-amber);
+  --color-accent: var(--jv-cyan);
+  --color-link-hover: var(--jv-cyan-hi);
+  --color-subheader: var(--jv-text-faint);
+
+  /* cinematic-ai.css token bridge — cool the aurora down to one source
+     (no warm/terracotta wash), keep its glass + easing. */
+  --cin-acc-warm: color-mix(in srgb, var(--jv-cyan) 80%, #2f6bff);
+  --cin-acc-cool: color-mix(in srgb, var(--jv-cyan) 60%, #2f6bff);
+  --cin-aurora-1: color-mix(in srgb, var(--jv-cyan) 9%, transparent);
+  --cin-aurora-2: color-mix(in srgb, #2f6bff 8%, transparent);
+  --cin-aurora-3: transparent;
+  --cin-display: var(--jv-ui);
+  --cin-mono: var(--jv-mono);
+  --cin-ease: var(--jv-ease);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   1. CANVAS — near-black blue, one overhead light, faint holo grid
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] {
+  background-color: var(--jv-void);   /* no unpainted strip above the app */
+}
+:root[data-odx-theme="jarvis"] body {
+  background-color: var(--jv-void);
+  color: var(--jv-text);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-odx-theme="jarvis"] .chat-container {
+  background:
+    /* the single light source, hung just above the canvas */
+    radial-gradient(70% 55% at 50% -12%, color-mix(in srgb, var(--jv-cyan) 13%, transparent) 0%, transparent 70%),
+    /* a cool falloff at the floor so the composer sits on depth, not mud */
+    radial-gradient(90% 50% at 50% 115%, color-mix(in srgb, #2f6bff 7%, transparent) 0%, transparent 65%),
+    var(--jv-void);
+}
+
+/* Holo grid replaces the film grain: 48px cells, hairline at ~4 % alpha,
+   faded out toward the edges so it reads as depth, never as a pattern. */
+:root[data-odx-theme="jarvis"] .chat-container::after {
+  opacity: 1;
+  /* + a scanline veil (1px every 3px, ~2 % alpha): "projected light" grain
+     that never touches text contrast. */
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 1px, transparent 1px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 2%, transparent) 0 1px, transparent 1px 3px);
+  background-size: 48px 48px, 48px 48px, auto;
+  background-position: center top;
+  -webkit-mask-image: radial-gradient(85% 75% at 50% 35%, #000 0%, transparent 78%);
+          mask-image: radial-gradient(85% 75% at 50% 35%, #000 0%, transparent 78%);
+}
+
+/* Aurora drift stays, but quieter — slow breathing of the one light. */
+:root[data-odx-theme="jarvis"] .chat-container::before {
+  opacity: 0.45;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   2. GLOBAL PRIMITIVES — focus, selection, scrollbars, links, labels
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] :focus-visible {
+  outline: 2px solid var(--jv-cyan);
+  outline-offset: 2px;
+}
+:root[data-odx-theme="jarvis"] button:focus-visible,
+:root[data-odx-theme="jarvis"] [role="button"]:focus-visible,
+:root[data-odx-theme="jarvis"] a:focus-visible {
+  outline: none;
+  box-shadow: var(--jv-focus);
+}
+
+:root[data-odx-theme="jarvis"] ::selection {
+  background: color-mix(in srgb, var(--jv-cyan) 32%, transparent);
+  color: #ffffff;
+}
+
+:root[data-odx-theme="jarvis"] * {
+  scrollbar-color: color-mix(in srgb, var(--jv-cyan) 28%, transparent) transparent;
+  scrollbar-width: thin;
+}
+:root[data-odx-theme="jarvis"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+:root[data-odx-theme="jarvis"] ::-webkit-scrollbar-track { background: transparent; }
+:root[data-odx-theme="jarvis"] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--jv-cyan) 22%, transparent);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+:root[data-odx-theme="jarvis"] ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--jv-cyan) 42%, transparent);
+  background-clip: padding-box;
+}
+
+/* Reusable HUD utilities for later runs (opt-in by class, no global effect). */
+:root[data-odx-theme="jarvis"] .jv-label {
+  font-family: var(--jv-mono);
+  font-size: var(--jv-label-size);
+  letter-spacing: var(--jv-label-track);
+  text-transform: uppercase;
+  color: var(--jv-text-faint);
+}
+:root[data-odx-theme="jarvis"] .jv-glass {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--jv-cyan) 4%, transparent), transparent 40%),
+    var(--jv-glass);
+  border: 1px solid var(--jv-line);
+  border-radius: var(--jv-radius);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--jv-cyan) 10%, transparent),
+              0 12px 40px -12px rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+          backdrop-filter: blur(16px) saturate(1.2);
+}
+/* Corner ticks — use sparingly on key surfaces only. */
+:root[data-odx-theme="jarvis"] .jv-ticks {
+  position: relative;
+}
+:root[data-odx-theme="jarvis"] .jv-ticks::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  border-radius: inherit;
+  --t: 10px;
+  background:
+    linear-gradient(var(--jv-cyan), var(--jv-cyan)) top left / var(--t) 1px no-repeat,
+    linear-gradient(var(--jv-cyan), var(--jv-cyan)) top left / 1px var(--t) no-repeat,
+    linear-gradient(var(--jv-cyan), var(--jv-cyan)) bottom right / var(--t) 1px no-repeat,
+    linear-gradient(var(--jv-cyan), var(--jv-cyan)) bottom right / 1px var(--t) no-repeat;
+  opacity: 0.7;
+}
+@keyframes jv-boot {
+  from { opacity: 0; transform: translateY(4px) scale(0.995); filter: brightness(1.6); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+:root[data-odx-theme="jarvis"] .jv-boot {
+  animation: jv-boot var(--jv-slow) var(--jv-ease) both;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   3. ACCESSIBILITY GATES
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] .chat-container::before { animation: none; }
+  :root[data-odx-theme="jarvis"] .jv-boot { animation: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-odx-theme="jarvis"] .chat-container::before,
+  :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
+  :root[data-odx-theme="jarvis"] .jv-glass {
+    background: var(--jv-panel);
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] {
+    --jv-text-dim: var(--jv-text);
+    --jv-text-faint: var(--jv-text);
+    --jv-line: var(--jv-line-strong);
+    --jv-glow-k: 0;
+  }
+  :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
+}
+
+@media (forced-colors: active) {
+  :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
+}
