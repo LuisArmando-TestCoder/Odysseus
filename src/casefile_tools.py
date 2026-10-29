@@ -6,7 +6,7 @@ two names:
 
   case_file     {"op": "open"|"list"|"get"|"update"|"add_entity"|"add_finding"|
                         "link"|"alias"|"add_step"|"done_step"|"pivots"|"search"|
-                        "export"|"delete", ...}
+                        "export"|"drive"|"release"|"delete", ...}
   watch_target  {"op": "add"|"list"|"remove"|"pause"|"resume"|"check", ...}
 
 Handlers return the standard tool dict ({"output": str, "exit_code": int} or
@@ -70,7 +70,8 @@ def _case_summary(case: Dict[str, Any], max_items: int = 15) -> str:
     return "\n".join(lines)
 
 
-def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None) -> Dict[str, Any]:
+def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None,
+                  session_id: Optional[str] = None, goal_api=None) -> Dict[str, Any]:
     from src.casefiles import get_case_store
     st = store or get_case_store()
     op = str(args.get("op") or args.get("action") or "").lower().strip()
@@ -140,11 +141,37 @@ def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None) -> Dic
         if op in ("export", "dossier", "report"):
             md = st.export_markdown(owner, case_ref)
             return _ok(md)
+        if op in ("drive", "bind_goal", "pursue"):
+            from src.case_goal import drive_case
+            try:
+                maxr = int(args.get("max_goal_rounds") or 0) or None
+            except (TypeError, ValueError):
+                maxr = None
+            r = drive_case(owner, case_ref, session_id=session_id, max_goal_rounds=maxr,
+                           store=st, goal_api=goal_api)
+            c, g = r["case"], r["goal"]
+            n_open = sum(1 for s in c["next_steps"] if not s["done"])
+            if r["created"]:
+                msg = f"Started a goal that drives case {c['id']} ({c['title']}): rounds will work its open steps."
+            else:
+                msg = f"The current goal now drives case {c['id']} ({c['title']})."
+                if r["rebound_from"]:
+                    msg += f" (Previously bound to {r['rebound_from']}.)"
+            if not n_open:
+                msg += " It has no open steps yet — queue some (op=pivots queue=true) so rounds have work."
+            if g.get("phase") == "paused":
+                msg += " The goal is paused; resume it from the goal card to start rounds."
+            return _ok(msg, goal=g, goal_created=r["created"])
+        if op in ("release", "unbind_goal", "stop_driving"):
+            from src.case_goal import release_case
+            cid = st.resolve_case_id(owner, case_ref)
+            g = release_case(owner, cid, goal_api=goal_api)
+            return _ok("Goal released from the case." if g else "The goal was not driving this case.")
         if op == "delete":
             st.delete_case(owner, case_ref)
             return _ok("Case deleted.")
         return _err(f"Unknown op {op!r}. Use open, list, get, update, add_entity, add_finding, link, alias, "
-                    "add_step, done_step, pivots, search, export, delete.")
+                    "add_step, done_step, pivots, search, export, drive, release, delete.")
     except (KeyError, ValueError) as e:
         return _err(str(e).strip("'\""))
 
@@ -203,12 +230,21 @@ def run_watch_target(args: Dict[str, Any], owner: Optional[str], store=None, fet
         return _err(str(e).strip("'\""))
 
 
-async def do_case_file(content: str, owner: Optional[str] = None) -> Dict[str, Any]:
+async def do_case_file(content: str, owner: Optional[str] = None,
+                       session_id: Optional[str] = None) -> Dict[str, Any]:
     try:
         args = _args(content)
     except ValueError as e:
         return _err(str(e))
-    return await asyncio.to_thread(run_case_file, args, owner)
+    result = await asyncio.to_thread(run_case_file, args, owner, None, session_id)
+    if result.get("goal_created") and result.get("goal"):
+        # Idle-gated: the first round starts once this turn finishes.
+        try:
+            from src import goal_driver
+            goal_driver.maybe_start_goal_round(owner=owner, goal=result["goal"])
+        except Exception:
+            pass
+    return result
 
 
 async def do_watch_target(content: str, owner: Optional[str] = None) -> Dict[str, Any]:

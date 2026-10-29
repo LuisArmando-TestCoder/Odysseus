@@ -39,6 +39,23 @@ def _guard(fn, *a, **kw):
         raise HTTPException(400, str(e))
 
 
+def _latest_session(owner: str) -> Optional[str]:
+    """The owner's most recently used, non-archived chat (where goal rounds run)."""
+    try:
+        from core.database import SessionLocal
+        from core.database import Session as DBSession
+        db = SessionLocal()
+        try:
+            row = (db.query(DBSession)
+                   .filter(DBSession.owner == owner, DBSession.archived == False)  # noqa: E712
+                   .order_by(DBSession.updated_at.desc()).first())
+            return getattr(row, "id", None)
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
 def setup_case_routes() -> APIRouter:
     router = APIRouter(tags=["cases"])
 
@@ -67,7 +84,36 @@ def setup_case_routes() -> APIRouter:
         owner = _owner(request)
         st = get_case_store()
         c = _guard(st.get_case, owner, case_id)
-        return {"case": c, "pivots": st.suggest_pivots(owner, c["id"])}
+        try:
+            from src.case_goal import binding_for
+            goal = binding_for(owner, c["id"])
+        except Exception:
+            goal = None
+        return {"case": c, "pivots": st.suggest_pivots(owner, c["id"]), "goal": goal}
+
+    @router.post("/api/cases/{case_id}/drive")
+    async def drive_case(case_id: str, request: Request):
+        """Bind this case to the owner's goal (creating one in their most
+        recent chat when none is live) — or release it with {"on": false}."""
+        from src import case_goal
+        b = await _body(request)
+        owner = _owner(request)
+        if not owner:
+            raise HTTPException(403, "Authentication required")
+        st = get_case_store()
+        cid = _guard(st.resolve_case_id, owner, case_id)
+        if b.get("on") is False:
+            case_goal.release_case(owner, cid)
+            return {"goal": None}
+        r = _guard(case_goal.drive_case, owner, cid, session_id=_latest_session(owner))
+        if r["created"]:
+            try:
+                from src import goal_driver
+                goal_driver.maybe_start_goal_round(owner=owner, goal=r["goal"])
+            except Exception:
+                pass
+        return {"goal": case_goal.binding_for(owner, cid), "created": r["created"],
+                "rebound_from": r["rebound_from"]}
 
     @router.patch("/api/cases/{case_id}")
     async def update_case(case_id: str, request: Request):

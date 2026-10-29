@@ -1361,11 +1361,11 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "case_file",
-            "description": "Case Files: the organized intel store for investigations, OSINT and research threads. Open one case per thread, then record entities (auto-typed and deduped: person, org, username, email, phone, domain, url, ip, location, crypto…), sourced findings (selectors in the text are auto-extracted into entities), relationships, aliases and next steps. op=pivots returns concrete next moves for what is known so far (queue=true adds them as steps). op=export returns a markdown dossier. op=search finds a selector across ALL cases. Record facts as you discover them — do not keep them only in chat.",
+            "description": "Case Files: the organized intel store for investigations, OSINT and research threads. Open one case per thread, then record entities (auto-typed and deduped: person, org, username, email, phone, domain, url, ip, location, crypto…), sourced findings (selectors in the text are auto-extracted into entities), relationships, aliases and next steps. op=pivots returns concrete next moves for what is known so far (queue=true adds them as steps). op=export returns a markdown dossier. op=search finds a selector across ALL cases. op=drive binds the case to the goal (creating one if needed) so goal rounds keep working its open steps until resolved; op=release unbinds it. Record facts as you discover them — do not keep them only in chat.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "op": {"type": "string", "enum": ["open", "list", "get", "update", "add_entity", "add_finding", "link", "alias", "add_step", "done_step", "pivots", "search", "export", "delete"]},
+                    "op": {"type": "string", "enum": ["open", "list", "get", "update", "add_entity", "add_finding", "link", "alias", "add_step", "done_step", "pivots", "search", "export", "drive", "release", "delete"]},
                     "case": {"type": "string", "description": "Case id, id prefix, or title (required for all ops except open/list/search)."},
                     "title": {"type": "string", "description": "open/update: case title."},
                     "objective": {"type": "string", "description": "open/update: what this case is trying to establish."},

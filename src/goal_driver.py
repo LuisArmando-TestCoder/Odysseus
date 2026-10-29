@@ -97,6 +97,13 @@ def _round_messages(goal: Dict[str, Any], owner: str) -> list:
         "the harness starts the next round."
     ).format(r=goal.get("roundsStarted", 0), m=goal.get("maxGoalRounds", 256),
              obj=goal.get("objective", ""))
+    try:
+        from src.case_goal import bound_case_context
+        case_block = bound_case_context(goal, owner)
+    except Exception:
+        case_block = ""
+    if case_block:
+        frame += "\n\n" + case_block
     messages = [{"role": "system", "content": frame}]
     if cp and cp.strip():
         messages.append({"role": "system", "content":

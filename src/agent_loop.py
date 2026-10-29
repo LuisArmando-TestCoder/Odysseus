@@ -413,7 +413,7 @@ Browse the OSINT Framework — a large catalog of OSINT tools organized as neste
 ```case_file
 {"op": "add_finding", "case": "Acme recon", "text": "Registrant email is ops@acme-holdings.io", "source_url": "https://rdap.org/domain/acme.io", "confidence": 0.8}
 ```
-Case Files — the organized intel store. ops: `open` {title, objective}, `list`, `get`, `update`, `add_entity` {value, type?, label?, source?}, `add_finding` {text, source_url?, confidence?} (selectors in the text are auto-extracted and deduped), `link` {a, b, relation}, `alias` {entity, alias}, `add_step`/`done_step`, `pivots` {queue?} (concrete next moves), `search` {query} across all cases, `export` (markdown dossier). For any investigation/OSINT/research task: open (or reuse) a case first, record every sourced fact as you go, and use `pivots` to decide what to chase next.""",
+Case Files — the organized intel store. ops: `open` {title, objective}, `list`, `get`, `update`, `add_entity` {value, type?, label?, source?}, `add_finding` {text, source_url?, confidence?} (selectors in the text are auto-extracted and deduped), `link` {a, b, relation}, `alias` {entity, alias}, `add_step`/`done_step`, `pivots` {queue?} (concrete next moves), `search` {query} across all cases, `export` (markdown dossier), `drive` (a goal keeps working the case's open steps round after round; `release` stops it). For any investigation/OSINT/research task: open (or reuse) a case first, record every sourced fact as you go, and use `pivots` to decide what to chase next.""",
     "watch_target": """\
 ```watch_target
 {"op": "add", "url": "https://example.gov/docket", "keywords": ["Doe"], "interval_minutes": 120, "case": "Doe matter"}
@@ -1823,6 +1823,13 @@ async def stream_agent_loop(
             max=_goal.get("maxGoalRounds", 256),
             obj=_goal.get("objective", ""),
         )
+        try:
+            from src.case_goal import bound_case_context
+            _case_block = bound_case_context(_goal, owner)
+        except Exception:
+            _case_block = ""
+        if _case_block:
+            _goal_msg += "\n\n" + _case_block
         messages.insert(0, {"role": "system", "content": _goal_msg})
 
     # Continuous-task cursor — if a queue is seeded, inject the NEXT item so the

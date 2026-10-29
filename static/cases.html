@@ -59,6 +59,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .graph-wrap .g-node:focus{outline:none}.graph-wrap .g-node:focus-visible{stroke:var(--fg);stroke-width:3}
 .graph-wrap text{font:13px var(--mono);fill:var(--fg);pointer-events:none;paint-order:stroke;stroke:var(--panel2);stroke-width:3px}
 .graph-wrap .dim{opacity:.15}
+.goalbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:10px;padding:8px 10px;border:1px dashed var(--border);border-radius:10px}
+.goalbar.on{border-style:solid;border-color:var(--accent)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px}
 .legend span{font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -139,11 +141,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   });
 
   const openCase = run(async (id) => {
-    const { case: c, pivots } = await api('/api/cases/' + id);
-    current = c; renderCase(c, pivots); loadGraph(c.id); loadCases();
+    const { case: c, pivots, goal } = await api('/api/cases/' + id);
+    current = c; renderCase(c, pivots, goal); loadGraph(c.id); loadCases();
   });
 
-  function renderCase(c, pivots) {
+  function renderCase(c, pivots, goal) {
     const ents = Object.values(c.entities);
     const byType = {};
     ents.forEach(e => (byType[e.type] = byType[e.type] || []).push(e));
@@ -166,6 +168,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <div class="row"><select id="c-status" style="width:auto">${['open','paused','closed'].map(s => `<option ${s === c.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
         <button id="c-export">Export dossier</button><button id="c-del" class="ghost bad">Delete</button></div></div>
         ${c.objective ? `<p style="margin:10px 0 0">${esc(c.objective)}</p>` : ''}
+        ${goalBar(c, goal)}
         <div style="margin-top:8px">${(c.tags||[]).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div>
       <div class="card stack"><h2>Add finding</h2>
         <textarea id="f-text" placeholder="Paste a fact, a profile blurb, a WHOIS record… emails, handles, phones, domains, URLs and IPs are extracted automatically."></textarea>
@@ -179,6 +182,19 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       </div>
       <div class="card"><h2>Findings (${c.findings.length})</h2>${findings}</div>
     </div>`;
+  }
+
+  function goalBar(c, g) {
+    const openN = c.next_steps.filter(s => !s.done).length;
+    if (!g) {
+      if (c.status === 'closed') return '';
+      return `<div class="goalbar"><span class="meta">Let Odysseus keep working this case on its own: a goal works the open steps round after round${openN ? '' : ' (queue a few pivots first)'}.</span>
+        <button id="c-drive" class="primary">Drive with goal</button></div>`;
+    }
+    const cls = g.phase === 'active' ? 'good' : g.phase === 'blocked' ? 'bad' : 'warn';
+    const why = g.phase === 'blocked' && g.blocked_reason ? ` — ${esc(g.blocked_reason)}` : g.phase === 'paused' ? ' — resume it from the goal card' : '';
+    return `<div class="goalbar on"><span><b class="${cls}">Goal ${esc(g.phase)}</b> <span class="meta">round ${g.rounds}/${g.max_rounds} · ${openN} open step(s)${why}</span></span>
+      <button id="c-release" class="ghost">Stop driving</button></div>`;
   }
 
   // ----- entity graph ------------------------------------------------------
@@ -298,6 +314,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       const result = prompt('Result (optional):') || '';
       await api(`/api/cases/${id}/steps/${e.target.dataset.step}/done`, { method: 'POST', body: { result } }); return openCase(id);
     }
+    if (e.target.id === 'c-drive') {
+      const r = await api(`/api/cases/${id}/drive`, { method: 'POST', body: { on: true } });
+      toast(r.created ? 'Goal started — it works this case between your messages' : r.rebound_from ? 'Goal switched to this case' : 'The current goal now drives this case');
+      return openCase(id);
+    }
+    if (e.target.id === 'c-release') { await api(`/api/cases/${id}/drive`, { method: 'POST', body: { on: false } }); toast('Goal released from this case'); return openCase(id); }
     if (e.target.id === 'c-export') {
       const md = await api(`/api/cases/${id}/export`);
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));

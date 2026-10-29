@@ -34,6 +34,24 @@ the best-connected `max_nodes`; the response reports how many were hidden.
 as "where to dig next". Tap/Enter on a node focuses it and lists its
 neighbours.
 
+### Drive a case with a goal (`src/case_goal.py`)
+
+A case can be **bound to the owner's goal** so the goal works it on its own:
+`case_file {"op":"drive","case":"…"}`, the **Drive with goal** button on
+`/cases`, or `POST /api/cases/{id}/drive` (`{"on": false}` releases it).
+When no goal is live, one is created ("Advance case …") in the current chat
+(the most recent chat for the REST route); otherwise the live goal is re-bound
+and its objective is kept.
+
+Every goal round — and every turn in the goal's chat — then carries a
+`=== BOUND CASE ===` block: the case's next open steps in order, plus the exact
+`add_finding` / `done_step` calls that move it forward; with no open steps it
+asks for `pivots queue=true` or `finish_goal(done)`. A closed case tells the
+goal to finish, a paused one to stand down. Case text is fenced as untrusted
+data (control characters and fence look-alikes stripped, lines capped), and a
+binding to a deleted case degrades to a short note. `GET /api/cases/{id}`
+returns `goal` (phase, rounds, blocked reason) when the case is bound.
+
 ## Watchlist (`src/watchlist.py`)
 
 Watch any URL on an interval (min 15 min). Each check fetches the page
@@ -89,6 +107,7 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | GET/PATCH/DELETE | `/api/cases/{id}` | read (+pivots) / update / delete |
 | POST | `/api/cases/{id}/entities` · `/findings` · `/links` · `/steps` | add (`/steps` with `{"pivots": true}` queues all pivots) |
 | POST | `/api/cases/{id}/steps/{step}/done` | complete a step |
+| POST | `/api/cases/{id}/drive` | bind to the goal (creates one if none is live) / `{"on": false}` releases |
 | GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes, typed + co-mention edges, hubs, isolated |
 | GET | `/api/cases/{id}/export` | markdown dossier |
 | GET/POST | `/api/watchlist` | list / add |

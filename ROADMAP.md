@@ -51,9 +51,13 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
 - **Link graph** (`CaseStore.graph`, `GET /api/cases/{id}/graph`): SVG entity
   graph on `/cases` from typed relationships + finding co-mentions, with hubs,
   unconnected selectors, node focus, and a node cap for big cases.
-- Next: case ↔ goal binding so a goal can drive a case's open steps
-  autonomously; a link to /cases from the main SPA; cross-case entity overlap
-  ("this email also appears in case X") in the graph.
+- **Case ↔ goal binding** (`src/case_goal.py`, `case_file op=drive|release`,
+  `POST /api/cases/{id}/drive`, "Drive with goal" on `/cases`): a goal works a
+  case's open steps round after round — record findings, close steps, queue
+  pivots, finish when resolved — with the case text fenced as untrusted data.
+- Next: a link to /cases from the main SPA; cross-case entity overlap ("this
+  email also appears in case X") in the graph; daily brief nudge for open
+  cases with no goal and stale open steps.
 
 ## Jarvis UI (in progress)
 
