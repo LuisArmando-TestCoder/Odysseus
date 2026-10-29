@@ -137,7 +137,12 @@ function saveFolderOrder(order) {
 /** Get all unique folder names from current sessions. */
 function getFolderNames() {
   const names = new Set();
-  sessions.forEach(s => { if (s.folder) names.add(s.folder); });
+  sessions.forEach(s => {
+    if (!s.folder) return;
+    // Nested folders: offer every level ("A", "A/B", "A/B/C").
+    const parts = String(s.folder).split('/').map(p => p.trim()).filter(Boolean);
+    parts.forEach((_, i) => names.add(parts.slice(0, i + 1).join('/')));
+  });
   return Array.from(names).sort();
 }
 
@@ -203,13 +208,15 @@ function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
   newOpt.textContent = '+ New Folder';
   newOpt.addEventListener('click', async (e) => {
     e.stopPropagation();
-    const name = await styledPrompt('Name this folder:', {
+    const name = await styledPrompt('Name this folder (use / to nest, e.g. Research/Politics/Costa Rica):', {
       title: 'New folder',
-      placeholder: 'e.g. Work, Research, Drafts',
+      placeholder: 'e.g. Work, Research/Politics, Drafts',
+      defaultValue: currentFolder ? currentFolder + '/' : '',
       confirmText: 'Create',
     });
-    if (!name || !name.trim()) return;
-    await moveToFolder(sessionId, name.trim());
+    const _nm = (name || '').split('/').map(p => p.trim()).filter(Boolean).join('/');
+    if (!_nm) return;
+    await moveToFolder(sessionId, _nm);
     // Auto-flip to By Folder view so the user immediately sees the
     // folder they just created — otherwise the new folder disappears
     // into the flat list and looks like the action did nothing.
@@ -1223,22 +1230,47 @@ function _renderSessionListImpl() {
     if (!orderedFolderNames.includes(name)) orderedFolderNames.push(name);
   });
 
-  orderedFolderNames.forEach(folderName => {
+  // Folders are RECURSIVE: a folder path "Investigations/Costa Rica/Politicians"
+  // renders as nested folders. Build the tree, then render it depth-first.
+  const _tree = { children: new Map(), sessions: [], path: '' };
+  orderedFolderNames.forEach(full => {
+    const parts = String(full).split('/').map(p => p.trim()).filter(Boolean);
+    let node = _tree, acc = '';
+    parts.forEach(p => {
+      acc = acc ? acc + '/' + p : p;
+      if (!node.children.has(p)) node.children.set(p, { name: p, path: acc, children: new Map(), sessions: [] });
+      node = node.children.get(p);
+    });
+    node.sessions.push(...folders[full]);
+  });
+  const _subtreeSessions = (node) => {
+    const out = [...node.sessions];
+    node.children.forEach(c => out.push(..._subtreeSessions(c)));
+    return out;
+  };
+  const _subtreeHasActive = (node) => _subtreeSessions(node).some(x => x.id === currentSessionId);
+
+  const renderFolderNode = (node, depth, parentEl) => {
+    const folderName = node.path;
+    const all = _subtreeSessions(node);
     const folderDiv = document.createElement('div');
-    folderDiv.className = 'session-folder';
+    folderDiv.className = 'session-folder' + (depth ? ' session-subfolder' : '');
     folderDiv.dataset.folderName = folderName;
+    folderDiv.style.setProperty('--folder-depth', String(depth));
 
     const header = document.createElement('div');
     header.className = 'session-folder-header';
     header.dataset.folderName = folderName;
-    const collapsed = folderState[folderName] === false;
+    // Collapsed state per full path; a folder holding the open chat stays open.
+    const collapsed = folderState[folderName] === false && !_subtreeHasActive(node);
 
-    // Drag handle for folder reordering
-    const dragHandle = document.createElement('span');
-    dragHandle.className = 'folder-drag-handle';
-    dragHandle.textContent = '\u2630';
-    dragHandle.title = 'Drag to reorder folder';
-    header.appendChild(dragHandle);
+    if (!depth) {
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'folder-drag-handle';
+      dragHandle.textContent = '\u2630';
+      dragHandle.title = 'Drag to reorder folder';
+      header.appendChild(dragHandle);
+    }
 
     const toggle = document.createElement('span');
     toggle.className = 'folder-toggle';
@@ -1247,29 +1279,28 @@ function _renderSessionListImpl() {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'folder-name';
-    nameSpan.textContent = folderName;
+    nameSpan.textContent = node.name;
+    nameSpan.title = folderName + (depth ? '' : ' — a top-level folder is a project: its chats can share context');
     header.appendChild(nameSpan);
 
     const countSpan = document.createElement('span');
     countSpan.className = 'folder-count';
-    countSpan.textContent = `(${folders[folderName].length})`;
+    countSpan.textContent = `(${all.length})`;
     header.appendChild(countSpan);
 
-    // Delete folder button
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'folder-delete-btn';
     deleteBtn.textContent = '\u00d7';
-    deleteBtn.title = 'Delete folder and all sessions';
+    deleteBtn.title = 'Delete folder (and sub-folders) with all their chats';
     deleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const count = folders[folderName].length;
-      if (!await uiModule.styledConfirm(`Delete folder "${folderName}" and all ${count} session(s) inside it?`, { confirmText: 'Delete', danger: true })) return;
-      for (const s of folders[folderName]) {
+      if (!await uiModule.styledConfirm(`Delete folder "${folderName}" (including sub-folders) and all ${all.length} chat(s) inside it?`, { confirmText: 'Delete', danger: true })) return;
+      for (const x of all) {
         try {
-          await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' });
-          _deselectCurrentSession(s.id);
+          await fetch(`${API_BASE}/api/session/${x.id}`, { method: 'DELETE' });
+          _deselectCurrentSession(x.id);
         } catch (err) {
-          console.error('Failed to delete session:', s.id, err);
+          console.error('Failed to delete session:', x.id, err);
         }
       }
       await loadSessions();
@@ -1284,23 +1315,24 @@ function _renderSessionListImpl() {
       if (e.target.closest('.folder-drag-handle') || e.target.closest('.folder-delete-btn')) return;
       if (_folderTouchMoved) { _folderTouchMoved = false; return; }
       const state = loadFolderState();
-      const isCollapsed = state[folderName] === false;
-      state[folderName] = isCollapsed ? true : false;
+      state[folderName] = collapsed ? true : false;
       saveFolderState(state);
       renderSessionList();
     });
 
-    // Allow renaming folder via double-click
+    // Rename (double-click): renames this level; sub-folders move with it.
+    // Use "/" in the new name to nest it, e.g. "Research/Politics".
     header.addEventListener('dblclick', async (e) => {
       e.stopPropagation();
       if (e.target.closest('.folder-delete-btn')) return;
-      const newName = await styledPrompt('Rename folder:', {
+      const newName = await styledPrompt('Rename folder (use / to nest, e.g. Research/Politics):', {
         title: 'Rename folder',
         defaultValue: folderName,
         confirmText: 'Rename',
       });
-      if (!newName || !newName.trim() || newName.trim() === folderName) return;
-      const promises = folders[folderName].map(s => moveToFolder(s.id, newName.trim()));
+      const nn = (newName || '').split('/').map(p => p.trim()).filter(Boolean).join('/');
+      if (!nn || nn === folderName) return;
+      const promises = all.map(x => moveToFolder(x.id, nn + String(x.folder || '').slice(folderName.length)));
       Promise.all(promises).then(() => loadSessions());
     });
 
@@ -1309,21 +1341,18 @@ function _renderSessionListImpl() {
     if (!collapsed) {
       const content = document.createElement('div');
       content.className = 'session-folder-content';
-      const folderSessions = folders[folderName];
+      // Sub-folders first, then this folder's own chats.
+      [...node.children.values()].sort((x, y) => x.name.localeCompare(y.name))
+        .forEach(child => renderFolderNode(child, depth + 1, content));
+      const folderSessions = node.sessions;
       const folderExpanded = _expandedFolders[folderName];
       const folderLimit = folderExpanded ? folderSessions.length : FOLDER_MAX_VISIBLE;
       const visibleFolder = folderSessions.slice(0, folderLimit);
-
-      // Always include active session even if beyond limit
-      const activeInFolder = folderSessions.findIndex(s => s.id === currentSessionId);
+      const activeInFolder = folderSessions.findIndex(x => x.id === currentSessionId);
       if (!folderExpanded && activeInFolder >= folderLimit) {
         visibleFolder.push(folderSessions[activeInFolder]);
       }
-
-      visibleFolder.forEach(s => {
-        content.appendChild(createSessionItem(s));
-      });
-
+      visibleFolder.forEach(x => { content.appendChild(createSessionItem(x)); });
       if (folderSessions.length > FOLDER_MAX_VISIBLE) {
         const rem = folderSessions.length - FOLDER_MAX_VISIBLE;
         const moreBtn = document.createElement('button');
@@ -1336,12 +1365,18 @@ function _renderSessionListImpl() {
         });
         content.appendChild(moreBtn);
       }
-
       folderDiv.appendChild(content);
     }
+    parentEl.appendChild(folderDiv);
+  };
 
-    _frag.appendChild(folderDiv);
+  // Top level keeps the user's drag order (first path segment).
+  const _topOrder = [];
+  orderedFolderNames.forEach(full => {
+    const top = String(full).split('/').map(p => p.trim()).filter(Boolean)[0];
+    if (top && !_topOrder.includes(top)) _topOrder.push(top);
   });
+  _topOrder.forEach(top => { const n = _tree.children.get(top); if (n) renderFolderNode(n, 0, _frag); });
 
   // Render unfiled sessions below folders (capped unless expanded)
   const hasFolders = orderedFolderNames.length > 0;

@@ -103,8 +103,10 @@ def owned_sessions(owner: Optional[str]) -> Dict[str, Dict[str, Any]]:
 
 # ── project scoping ─────────────────────────────────────────────────────────
 # Cross-chat context (agent search, recaps, @-mentions, the board's automatic
-# delivery) only flows between chats in the SAME PROJECT — the sidebar folder.
-# A chat outside any folder is isolated. Setting `cross_session_context`:
+# delivery) only flows between chats in the SAME PROJECT. Folders nest
+# ("Investigations/Costa Rica/Politicians"); the project is the TOP-LEVEL
+# folder, so every chat anywhere inside it shares context. A chat outside any
+# folder is isolated. Setting `cross_session_context`:
 #   "project" (default) · "all" / true (every chat) · "off" / false (none).
 
 def scope_mode() -> str:
@@ -125,8 +127,14 @@ def project_of(owner: Optional[str], session_id: Optional[str]) -> Optional[str]
     if not session_id:
         return None
     s = owned_sessions(owner).get(session_id)
-    f = (s or {}).get("folder")
-    return f.strip() if isinstance(f, str) and f.strip() else None
+    return _top((s or {}).get("folder"))
+
+
+def _top(folder) -> Optional[str]:
+    if not isinstance(folder, str):
+        return None
+    parts = [p.strip() for p in folder.split("/") if p.strip()]
+    return parts[0] if parts else None
 
 
 def peers(owner: Optional[str], session_id: Optional[str]) -> Optional[set]:
@@ -141,7 +149,7 @@ def peers(owner: Optional[str], session_id: Optional[str]) -> Optional[set]:
     if not proj:
         return set()
     return {sid for sid, s in owned_sessions(owner).items()
-            if sid != session_id and (s.get("folder") or "").strip() == proj}
+            if sid != session_id and _top(s.get("folder")) == proj}
 
 
 # ── transcript search ───────────────────────────────────────────────────────
