@@ -28,6 +28,9 @@ class DocumentCreate(BaseModel):
 class DocumentUpdate(BaseModel):
     content: str
     summary: Optional[str] = None
+    # Version the editor loaded. If the doc has moved on since (the agent
+    # edited it), a stale editor buffer must not overwrite it → 409.
+    base_version: Optional[int] = None
 
 class DocumentPatch(BaseModel):
     title: Optional[str] = None

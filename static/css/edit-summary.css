@@ -1,0 +1,119 @@
+/* "Edited N files" card + per-file diff popover (static/js/editSummary.js) */
+.edit-summary {
+  --es-acc: var(--ms-acc, var(--accent-primary, #5c9ec7));
+  --es-add: #3fd68f;
+  --es-del: #ff6b81;
+  margin: 10px 0 6px;
+  border: 1px solid color-mix(in srgb, var(--es-acc) 28%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--es-acc) 7%, transparent), transparent 70%),
+    color-mix(in srgb, var(--bg2, #10151d) 82%, transparent);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  max-width: 720px;
+  animation: es-in .22s ease-out;
+}
+@keyframes es-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.es-head {
+  all: unset; box-sizing: border-box; width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer;
+  font-size: 12px; letter-spacing: .02em; color: var(--fg, #e2e8f0);
+}
+.es-head:hover { background: color-mix(in srgb, var(--es-acc) 8%, transparent); }
+.es-head:focus-visible { outline: 2px solid var(--es-acc); outline-offset: -2px; }
+.es-ico { color: var(--es-acc); display: inline-flex; }
+.es-title { font-weight: 600; }
+.es-tot { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; font-size: 11px; }
+.es-add { color: var(--es-add); }
+.es-del { color: var(--es-del); }
+.es-chev { margin-left: auto; display: inline-flex; opacity: .6; transition: transform .18s ease; transform: rotate(90deg); }
+.edit-summary.collapsed .es-chev { transform: rotate(0deg); }
+.edit-summary.collapsed .es-list { display: none; }
+.es-list { list-style: none; margin: 0; padding: 2px 6px 6px; }
+.es-row {
+  display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto auto auto;
+  align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px;
+  font-size: 12px;
+}
+.es-row:hover { background: color-mix(in srgb, var(--fg, #fff) 5%, transparent); }
+.es-name { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.es-dir { color: var(--muted, #7c8798); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.es-stat { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; font-size: 11px; align-items: center; }
+.es-new {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
+  padding: 1px 5px; border-radius: 4px; color: var(--es-add);
+  border: 1px solid color-mix(in srgb, var(--es-add) 45%, transparent);
+}
+.es-btn {
+  all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 22px; border-radius: 6px; cursor: pointer;
+  color: var(--muted, #9aa4b2); border: 1px solid transparent;
+}
+.es-btn:hover, .es-btn:focus-visible { color: var(--fg, #fff); border-color: color-mix(in srgb, var(--es-acc) 50%, transparent); background: color-mix(in srgb, var(--es-acc) 12%, transparent); }
+
+.es-popover {
+  --es-acc: var(--ms-acc, var(--accent-primary, #5c9ec7));
+  position: fixed; z-index: 10050;
+  max-height: 420px; display: flex; flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--es-acc) 35%, transparent);
+  background: color-mix(in srgb, var(--bg1, #0b0f15) 94%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 50px -12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03) inset;
+  animation: es-in .14s ease-out;
+}
+.es-pop-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg, #fff) 8%, transparent);
+  font-size: 12px;
+}
+.es-pop-title { font-family: var(--font-mono, ui-monospace, Menlo, monospace); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.es-pop-stat { display: inline-flex; gap: 6px; font-size: 11px; align-items: center; }
+.es-pop-body {
+  overflow: auto; padding: 6px 0; font-size: 11.5px; line-height: 1.5;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+.es-dl { padding: 0 12px; white-space: pre; }
+.es-dl-add { color: var(--es-add, #3fd68f); background: rgba(63, 214, 143, .09); }
+.es-dl-del { color: #ff6b81; background: rgba(255, 107, 129, .09); }
+.es-dl-hunk { color: var(--es-acc); opacity: .85; }
+.es-dl-file { color: var(--muted, #7c8798); }
+
+/* read-before-write guard verdict on a tool node */
+.agent-guard-note {
+  display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 2px;
+  font-size: 11px; padding: 2px 8px; border-radius: 6px;
+  color: #ffb86c; border: 1px solid rgba(255, 184, 108, .35); background: rgba(255, 184, 108, .07);
+}
+@media (prefers-reduced-motion: reduce) { .edit-summary, .es-popover { animation: none; } .es-chev { transition: none; } }
+
+/* ── Queue tray (DSH message queue in the normal chat) ─────────────────── */
+.queue-tray {
+  list-style: none; margin: 0 0 6px; padding: 6px;
+  display: flex; flex-direction: column; gap: 4px;
+  border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--ms-acc, #5c9ec7) 40%, transparent);
+  background: color-mix(in srgb, var(--ms-acc, #5c9ec7) 5%, transparent);
+  max-height: 140px; overflow: auto;
+  animation: es-in .18s ease-out;
+}
+.queue-tray[hidden] { display: none; }
+.queue-tray-item {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) 24px; align-items: center; gap: 8px;
+  font-size: 12px; padding: 3px 4px; border-radius: 8px;
+}
+.queue-tray-item:hover { background: color-mix(in srgb, var(--fg, #fff) 5%, transparent); }
+.queue-tray-n {
+  width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-variant-numeric: tabular-nums;
+  color: var(--ms-acc, #5c9ec7); border: 1px solid color-mix(in srgb, var(--ms-acc, #5c9ec7) 45%, transparent);
+}
+.queue-tray-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-tray-x { all: unset; cursor: pointer; display: inline-flex; justify-content: center; opacity: .55; border-radius: 6px; padding: 2px; }
+.queue-tray-x:hover, .queue-tray-x:focus-visible { opacity: 1; background: rgba(255, 107, 129, .12); }
+/* A user bubble waiting in the queue: shown in the tray, not mid-reply */
+.msg.msg-queued { display: none; }
+/* Send button in queue mode (reply streaming + text typed) */
+.send-btn.queue-mode { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ms-acc, #5c9ec7) 45%, transparent); }

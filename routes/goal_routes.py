@@ -20,6 +20,22 @@ def _is_top_level_human(request: Request) -> bool:
     return bool(user) and user != "internal-tool"
 
 
+def _session_owned(session_id: str, owner: str) -> bool:
+    try:
+        from src.database import SessionLocal, Session as DbSession
+        db = SessionLocal()
+        try:
+            row = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if not row:
+                return False
+            o = getattr(row, "owner", None)
+            return (not o) or o == owner
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
 def setup_goal_routes() -> APIRouter:
     router = APIRouter(prefix="/api/goal", tags=["goal"])
 
@@ -99,7 +115,19 @@ def setup_goal_routes() -> APIRouter:
         if not owner:
             raise HTTPException(403, "Authentication required")
         from src.checkpoint import checkpoint_queue_state
-        return checkpoint_queue_state(owner)
+        # The task list is session-scoped (todo_write writes it per chat). Use
+        # the requested chat if it is the caller's, else the goal's chat.
+        sid = (request.query_params.get("session_id") or "").strip()
+        if sid and not _session_owned(sid, owner):
+            raise HTTPException(404, "Session not found")
+        if not sid:
+            g = get_goal(owner) or {}
+            sid = g.get("session_id") or ""
+        if not sid:
+            return {"remaining": [], "done": []}
+        st = checkpoint_queue_state(sid)
+        st["session_id"] = sid
+        return st
 
     @router.get("/checkpoint")
     async def goal_checkpoint(request: Request):

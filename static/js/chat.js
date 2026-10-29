@@ -24,6 +24,8 @@ import createResearchSynapse from './researchSynapse.js';
 import { handleEvalRequest } from './browserEval.js';
 import streamRouter from './streamRouter.js';
 import wakeLock from './wakeLock.js';
+import { buildEditSummary, showDiffPopover as _esShowDiff } from './editSummary.js';
+import agentActivity from './agentActivity.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
@@ -182,7 +184,9 @@ import wakeLock from './wakeLock.js';
       let _draftT = null;
       _draftTa.addEventListener('input', () => {
         clearTimeout(_draftT);
-        _draftT = setTimeout(_saveDraftNow, 500);
+        // Cleared (sent) → forget the draft now; typing → save after a beat.
+        if (!_draftTa.value.trim()) _saveDraftNow();
+        else _draftT = setTimeout(_saveDraftNow, 500);
       });
       restoreDraft(sessionModule.getCurrentSessionId());
     }
@@ -224,6 +228,51 @@ import wakeLock from './wakeLock.js';
   // session is ignored so a queued message in chat A can never surface (or
   // fire) in chat B — live or background.
   let _queueChipSession = null;
+
+  // DSH-style queue tray: every queued message listed right above the
+  // composer, each removable, so a follow-up typed mid-reply is never a mystery.
+  function _renderQueueTray(items, sid) {
+    let tray = document.getElementById('queue-tray');
+    if (!items || !items.length) { if (tray) tray.hidden = true; return; }
+    if (!tray) {
+      tray = document.createElement('ol');
+      tray.id = 'queue-tray';
+      tray.className = 'queue-tray';
+      tray.setAttribute('aria-label', 'Queued messages');
+      const anchor = document.getElementById('message');
+      if (!anchor || !anchor.parentNode) return;
+      anchor.parentNode.insertBefore(tray, anchor);
+    }
+    tray.textContent = '';
+    items.forEach((it, i) => {
+      const li = document.createElement('li');
+      li.className = 'queue-tray-item';
+      const n = document.createElement('span');
+      n.className = 'queue-tray-n';
+      n.textContent = String(i + 1);
+      const txt = document.createElement('span');
+      txt.className = 'queue-tray-text';
+      txt.textContent = it.message || '(attachment)';
+      txt.title = it.message || '';
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'queue-tray-x';
+      rm.setAttribute('aria-label', 'Remove this queued message');
+      rm.innerHTML = _QSVG.x;
+      rm.addEventListener('click', async () => {
+        try {
+          await fetch(`${API_BASE}/api/chat/queue/${encodeURIComponent(sid)}/${it.position}`, { method: 'DELETE', credentials: 'same-origin' });
+          const q = [...document.querySelectorAll('#chat-history .msg-queued')].filter(el => el.dataset.queuedSid === sid);
+          const victim = q.find(el => (el.querySelector('.body')?.innerText || '').trim() === String(it.message || '').trim());
+          if (victim) victim.remove();
+        } catch (_) {}
+        _refreshQueueChipCount(sid);
+      });
+      li.append(n, txt, rm);
+      tray.appendChild(li);
+    });
+    tray.hidden = false;
+  }
 
   function _setQueueChip(n, sessionId) {
     const sid = sessionId || sessionModule.getCurrentSessionId();
@@ -364,10 +413,12 @@ import wakeLock from './wakeLock.js';
       // Only repaint if the user is still viewing this session (a switch may
       // have happened while the fetch was in flight).
       if (sessionModule.getCurrentSessionId() === sid) {
-        _setQueueChip((data && data.queued && data.queued.length) || 0, sid);
+        const _items = (data && data.queued) || [];
+        _setQueueChip(_items.length, sid);
+        _renderQueueTray(_items, sid);
       }
     } catch (_) {
-      if (sessionModule.getCurrentSessionId() === sid) _setQueueChip(0, sid);
+      if (sessionModule.getCurrentSessionId() === sid) { _setQueueChip(0, sid); _renderQueueTray([], sid); }
     }
   }
 
@@ -407,9 +458,12 @@ import wakeLock from './wakeLock.js';
 
   async function _sendQueuedMessage(sessionId, submitBtn, msg) {
     const el = uiModule.el;
-    // Render the user bubble immediately (same helper as the normal path).
-    addMessage('user', msg, null, null);
+    // Render the user bubble immediately, marked "queued" until its turn starts.
+    const _qb = addMessage('user', msg, null, null);
+    if (_qb && _qb.classList) { _qb.classList.add('msg-queued'); _qb.dataset.queuedSid = sessionId; }
     el('message').value = '';
+    el('message').dispatchEvent(new Event('input'));               // clears the saved draft
+    if (window._updateSendBtnIcon) window._updateSendBtnIcon();   // Queue → Stop again
     if (uiModule.autoResize) uiModule.autoResize(el('message'));
     if (window._syncModelPickerAutohide) window._syncModelPickerAutohide();
     _queuePendingSessions.add(sessionId);
@@ -459,7 +513,11 @@ import wakeLock from './wakeLock.js';
           if (raw.startsWith('data: ')) {
             let j = null;
             try { j = JSON.parse(raw.slice(6)); } catch (_) {}
+            if (j && j.type === 'turn_queued') {
+              _refreshQueueChipCount(sessionId);   // server confirmed → show it in the tray
+            }
             if (j && j.type === 'turn_resumed') {
+              _unmarkQueued(sessionId);
               _renderQueuedTurn(sessionId);
               return;  // the compact renderer re-fetches /resume and renders
             }
@@ -481,8 +539,23 @@ import wakeLock from './wakeLock.js';
     }
   }
 
+  // A queued turn just started: its bubble is no longer "queued".
+  function _unmarkQueued(sessionId, all = false) {
+    const els = [...document.querySelectorAll('#chat-history .msg-queued')]
+      .filter(el => !sessionId || el.dataset.queuedSid === sessionId);
+    // While queued the message lives in the tray (bubble hidden); when its
+    // turn starts the bubble moves to the end so the chat reads in order.
+    const box = document.getElementById('chat-history');
+    (all ? els : els.slice(0, 1)).forEach(el => {
+      el.classList.remove('msg-queued');
+      if (!all && box) box.appendChild(el);
+    });
+    if (sessionId) _refreshQueueChipCount(sessionId);
+  }
+
   // Reset the optimistic queue state after a failed / aborted queued send.
   function _resetQueuedSend(sessionId) {
+    _unmarkQueued(sessionId, true);
     if (sessionId) _queuePendingSessions.delete(sessionId);
     _setQueueChip(0, sessionId);
     const sb = document.querySelector('.send-btn');
@@ -539,6 +612,7 @@ import wakeLock from './wakeLock.js';
             try { j = JSON.parse(data); } catch (_) { continue; }
             if (j.type === 'turn_resumed') {
               sawResumed = true;
+              _unmarkQueued(sessionId);
               // This queued turn just started — the chip must reflect any
               // REMAINING queued messages (drain chain), not drop to zero.
               _refreshQueueChipCount(sessionId);
@@ -572,8 +646,15 @@ import wakeLock from './wakeLock.js';
               holder.appendChild(body);
               _hist().appendChild(holder);
               acc = '';
-            } else if (j.type === 'delta') {
-              if (!holder || j.thinking) continue;
+            } else if (j.delta !== undefined && !j.type) {
+              if (j.thinking || j.round_sep) continue;
+              if (!holder) {
+                // First round has no agent_step — open its bubble on first text.
+                holder = document.createElement('div');
+                holder.className = 'msg msg-ai streaming';
+                holder.innerHTML = '<div class="role"></div><div class="body"></div>';
+                _hist().appendChild(holder);
+              }
               acc += (j.delta || '');
               const now = performance.now();
               if (now - lastRender > 80) { lastRender = now; render(); }
@@ -643,6 +724,13 @@ import wakeLock from './wakeLock.js';
     } finally {
       _queuedRendererActive = false;
       _queuePendingSessions.delete(sessionId);
+      // Re-render from history: the saved turn carries the full thread,
+      // deep-dive, edit summary and diffs that this compact view skips.
+      try {
+        if (sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId() === sessionId && !isStreaming) {
+          setTimeout(() => { if (sessionModule.getCurrentSessionId() === sessionId && !isStreaming) sessionModule.selectSession(sessionId); }, 400);
+        }
+      } catch (_) {}
       // Reflect the authoritative remaining queue (may still be > 0 if a
       // queued turn failed to start or the drain chain was interrupted).
       _refreshQueueChipCount(sessionId);
@@ -674,11 +762,13 @@ import wakeLock from './wakeLock.js';
     if (!ta || !sid) return;
     const v = ta.value || '';
     if (v.trim()) {
-      localStorage.setItem('odysseus-draft-' + sid, v);
-      _draftIndicator(_SSVG.save + ' draft saved locally');
-      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === ' draft saved locally') el.hidden = true; }, 2500);
+      try { localStorage.setItem('odysseus-draft-' + sid, v); } catch (_) { return; }
+      // Stays visible while a draft exists — it's the "your text is safe" cue.
+      const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      _draftIndicator(_SSVG.save + ` draft saved · ${t}`);
     } else {
-      localStorage.removeItem('odysseus-draft-' + sid);
+      try { localStorage.removeItem('odysseus-draft-' + sid); } catch (_) {}
+      _draftIndicator('');
     }
   }
 
@@ -689,8 +779,9 @@ import wakeLock from './wakeLock.js';
     const ta = document.getElementById('message');
     if (ta && v) {
       ta.value = v;
-      _draftIndicator(_SSVG.save + ' draft restored');
-      setTimeout(() => { const el = document.getElementById('draft-indicator'); if (el && el.textContent === ' draft restored') el.hidden = true; }, 2500);
+      _draftIndicator(_SSVG.save + ' draft restored — not sent yet');
+    } else {
+      _draftIndicator('');
     }
   }
 
@@ -719,6 +810,7 @@ import wakeLock from './wakeLock.js';
         void submitBtn.offsetWidth;
         submitBtn.classList.add('anim-land');
         submitBtn.addEventListener('animationend', () => submitBtn.classList.remove('anim-land'), { once: true });
+        if (window._updateSendBtnIcon) window._updateSendBtnIcon();   // typed during launch → Queue icon
       }, 300);
       submitBtn.title = 'Stop generation';
       submitBtn.dataset.mode = 'streaming';
@@ -835,6 +927,7 @@ import wakeLock from './wakeLock.js';
       const handled = await handleSlashCommand(msg.trim());
       if (handled) {
         el('message').value = '';
+        el('message').dispatchEvent(new Event('input'));   // forget the saved draft too
         if (window._syncModelPickerAutohide) window._syncModelPickerAutohide();
         if (uiModule.autoResize) uiModule.autoResize(el('message'));
         _releaseSendFlag();
@@ -940,6 +1033,31 @@ import wakeLock from './wakeLock.js';
     // fires so the last chunk still renders.
     let _streamRenderQueued = false;
     let _streamRenderLast = 0;
+    // Set once the last bubble is finalized. A throttled render still queued
+    // at that moment used to fire AFTER the final render, re-create
+    // .stream-content and print the last round's text a second time.
+    let _streamFinalized = false;
+    // Edits (file_diff events) collected over the whole turn → one
+    // "Edited N files" card when the turn presents its results.
+    const _turnEdits = [];
+    // Tool nodes still waiting for their result. Parallel tools emit all their
+    // tool_start events first; each tool_output must land on ITS node (same
+    // tool + command, oldest first) — not on whichever node started last.
+    const _runningNodes = [];
+    // Live deep-dive header (time · rounds · actions) for this agent turn.
+    let _liveDD = null;
+    const _ensureLiveDD = () => {
+      if (_liveDD || !holder || !holder.parentNode) return;
+      _liveDD = agentActivity.startLive(holder, () => {
+        const out = [];
+        for (let el = holder; el; el = el.nextElementSibling) {
+          if (el.classList.contains('msg-queued')) continue;          // hidden, lives in the tray
+          if (el !== holder && (el.classList.contains('msg-user') || el.classList.contains('deep-dive'))) break;
+          out.push(el);
+        }
+        return out;
+      });
+    };
     let _durationTicker = null;  // Phase 6 — live duration ticker handle (outer scope: referenced in finally)
     function _throttleStreamRender() {
       if (_streamRenderQueued) return;
@@ -947,6 +1065,7 @@ import wakeLock from './wakeLock.js';
       _streamRenderQueued = true;
       setTimeout(() => {
         _streamRenderQueued = false;
+        if (_streamFinalized) return;
         _streamRenderLast = performance.now();
         _renderStream();
       }, wait);
@@ -1700,7 +1819,13 @@ import wakeLock from './wakeLock.js';
             // so frame-aware rendering would stall). The stream is NOT aborted —
             // the detached server run keeps going and we re-render on return.
             const _isBgSession = (sessionModule.getCurrentSessionId() !== streamSessionId);
-            const _isBg = _isBgSession || !streamRouter.isTabVisible();
+            // Only a stream for ANOTHER chat skips DOM work. A hidden tab of
+            // this chat still builds the tool thread, deep-dive, edit summary
+            // and plan panel — skipping them (as before) meant anyone who
+            // tabbed away during a long run came back to a bare answer with
+            // no thread, no "Edited N files", no diffs until a reload.
+            const _isBg = _isBgSession;
+            const _tabHidden = !streamRouter.isTabVisible();
 
             // On first transition to a DIFFERENT session, store state in the
             // background map. A merely hidden tab is NOT a background stream —
@@ -1730,7 +1855,7 @@ import wakeLock from './wakeLock.js';
               if (bgDone) {
                 bgDone.status = 'completed';
                 bgDone.accumulated = accumulated;
-                if (_isBg) {
+                if (_isBg || _tabHidden) {
                   try {
                     _notifyStreamComplete(streamSessionId, streamQuery);
                     _insertStreamDoneToast(streamSessionId, streamQuery);
@@ -1807,6 +1932,18 @@ import wakeLock from './wakeLock.js';
               }
               if (json.delta || json.type === 'tool_start' || json.type === 'agent_step' || json.type === 'doc_stream_delta') {
                 clearProcessingProbe();
+                if (_liveDD && _liveDD.setNote) _liveDD.setNote('');
+              }
+              if (json.round_sep) continue;     // server-side round separator (persisted text only)
+              if (json.type === 'model_wait') {
+                // The model is silent (queued upstream / thinking without
+                // streaming) — say so instead of looking frozen.
+                if (!_isBg) {
+                  _ensureLiveDD();
+                  const _s = json.seconds || 0;
+                  if (_liveDD && _liveDD.setNote) _liveDD.setNote(`waiting for the model · ${_s >= 60 ? Math.floor(_s / 60) + 'm ' + (_s % 60) + 's' : _s + 's'}`);
+                }
+                continue;
               }
               if (json.delta) {
                 _cancelThinkingTimer();
@@ -2344,6 +2481,7 @@ import wakeLock from './wakeLock.js';
 
               } else if (json.type === 'tool_start') {
                 if (_isBg) continue;
+                _ensureLiveDD();
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
                 // Force-close thinking if still open — tools are real content, not thinking
@@ -2419,6 +2557,9 @@ import wakeLock from './wakeLock.js';
                 const toolLabel = _toolLabels[json.tool.toLowerCase()] || json.tool;
                 const node = document.createElement('div')
                 node.className = 'agent-thread-node running';
+                node.dataset.tool = json.tool || '';
+                node._cmd = cmd;
+                _runningNodes.push(node);
                 const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${esc(cmd)}</pre>` : '';
                 node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">\u25B6</span><span class="agent-thread-tool">${toolLabel}</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content">${cmdHtml}</div>`;
                 // Expand/collapse via delegated click handler (init at module bottom).
@@ -2492,16 +2633,27 @@ import wakeLock from './wakeLock.js';
 
               } else if (json.type === 'tool_output') {
                 if (_isBg) continue;
-                // --- Update the current thread node ---
-                if (currentToolBubble) {
+                // Plan/goal tools → refresh the in-chat plan panel right away.
+                if (!_isBg && /^(todo_write|create_goal|update_goal)$/.test(json.tool || '')) {
+                  import('./goalCard.js').then(m => { const rf = m.refreshGoal || (m.default && m.default.refreshGoal); if (rf) rf(); }).catch(() => {});
+                }
+                // --- Update THIS tool's thread node ---
+                let _tgt = null;
+                {
+                  const _i1 = _runningNodes.findIndex(n => n.dataset.tool === json.tool && (!json.command || n._cmd === json.command));
+                  const _i2 = _i1 >= 0 ? _i1 : _runningNodes.findIndex(n => n.dataset.tool === json.tool);
+                  if (_i2 >= 0) _tgt = _runningNodes.splice(_i2, 1)[0];
+                  else _tgt = currentToolBubble;
+                }
+                if (_tgt) {
                   // Stop wave animation + the per-second cooking ticker
-                  if (currentToolBubble._waveInterval) {
-                    clearInterval(currentToolBubble._waveInterval);
-                    currentToolBubble._waveInterval = null;
+                  if (_tgt._waveInterval) {
+                    clearInterval(_tgt._waveInterval);
+                    _tgt._waveInterval = null;
                   }
-                  if (currentToolBubble._elapsedTicker) {
-                    clearInterval(currentToolBubble._elapsedTicker);
-                    currentToolBubble._elapsedTicker = null;
+                  if (_tgt._elapsedTicker) {
+                    clearInterval(_tgt._elapsedTicker);
+                    _tgt._elapsedTicker = null;
                   }
                   const ok = (json.exit_code === 0 || json.exit_code == null);
                   const cmd = json.command || '';
@@ -2515,13 +2667,13 @@ import wakeLock from './wakeLock.js';
                   // it as soon as the result lands, forcing the user to
                   // click again. Click handling is delegated (see init at
                   // bottom of file) so no per-node listener needed.
-                  const _wasOpen = currentToolBubble.classList.contains('open');
-                  currentToolBubble.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
+                  const _wasOpen = _tgt.classList.contains('open');
+                  _tgt.className = 'agent-thread-node' + (ok ? '' : ' error') + (_wasOpen ? ' open' : '');
                   // B6 — "show full output" button when the result was spilled.
                   const _spillBtn = json.spill_ref
                     ? `<button class="agent-spill-open" data-owner="${esc(json.spill_ref.owner)}" data-session="${esc(json.spill_ref.session)}" data-file="${esc(json.spill_ref.file)}">Show full output</button>`
                     : '';
-                  currentToolBubble.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${_spillBtn}</div>`;
+                  _tgt.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(json.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${cmdHtml2}${outHtml}${_spillBtn}</div>`;
                   // Reset so thinking spinner between tools says "Thinking" not the old tool's label
                   _lastToolName = '';
                   uiModule.scrollHistory();
@@ -2535,8 +2687,8 @@ import wakeLock from './wakeLock.js';
                   window.dispatchEvent(new CustomEvent('gallery-refresh'));
                 }
                 // --- Render browser screenshots in tool output ---
-                if (json.screenshot && currentToolBubble) {
-                  const contentEl = currentToolBubble.querySelector('.agent-thread-content');
+                if (json.screenshot && _tgt) {
+                  const contentEl = _tgt.querySelector('.agent-thread-content');
                   if (contentEl) {
                     const details = document.createElement('details');
                     details.className = 'agent-tool-output';
@@ -2618,6 +2770,8 @@ import wakeLock from './wakeLock.js';
 
               } else if (json.type === 'agent_step') {
                 if (_isBg) continue;
+                _ensureLiveDD();
+                if (_liveDD) _liveDD.setRounds(json.round);
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
                 // DSH deep-dive — per-round separator with elapsed time.
@@ -2763,10 +2917,12 @@ import wakeLock from './wakeLock.js';
                 // DSH diff picker — a write_file edit produced a unified diff;
                 // attach a chip to the tool bubble that just rendered it.
                 const _fd = json.data || {};
+                if (_fd.path) _turnEdits.push(_fd);
                 if (!_isBg && currentToolBubble && _fd.lines && _fd.lines.length) {
                   const contentEl = currentToolBubble.querySelector('.agent-thread-content');
                   if (contentEl && !contentEl.querySelector('.agent-diff-open')) {
                     const chip = document.createElement('button');
+                    chip.type = 'button';
                     chip.className = 'agent-diff-open';
                     chip.textContent = `diff +${_fd.added ?? '?'}/−${_fd.removed ?? '?'}`;
                     chip.title = 'view diff';
@@ -2780,19 +2936,23 @@ import wakeLock from './wakeLock.js';
                 // plus the DSH "edited N files" summary line.
                 import('./chatRenderer.js').then(mod => {
                   const files = json.data?.files || [];
-                  const edited = json.data?.edited || [];
                   const build = mod.buildDeliverableCard || (mod.default && mod.default.buildDeliverableCard);
                   const box = document.getElementById('chat-history');
                   if (!build || !box) return;
-                   if (edited.length) {
-                     const line = document.createElement('div');
-                     line.className = 'status-note edited-files-note';
-                     line.setAttribute('role', 'status');
-                     line.innerHTML = _QSVG.pencil +
-                       `<span>edited ${edited.length} file${edited.length === 1 ? '' : 's'}: ${_escQ(edited.join(', '))}</span>`;
-                     box.appendChild(line);
-                   }
+                  // Edited files → one "Edited N files" card (diffs + open
+                  // buttons); everything else the turn produced → deliverables.
+                  const editPaths = new Set(_turnEdits.map(f => f.path));
+                  const editsList = _turnEdits.slice();
+                  const summary = _isBg ? null : buildEditSummary(editsList);
+                  if (summary) {
+                    // After the bubble, not inside it: the final render of the
+                    // last round rewrites its body and would wipe the card.
+                    if (roundHolder && roundHolder.parentNode === box) roundHolder.after(summary);
+                    else box.appendChild(summary);
+                  }
+                  if (_isBg) return;                 // history reload renders them for bg turns
                   files.forEach(f => {
+                    if (editPaths.has(f.path)) return;
                     const card = build(f);
                     if (card) box.appendChild(card);
                   });
@@ -2955,6 +3115,10 @@ import wakeLock from './wakeLock.js';
           }
         } catch (_) {}
 
+        _streamFinalized = true;   // no queued streaming render may run after this
+        if (_liveDD) {
+          try { _liveDD.finish({ seconds: metrics && metrics.response_time }); } catch (_) {}
+        }
         // Clear streaming minHeight lock
         const _streamContent = roundHolder.querySelector('.stream-content');
         if (_streamContent) _streamContent.style.minHeight = '';
@@ -3007,6 +3171,13 @@ import wakeLock from './wakeLock.js';
             // Render reply into the live-reply container (thinking bar already showing)
             var _replyHtml = markdownModule.mdToHtml(markdownModule.squashOutsideCode(_finalReply));
             _liveReplyEl.innerHTML = _replyHtml;
+            // Partial reply text rendered next to the thinking box (before the
+            // reply container existed) would otherwise stay as a second copy.
+            // Only bare text blocks inside the stream wrapper are removed —
+            // never the thinking panel, the reply, sources or findings.
+            if (_body4) _body4.querySelectorAll('.stream-content > *').forEach(c => {
+              if (c !== _liveReplyEl && !c.contains(_liveReplyEl) && !c.className) c.remove();
+            });
             _liveReplyEl.classList.remove('live-reply-content');
             if (_sourcesData) {
               var _srcEl = document.createElement('div');
@@ -3393,6 +3564,19 @@ import wakeLock from './wakeLock.js';
       }
 
       // Only reset UI state if still on the stream's session and was never backgrounded
+      // The live deep-dive timer must stop on every exit path (abort, error, bg).
+      // Any tool node that never got its tool_output (aborted / parallel edge case):
+      // stop its tickers and mark it settled so nothing keeps "running" forever.
+      try {
+        while (_runningNodes.length) {
+          const n = _runningNodes.shift();
+          if (n._waveInterval) { clearInterval(n._waveInterval); n._waveInterval = null; }
+          if (n._elapsedTicker) { clearInterval(n._elapsedTicker); n._elapsedTicker = null; }
+          n.classList.remove('running'); n.classList.add('stale');
+          const wv = n.querySelector('.agent-thread-wave'); if (wv) { wv.className = 'agent-thread-status'; wv.textContent = 'no result'; }
+        }
+      } catch (_) {}
+      if (_liveDD) { try { _liveDD.finish({}); } catch (_) {} }   // no-op if finalize already did it
       const _isBgFinally = (sessionModule.getCurrentSessionId() !== streamSessionId) || _backgroundStreams.has(streamSessionId);
 
       if (!_isBgFinally) {
@@ -5351,7 +5535,7 @@ import wakeLock from './wakeLock.js';
         e.stopPropagation();
         let data;
         try { data = JSON.parse(df.dataset.diff); } catch (_) { return; }
-        _showDiffPopover(df, data);
+        _esShowDiff(df, data, true);
       }
     });
     window.__odysseus_port_click_bound = true;

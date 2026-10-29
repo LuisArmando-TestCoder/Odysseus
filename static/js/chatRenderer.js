@@ -8,6 +8,8 @@ import { providerLogo } from './providers.js';
 import settingsModule from './settings.js';
 import spinnerModule from './spinner.js';
 import { bindMenuDismiss } from './escMenuStack.js';
+import { buildEditSummary, filesFromMetadata, showDiffPopover } from './editSummary.js';
+import agentActivity from './agentActivity.js';
 
 const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
 const REPORT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
@@ -2099,6 +2101,7 @@ export function addMessage(role, content, modelName, metadata, _target) {
       }
 
       const maxRound = Math.max(...Object.keys(toolsByRound).map(Number), roundTexts.length);
+      const _turnBefore = target.lastChild;   // everything appended after this is the turn
 
       for (let r = 0; r < maxRound; r++) {
         const roundNum = r + 1;
@@ -2171,6 +2174,22 @@ export function addMessage(role, content, modelName, metadata, _target) {
             node.className = 'agent-thread-node' + (ok ? '' : ' error');
             const evCmdHtml = ev.command ? `<pre class="agent-thread-cmd">${esc(ev.command)}</pre>` : '';
             node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${evCmdHtml}${outHtml}</div>`;
+            // Persisted edit diff (DSH diff picker) + read-before-write guard verdict.
+            const _tc = node.querySelector('.agent-thread-content');
+            if (_tc && ev.diff && ev.diff.path) {
+              const chip = document.createElement('button');
+              chip.type = 'button';
+              chip.className = 'agent-diff-open';
+              chip.textContent = `diff +${ev.diff.added ?? 0}/−${ev.diff.removed ?? 0}`;
+              chip.addEventListener('click', (e) => { e.stopPropagation(); showDiffPopover(chip, ev.diff, true); });
+              _tc.appendChild(chip);
+            }
+            if (_tc && ev.guard) {
+              const g = document.createElement('div');
+              g.className = 'agent-guard-note';
+              g.textContent = 'guard: blocked write to an unread file — read it first';
+              _tc.appendChild(g);
+            }
             // Click handling is delegated globally \u2014 see chat.js init.
             threadWrap.appendChild(node);
           }
@@ -2186,6 +2205,32 @@ export function addMessage(role, content, modelName, metadata, _target) {
           }
         }
       }
+
+      // DSH deep-dive header + action-category groups for this turn.
+      try {
+        const _turnEls = [];
+        for (let el = _turnBefore ? _turnBefore.nextSibling : target.firstChild; el; el = el.nextSibling) {
+          if (el.nodeType === 1) _turnEls.push(el);
+        }
+        agentActivity.decorateTurn(_turnEls, { seconds: metadata.response_time, rounds: maxRound });
+      } catch (_) { /* never break history rendering */ }
+
+      // DSH "Edited N files" card — rebuilt from the persisted tool events.
+      try {
+        const _editFiles = filesFromMetadata(metadata);
+        const _edits = buildEditSummary(_editFiles);
+        if (_edits) {
+          const _host = lastMsgAi ? lastMsgAi.querySelector('.body') : null;
+          if (_host) _host.appendChild(_edits); else target.appendChild(_edits);
+        }
+        // Deliverables the turn produced (documents, PDFs…) keep their cards.
+        const _editPaths = new Set(_editFiles.map(f => f.path));
+        for (const f of (metadata.deliverables || [])) {
+          if (!f || _editPaths.has(f.path)) continue;
+          const _card = buildDeliverableCard(f);
+          if (_card) target.appendChild(_card);
+        }
+      } catch (_) { /* never break history rendering */ }
 
       const firstWrap = lastMsgAi || lastWrap;
       if (firstWrap && firstWrap.classList.contains('msg-ai')) {

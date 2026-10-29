@@ -102,7 +102,7 @@ Answer ONLY with JSON:
 {"should_send": 0..1, "ready": 0..1, "already_sent": 0..1,
  "intent": "task|question|research|remember|followup|none", "urgency": 0|1|2,
  "commitment": 0..1, "stop_talking": 0..1, "interrupt": 0..1,
- "negative_directive": 0..1, "directed_to_chat": 0..1}
+ "negative_directive": 0..1, "directed_to_chat": 0..1, "answerable": 0..1, "confirms_pending": 0..1}
 - should_send: probability the user wants something done, looked up, answered or remembered — implicit and
   indirect requests count ("I want to see…", "bring me…", "what time is it")
 - ready: probability the user has finished expressing it (not mid-sentence / still thinking)
@@ -123,7 +123,13 @@ Answer ONLY with JSON:
   must be high and should_send must be 0.
 - directed_to_chat: probability the user explicitly names the CHAT as the target ("ask the chat", "send to
   the chat", "the chat should…", "pregúntale al chat", "dile al chat") — they want the CHAT AGENT to do the
-  work, not the voice assistant to answer from its own chatter. Judge in ANY language.
+  work, not the voice assistant to answer from its own chatter. Judge in ANY language. Asking what the chat
+  ALREADY said or found ("what does the chat say", "what do you have so far") is NOT directing new work: 0.
+- answerable: probability the answer to the user's question is ALREADY in chat_thread_summary (the chat agent's
+  answers) — including "what does the chat say / what have you got so far".
+- confirms_pending: if pending_confirmation is set, probability new_user_speech says YES, send it ("yes",
+  "definitely", "sí", "go ahead", "that's it"). A no, a correction or a new topic is 0. If pending_confirmation
+  is empty, 0.
 """ + NOT_A_REQUEST + "\n" + IMPLICIT_ASK
 
 # Forger output contract: a BARE message, not JSON and not a labelled envelope.
@@ -503,10 +509,23 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                         "language: 'ask the chat', 'send to the chat', 'the chat should…', 'pregúntale al chat', "
                         "'dile al chat', 'que el chat…'. When the user names the chat, they want the CHAT AGENT to "
                         "do the work — the voice assistant must not answer from its own chatter. If the user is "
-                        "just talking to the voice assistant without naming the chat, this is false."
+                        "just talking to the voice assistant without naming the chat, this is false. Asking what "
+                        "the chat ALREADY said, found or has so far ('what does the chat say', 'what do you have "
+                        "in context') is NOT directing new work to the chat — that is false."
                     ),
                     "criteria": {"true": "The user explicitly names the chat as the target",
                                  "false": "The user is not naming the chat as the target"},
+                },
+                "confirms_pending": {
+                    "type": "noul",
+                    "instructions": (
+                        "pending_confirmation holds a message the assistant just asked the user to confirm "
+                        "before sending it to the chat. Does new_user_speech say YES, send it ('yes', 'yeah', "
+                        "'definitely', 'sí', 'claro', 'go ahead', 'that's what I want'), in ANY language? A no, a "
+                        "correction, or a different request is false. If pending_confirmation is empty, false."
+                    ),
+                    "criteria": {"true": "The user confirms the pending message should be sent",
+                                 "false": "No pending message, or the user did not confirm it"},
                 },
                 "urgency": {
                     "type": "score",
@@ -527,6 +546,7 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "interrupt": _f(ans["interrupt"]["value"]),
                 "negative_directive": _f(ans["negative_directive"]["value"]),
                 "directed_to_chat": _f(ans["directed_to_chat"]["value"]),
+                "confirms_pending": _f((ans.get("confirms_pending") or {}).get("value")),
                 "urgency": ans["urgency"]["value"],
             }
         except DecisionsUnavailable as e:
@@ -546,6 +566,7 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
         "interrupt": _f(data.get("interrupt")),
         "negative_directive": _f(data.get("negative_directive")),
         "directed_to_chat": _f(data.get("directed_to_chat")),
+        "confirms_pending": _f(data.get("confirms_pending")),
         "urgency": data.get("urgency", 0),
     }
 
@@ -558,6 +579,7 @@ async def run_pipeline(
     force: bool = False,
     settle: bool = False,
     commitment: Optional[str] = None,
+    chat_busy: bool = False,
 ) -> AsyncIterator[Dict[str, Any]]:
     from src.cost_ledger import set_cost_scope
     set_cost_scope(chat_session_id or None, "voice-pipeline", owner)
@@ -593,7 +615,7 @@ async def run_pipeline(
     # background nice-to-have that starts only once this run is finished.
     mem.pipeline_active += 1
     try:
-        gen = _run_locked(mem, owner, chat_session_id, force, use_jev, settle, commitment)
+        gen = _run_locked(mem, owner, chat_session_id, force, use_jev, settle, commitment, chat_busy)
         async for ev in gen:
             yield ev
     finally:
@@ -776,7 +798,9 @@ async def _forge_and_emit(
     dup = mem.is_duplicate(message)
     if dup or (has_sent and g.get("duplicate", 0) >= 0.7):
         yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-        yield _ev(type="done", send=False, reason="duplicate", duplicate_of=(dup or "similar")[:160])
+        # Name the message it duplicates — "similar" alone told the user nothing.
+        dup_of = dup or _closest(message, spine["recently_sent"]) or message
+        yield _ev(type="done", send=False, reason="duplicate", duplicate_of=dup_of[:160], source=source)
         return
     if g.get("coherent", 1.0) < 0.5 or g.get("faithful", 1.0) < 0.4:
         # Guard-rejection cap: after consecutive rejections for the same voice
@@ -805,19 +829,34 @@ async def _forge_and_emit(
             yield _ev(type="done", send=False, reason="not-directed-to-chat", guard=g)
             return
         if directed < 0.7:
-            # Ambiguous — ask the user instead of silently dropping the request.
-            yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-            yield _ev(type="needs_clarification", message=message, guard=g)
-            yield _ev(type="done", send=False, reason="needs-clarification", guard=g)
-            return
+            pend = _live_pending(mem)
+            if pend and _jaccard(pend["message"], message) >= 0.5:
+                # The user asked for the same thing again after we asked —
+                # repeating a request IS the confirmation. Never ask twice.
+                mem.pending_confirm = None
+            else:
+                # Ambiguous — ask the user, and remember what we asked so a
+                # plain "yes" sends it (instead of being dropped as filler).
+                mem.pending_confirm = {"message": message, "title": title, "ts": time.time()}
+                yield _ev(type="stage", stage="guard", status="idle", ms=gms)
+                yield _ev(type="needs_clarification", message=message, guard=g)
+                yield _ev(type="done", send=False, reason="needs-clarification", guard=g)
+                return
     yield _ev(type="stage", stage="guard", status="done", ms=gms)
 
     # A message actually reached the chat — reset the guard-rejection counter.
     _gkey = getattr(mem, "voice_id", None) or f"{owner}:{chat_session_id or ''}"
     _GUARD_REJECTS.pop(_gkey, None)
 
-    mem.record_sent(message, decision)
     yield _ev(type="stage", stage="forge", status="done", ms=int((time.time() - t0) * 1000))
+    for ev in _emit_sent(mem, message, title, decision, source):
+        yield ev
+
+
+def _emit_sent(mem, message, title, decision, source=None):
+    """Record a message as sent and emit the events that queue it for the chat."""
+    mem.pending_confirm = None
+    mem.record_sent(message, decision)
     ev = _ev(type="forged", title=title or (decision.get("intent") or "Request").title(),
              message=message, intent=decision.get("intent"), urgency=decision.get("urgency"))
     if source:
@@ -827,7 +866,34 @@ async def _forge_and_emit(
     yield _ev(type="done", send=True)
 
 
-async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False, commitment=None) -> AsyncIterator[Dict[str, Any]]:
+_PENDING_TTL_S = 180
+
+
+def _live_pending(mem) -> Optional[Dict[str, Any]]:
+    """The message awaiting the user's yes/no, if it hasn't expired."""
+    p = getattr(mem, "pending_confirm", None)
+    if p and time.time() - p.get("ts", 0) > _PENDING_TTL_S:
+        mem.pending_confirm = p = None
+    return p
+
+
+_STOPWORDS = {"the", "a", "an", "to", "of", "and", "or", "please", "me", "my", "i", "for",
+              "in", "on", "it", "that", "this", "is", "be", "can", "you", "with", "at"}
+
+
+def _jaccard(a: str, b: str) -> float:
+    x = {w for w in re.findall(r"\w+", (a or "").lower()) if len(w) > 1 and w not in _STOPWORDS}
+    y = {w for w in re.findall(r"\w+", (b or "").lower()) if len(w) > 1 and w not in _STOPWORDS}
+    return len(x & y) / len(x | y) if x and y else 0.0
+
+
+def _closest(message: str, candidates: List[str]) -> Optional[str]:
+    best = max(candidates or [], key=lambda c: _jaccard(message, c), default=None)
+    return best if best and _jaccard(message, best) > 0.2 else None
+
+
+async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False, commitment=None,
+                      chat_busy=False) -> AsyncIterator[Dict[str, Any]]:
     async with _lock_for(mem):
         # ① GATE ──────────────────────────────────────────────────────────────
         t0 = time.time()
@@ -843,7 +909,10 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # Assistant speech not yet checked for a promise (proactivity).
         new_assistant = mem.new_assistant_turns()
         assistant_text = " ".join(t["text"] for t in new_assistant).strip()
-        gate = force or words >= 3 or bool(assistant_text)
+        # A short reply ("yes", "sí, claro") is a real answer while we are
+        # waiting on the user's confirmation — never drop it as filler.
+        pending = _live_pending(mem)
+        gate = force or words >= 3 or bool(assistant_text) or bool(pending and new_text)
         yield _ev(type="stage", stage="observe", status="done" if gate else "idle",
                   score=1.0 if gate else 0.0, words=words, ms=int((time.time() - t0) * 1000))
         if not gate:
@@ -878,6 +947,8 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 "memory_overview": (spine["highest"]["latest"][:1500] if spine["highest"] else ""),
                 "chat_thread_summary": chat_txt[:2000],
                 "session_documents": docs_txt[:2000],
+                "pending_confirmation": (pending or {}).get("message", ""),
+                "chat_is_working": bool(chat_busy),
             }
             try:
                 from src.cost_ledger import cost_scope
@@ -923,6 +994,25 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         yield _ev(type="decision", decision=decision, ms=ms)
         yield _ev(type="stage", stage="decide", status="done" if (send or decision.get("commitment", 0) >= 0.7) else "idle", ms=ms, engine=decision.get("engine"))
 
+        # ③a CONFIRMATION — we asked "did you want me to send this?" and the
+        # user said yes: send exactly what we asked about, no re-forge.
+        if pending and new_text and not force:
+            if decision.get("confirms_pending", 0) >= 0.6:
+                mem.consume()
+                if mem.is_duplicate(pending["message"]):
+                    mem.pending_confirm = None
+                    yield _ev(type="done", send=False, reason="duplicate", duplicate_of=pending["message"][:160])
+                    return
+                yield _ev(type="stage", stage="forge", status="done", ms=0)
+                cdec = dict(decision, engine="confirmed", intent=(decision.get("intent") if decision.get("intent") not in (None, "", "none") else "task"))
+                for ev in _emit_sent(mem, pending["message"], pending.get("title"), cdec, "confirmed"):
+                    yield ev
+                return
+            if not send:
+                mem.pending_confirm = None   # "no" / moved on — drop the question
+            # (a new request is compared with the pending one at the guard:
+            # the same ask again counts as yes, a different one replaces it)
+
         # ③c STOP-TALKING — the user wants the voice assistant to be quiet now.
         # Inferred by JEV (no regex, no hardcoded phrase list). The frontend
         # injects a stop instruction into GPT-Live's context.
@@ -940,7 +1030,10 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # SKIP when the user explicitly directed the request to the chat ("as
         # the chat", "ask the chat") — they want the chat agent to do the work,
         # not the voice to answer from its own chatter.
-        if send and decision.get("answerable", 0) >= 0.7 and not decision.get("directed_to_chat", 0) >= 0.7:
+        # Also runs when nothing is to be sent: "what does the chat say so far?"
+        # must be answered from the thread, not stalled with "let me check".
+        wants_new_work = send and decision.get("directed_to_chat", 0) >= 0.7
+        if new_text and decision.get("answerable", 0) >= 0.7 and not wants_new_work:
             context = (chat_txt or "") + "\n\n" + (docs_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
             answer = await _extract_answer(owner, new_text, context)
             if answer:
@@ -968,7 +1061,10 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
 
         # ⑤ COMMITMENT — the decider saw the ASSISTANT promise concrete work.
         # Forge that promise into a chat request (the assistant is proactive).
-        if commitment or decision.get("commitment", 0) >= 0.7:
+        # Skipped while the chat is already working: the assistant is then
+        # narrating THAT run ("I'll write it up as a document"), and forging it
+        # sent the chat a duplicate request that derailed the run in progress.
+        if not chat_busy and (commitment or decision.get("commitment", 0) >= 0.7):
             promise = commitment or assistant_text
             if promise:
                 cinput = (

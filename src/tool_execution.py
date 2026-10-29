@@ -670,7 +670,7 @@ async def _direct_fallback(
                 return {"error": f"write_file: {path}: permission denied", "exit_code": 1}
             except OSError as e:
                 return {"error": f"write_file: {path}: {e}", "exit_code": 1}
-            return {"output": f"Wrote {size} bytes to {path}", "exit_code": 0}
+            return {"output": f"Wrote {size} bytes to {path}", "exit_code": 0, "path": path}
 
         if tool == "web_search":
             from src.search import comprehensive_web_search
@@ -1423,17 +1423,41 @@ async def execute_tool_block(
             _args = {}
         _items = _args.get("items")
         if not isinstance(_items, list) or not _items:
-            if content.strip().startswith("{"):
-                result = {"error": "todo_write requires {\"items\": [...]}", "exit_code": 1}
-            else:
+            if not content.strip().startswith("{"):
                 _items = [l.strip() for l in content.strip().splitlines() if l.strip()]
         if isinstance(_items, list) and _items:
+            # Items: "text" | {"text"/"content"/"title", "status": pending|in_progress|done}.
+            # A "[x] " / "- [x] " prefix also marks done.
+            import re as _re_td
+            _rem, _done, _cur = [], [], None
+            for _it in _items:
+                if isinstance(_it, dict):
+                    _txt = str(_it.get("text") or _it.get("content") or _it.get("title") or "").strip()
+                    _stt = str(_it.get("status") or "pending").lower()
+                else:
+                    _txt = str(_it).strip(); _stt = "pending"
+                    _m = _re_td.match(r"^(?:[-*]\s*)?\[( |x|X|~|>)\]\s*", _txt)
+                    if _m:
+                        _stt = {"x": "done", "X": "done", "~": "in_progress", ">": "in_progress"}.get(_m.group(1), "pending")
+                        _txt = _txt[_m.end():].strip()
+                if not _txt:
+                    continue
+                if _stt in ("done", "completed", "complete"):
+                    _done.append(_txt)
+                else:
+                    _rem.append(_txt)
+                    if _stt in ("in_progress", "active", "doing") and _cur is None:
+                        _cur = _txt
+            for _d in (_args.get("done") or []):
+                if str(_d) not in _done:
+                    _done.append(str(_d))
             from src.checkpoint import checkpoint_set_queue
-            _items = [str(i) for i in _items]
-            checkpoint_set_queue(_items, session_id)
-            result = {"output": f"todo list set ({len(_items)} items)", "exit_code": 0, "items": _items}
+            checkpoint_set_queue(_rem, session_id, done=_done, current=_cur or (_rem[0] if _rem else None))
+            result = {"output": f"todo list: {len(_done)} done, {len(_rem)} remaining"
+                                + (f" — now: {_cur or _rem[0]}" if _rem else " — all done"),
+                      "exit_code": 0, "items": _rem, "done": _done}
         else:
-            result = {"error": "todo_write requires a non-empty items list", "exit_code": 1}
+            result = {"error": "todo_write requires {\"items\": [\"step\", {\"text\": \"step\", \"status\": \"done\"}, ...]}", "exit_code": 1}
     elif tool == "sinalevi_search":
         desc = f"sinalevi_search: {content.split(chr(10))[0][:60]}"
         # L4 — targeted Costa Rican legislation query; results always cite the

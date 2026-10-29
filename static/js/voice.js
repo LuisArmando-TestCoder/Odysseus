@@ -107,6 +107,11 @@ let _transcriptSeen = false, _diagT = 0;
 
 // ── Transcript streaming ────────────────────────────────────────────────────
 let _aiLine = null, _aiText = '', _aiFinalizeT = 0;
+// A spoken relay of the CHAT AGENT's output (commentary append) is not
+// ALFRED's own promise: tagged so the pipeline never forges it into a request.
+let _relayArmed = false, _relayArmedAt = 0, _aiIsRelay = false;
+const _titleName = (s) => { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); };
+const _excerpt = (t, n = 90) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 let _userLine = null, _userText = '', _userFinalizeT = 0;
 let _userBase = 0;           // chars of the current user turn already shown in earlier (split) lines
 let _userTurnOpen = false;   // a user turn is accumulating (survives line splits)
@@ -638,7 +643,7 @@ function _buildHUD() {
   <main class="vx-main">
     <section class="vx-panel vx-left" aria-label="Live transcript and chat feed">
       <div class="vx-pane vx-pane-voice">
-        <div class="vx-panel-h"><span>Live Transcript</span><span class="vx-live-dot"></span></div>
+        <div class="vx-panel-h"><span>Live transcript</span><span class="vx-live-dot"></span></div>
         <div class="vx-transcript" id="vx-transcript">
           <div class="vx-empty">Conversation appears here in real time.<br><kbd>Space</kbd> connect · <kbd>M</kbd> mute · <kbd>⏎</kbd> send now · <kbd>Esc</kbd> close</div>
         </div>
@@ -653,7 +658,7 @@ function _buildHUD() {
         </div>
       </div>
       <div class="vx-pane vx-pane-chat">
-        <div class="vx-panel-h"><span>Chat Feed</span><span class="vx-chat-state" data-s="idle">Idle</span></div>
+        <div class="vx-panel-h"><span>Chat feed</span><span class="vx-chat-state" data-s="idle">Idle</span></div>
         <div class="vx-chatlog" id="vx-chatlog" aria-live="polite">
           <div class="vx-empty">What the chat agent receives and answers appears here live.</div>
         </div>
@@ -676,7 +681,7 @@ function _buildHUD() {
     </section>
 
     <section class="vx-panel vx-right" aria-label="Neural pipeline">
-      <div class="vx-panel-h"><span>Neural Pipeline</span><span class="vx-engine" title="Decision engine">—</span></div>
+      <div class="vx-panel-h"><span>Neural pipeline</span><span class="vx-engine" title="Decision engine">—</span></div>
       <div class="vx-pipe">
         ${STAGES.map((s, i) => `
           <div class="vx-node" data-stage="${s}">
@@ -692,7 +697,7 @@ function _buildHUD() {
           <div class="vx-urgency" title="Urgency"><i></i><i></i><i></i></div>
         </div>
       </div>
-      <div class="vx-panel-h vx-sm"><span>Memory Strata</span><button class="vx-link-btn" data-act="reset-mem" title="Forget this voice memory">reset</button></div>
+      <div class="vx-panel-h vx-sm"><span>Memory strata</span><button class="vx-link-btn" data-act="reset-mem" title="Forget this voice memory">reset</button></div>
       <div class="vx-strata" id="vx-strata"></div>
       <div class="vx-mem-meta"><span data-m="turns">0 turns</span><span data-m="depth">depth 0</span><span data-m="comp">0 compactions</span></div>
     </section>
@@ -783,7 +788,7 @@ function _newLine(who) {
   line.className = `vx-line vx-${who}`;
   const tag = document.createElement('div');
   tag.className = 'vx-who';
-  tag.textContent = who === 'user' ? 'YOU' : _assistantName;
+  tag.textContent = who === 'user' ? 'You' : _titleName(_assistantName);
   const ts = document.createElement('time');
   ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   tag.appendChild(ts);
@@ -910,6 +915,10 @@ function _splitUserLine() {
 function _newAiLine() {
   _splitUserLine();
   _aiLine = _newLine('ai');
+  // Latch only a fresh relay: a commentary GPT-Live never spoke must not tag
+  // ALFRED's next own line as a relay (that would hide a real promise).
+  _aiIsRelay = _relayArmed && Date.now() - _relayArmedAt < 8000;
+  _relayArmed = false;
 }
 
 function _aiReplace(full) {
@@ -946,14 +955,16 @@ function _aiFinalize() {
     if (_isBackchannel(text)) _aiLine.classList.add('vx-bc');
   }
   if (text && !_isBackchannel(text)) {
-    _pending.push({ speaker: 'AI', text });
+    _pending.push({ speaker: 'AI', text, relay: _aiIsRelay });
     _lastAiSaid = text; _lastAiSaidAt = Date.now();
     try { localStorage.setItem('odysseus-voice-last-' + _voiceId, JSON.stringify({ t: text.slice(0, 400), at: _lastAiSaidAt })); } catch (e) { /* ignore */ }
     // The decider (JEV) judges whether this assistant turn is a concrete
     // promise to act — no regex. Schedule the pipeline so it can decide.
-    _schedulePipeline(1100);
+    // A relay of the chat's own output is never a promise: it rides along
+    // with the next run as context only.
+    if (!_aiIsRelay) _schedulePipeline(1100);
   }
-  _aiLine = null; _aiText = '';
+  _aiLine = null; _aiText = ''; _aiIsRelay = false;
 }
 
 // ALFRED promising to do real work ("I'll run a quick check on Stroessner").
@@ -964,7 +975,7 @@ function _aiFinalize() {
 function _userDelta(chunk) {
   if (!chunk) return;
   _transcriptSeen = true;
-  if (!_userTurnOpen) { _userTurnOpen = true; _userText = ''; _userBase = 0; }
+  if (!_userTurnOpen) { _userTurnOpen = true; _userText = ''; _userBase = 0; _relayArmed = false; }
   _userText = _merge(_userText, chunk);
   // Continuation segments start mid-sentence — drop leading space/punctuation.
   const seg = _userText.slice(_userBase).replace(/^[\s.,;:!?…-]+/, '');
@@ -1188,7 +1199,7 @@ async function _runPipeline(force = false, settle = false) {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       signal: ctrl.signal,
-      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle }),
+      body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle, chat_busy: _chatBusy() || !!_awaiting }),
     });
     if (!resp.ok || !resp.body) throw new Error(`pipeline HTTP ${resp.status}`);
     const reader = resp.body.getReader();
@@ -1247,9 +1258,12 @@ function _onPipeEvent(ev) {
     case 'needs_clarification':
       // The guard couldn't tell whether the message was directed at the chat.
       // Ask the user instead of silently dropping the request.
-      _systemLine('I wasn’t sure that was meant for the chat — could you confirm?', 'warn');
-      if (ev.message) {
-        _queueSpeak(`Just to confirm — did you want me to send this to the chat: ${ev.message}`, true);
+      // One line, one question. A plain "yes" next sends exactly this message.
+      _systemLine(`Send this to the chat? Say yes to confirm — “${_excerpt(ev.message, 140)}”`, 'warn');
+      if (ev.message && _active && _injectOK) {
+        _sayQueue.push('[Confirmation needed] Ask the user, in one short sentence and in their language, whether '
+          + 'you should send this request to the chat. Summarise it in a few words — do not read it out in full: '
+          + _excerpt(ev.message, 400));
       }
       break;
     case 'done':
@@ -1260,11 +1274,11 @@ function _onPipeEvent(ev) {
         _settleTimer = setTimeout(() => _runPipeline(false, true), 2500);
       }
       if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90), { criticality: 1 }); }
-      else if (ev.reason === 'duplicate' && ev.duplicate_of) _systemLine(`Already sent a moment ago — “${ev.duplicate_of.slice(0, 80)}”`, 'info');
+      // A duplicate follow-through of ALFRED's own chatter is expected noise — stay quiet.
+      else if (ev.reason === 'duplicate' && ev.duplicate_of && ev.source !== 'commitment') _systemLine(`Already sent a moment ago — “${_excerpt(ev.duplicate_of)}”`, 'info');
       else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 }); }
       else if (ev.reason === 'guard-paused') { _systemLine('Voice→chat paused — the guard rejected the last messages as unfaithful. Rephrase what you want, or continue in the chat directly.', 'warn'); }
       else if (ev.reason === 'not-directed-to-chat') { _systemLine('That didn’t look like it was meant for the chat — say it again if you want it sent.', 'info'); }
-      else if (ev.reason === 'needs-clarification') { _systemLine('I wasn’t sure that was meant for the chat — could you confirm?', 'warn'); }
       else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide', { criticality: 0.8 }); }
       break;
   }
@@ -1314,8 +1328,9 @@ function _enqueue(ev) {
   _persistQueue();
   _syncTask(item);
   _systemLine(ev.source === 'commitment'
-    ? `Following through on ${_assistantName}'s promise → “${ev.title || 'request'}”`
-    : `Forged → “${item.title}”`, 'forge');
+    ? `Following through on ${_assistantName}'s promise → “${_excerpt(item.message)}”`
+    : ev.source === 'confirmed' ? `Confirmed → “${_excerpt(item.message)}”`
+    : `Forged → “${_excerpt(item.message)}”`, 'forge');
   _ensureDispatcher();
 }
 
@@ -1758,7 +1773,7 @@ function _dispatchTick(manual = false) {
     _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
     _voiceInjectedTexts.add(text.trim());
     _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`), { tokens: _estTokens(text) });
-    _systemLine(batch.length === 1 ? `Sent to chat → “${batch[0].title}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
+    _systemLine(batch.length === 1 ? `Sent to chat → “${_excerpt(batch[0].message)}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
     // Tell GPT-Live (quietly) that real work just started, so it can reassure
     // the user with accurate status instead of guessing while the chat runs.
     _brief('The chat agent just received a request to work on: ' + text.slice(0, 260) +
@@ -2196,7 +2211,7 @@ function _renderChatFeed() {
     if (stopped) row.classList.add('interrupted');
     const who = document.createElement('div');
     who.className = 'vx-who';
-    who.textContent = isAi ? 'CHAT AGENT' : 'SENT TO CHAT';
+    who.textContent = isAi ? 'Chat agent' : 'Sent to chat';
     if (stopped) { const tag = document.createElement('em'); tag.textContent = 'interrupted'; who.appendChild(tag); }
     else if (streaming) { const tag = document.createElement('em'); tag.textContent = 'live'; who.appendChild(tag); }
     const say = document.createElement('div');
@@ -2393,6 +2408,9 @@ function _narrateStream(busy) {
 // request being worked on and every file / fact the chat produces — so the
 // user can interrupt and ask about anything mid-run and ALFRED can answer from
 // the same current context instead of only after the run completes.
+// Labels raw chat output so GPT-Live knows it is the chat's material it can
+// answer from ("what does the chat say?"), not something the user said.
+const _CTX_TAG = '[Chat agent — live output so far; context for you, do not read it out unless asked]\n';
 function _streamContext(busy) {
   if (!_active || !_injectOK) return;
   const now = Date.now();
@@ -2403,7 +2421,7 @@ function _streamContext(busy) {
   if (!busy) {
     if (_ctxEl) {
       const rest = _msgText(_ctxEl, 12000).slice(_ctxLen);
-      if (rest.trim()) _brief(rest.slice(0, _BRIEF_MAX - 40), false);
+      if (rest.trim()) _brief(_CTX_TAG + rest.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
     }
     _ctxEl = null; _ctxLen = 0; _ctxLastAt = 0;
     return;
@@ -2414,7 +2432,7 @@ function _streamContext(busy) {
   if (el !== _ctxEl) {
     if (_ctxEl) {
       const rest = _msgText(_ctxEl, 12000).slice(_ctxLen);
-      if (rest.trim()) _brief(rest.slice(0, _BRIEF_MAX - 40), false);
+      if (rest.trim()) _brief(_CTX_TAG + rest.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
     }
     _ctxEl = el;
     _ctxLen = 0;
@@ -2443,7 +2461,7 @@ function _streamContext(busy) {
   const chunk = delta.slice(0, cut);
   _ctxLen += cut;
   _ctxLastAt = now;
-  _brief(chunk.slice(0, _BRIEF_MAX - 40), false);
+  _brief(_CTX_TAG + chunk.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
 }
 
 function _speakResult(item, el) {
@@ -2483,6 +2501,10 @@ function _brief(text, speak) {
   _lastInjectAt = Date.now();
   const eventId = 'ody_' + (++_briefSeq) + '_' + Date.now().toString(36);
   const type = speak ? 'session.commentary.append' : 'session.thinking.append';
+  if (speak) {                     // the next thing ALFRED says is this relay
+    if (_aiLine) _aiFinalize();    // don't merge the relay into an open own line
+    _relayArmed = true; _relayArmedAt = Date.now();
+  }
   _dcSend({ type, event_id: eventId, delegation_id: null, content: text });
 }
 
@@ -2999,7 +3021,7 @@ function _renderTranscript(turns) {
     line.className = `vx-line vx-${who}`;
     const tag = document.createElement('div');
     tag.className = 'vx-who';
-    tag.textContent = who === 'user' ? 'YOU' : _assistantName;
+    tag.textContent = who === 'user' ? 'You' : _titleName(_assistantName);
     const body = document.createElement('div');
     body.className = 'vx-say';
     body.textContent = t.text || '';

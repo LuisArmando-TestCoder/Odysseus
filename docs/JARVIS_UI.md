@@ -47,15 +47,15 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 
 1. ✅ Foundation — preset, default, tokens, canvas, global primitives
 2. ✅ Shell / sidebar (Tron pass)
-3. Chat canvas + message bubbles
-4. Composer + voice/core indicator
-5. Modals / windows / dropdowns
+3. ✅ Chat canvas + message bubbles (Tron "drawn" pass, `tron.css`)
+4. ✅ Composer (Tron pass) — voice mode itself is out of scope (`voice-hyper.css`)
+5. ✅ Modals / windows / dropdowns (Tron pass)
 6. Settings
 7. Notes / tasks / calendar
 8. Documents / editor
 9. Email
-10. Cookbook / research / compare
-11. Login + landing (`static/login.html`, `static/landing.html`)
+10. Cookbook / ✅ research / compare
+11. ✅ Login (`auth-tron.css`) + landing (`static/landing.html`, not yet)
 12. `/cases` Intel Board (`static/cases.html`)
 13. Mobile pass
 
@@ -102,3 +102,32 @@ instead of filled pills for hover/active state.
 **Next:** chat canvas + message bubbles — HUD transcript: hairline-framed AI
 turns with a mono role label + timestamp, user turns as right-aligned cyan
 glass, Tron-style code blocks, welcome hero wordmark.
+
+### Run 3 — 2026-10-29 · "Drawn in light" Tron pass (interactive session)
+Direction from the user: *hypermodernize everything so it looks like a Tron UI —
+every component drawn — except Advanced Voice Mode (already done).*
+- New `static/css/tron.css`, linked right after `jarvis.css`, every selector
+  under `:root[data-odx-theme="jarvis"]`. One frame recipe for every surface:
+  the component keeps its box (nothing clipped, menus still escape) and a
+  `::before` behind it carries fill + 1px light line + 45° chamfered corners
+  whose diagonals are drawn + brighter ticks at both cuts. Knobs per surface:
+  `--c` (cut), `--ln` (line), `--hi` (ticks), `--fill`.
+- Bold move: **user turns are orange light, AI turns cyan** (Tron's two
+  programs). Everything else cyan; amber stays attention.
+- Covered: chat bubbles, code blocks/tables/quotes, thinking panel, agent
+  threads + tool nodes (diamond dots), round separators, action groups,
+  deep-dive header, edit summary + diff popovers, composer + send/queue button,
+  queue tray, modals + headers, dropdowns/menus, settings nav + admin cards,
+  inputs/selects focus glow, deep-research pane/jobs/chips, goal card, status
+  notes, deliverable cards, sidebar rows squared.
+- Login: `static/css/auth-tron.css` — void + horizon + perspective light-grid
+  floor; chamfered card whose outline is an SVG drawn by `login.js`
+  (`drawTronFrame`) and traced once on load; fixed inputs overflowing the card
+  (`box-sizing: border-box`).
+- Voice mode untouched (no `.vx` selectors).
+- Verified headless at 1440×900 and 390×844 (chat, settings, deep research,
+  login) + a radius sweep of open panels (no soft corners left outside voice).
+
+**Next:** notes / tasks / calendar, documents / editor, email, cookbook /
+compare, landing, `/cases`, then a mobile pass — reuse the `tron.css` frame
+recipe (add the surface to the selector list, tune `--c`).

@@ -1,0 +1,283 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Tron layer — "drawn in light" (jarvis theme; loads after jarvis.css)
+
+   One recipe, used by every surface: the component keeps its box (nothing is
+   clipped, so menus inside a bubble still escape it) and a ::before frame
+   behind it carries the fill, a 1px light line, 45° chamfered corners whose
+   diagonals are drawn too, and brighter ticks at the two cut corners.
+   Tune per surface with --c (cut), --ln (line), --hi (ticks), --fill.
+
+   Bold move: your turns are drawn in ORANGE light, the AI's in CYAN — Tron's
+   two programs. Everything else stays cyan. Advanced voice mode (.vx) is not
+   touched: none of these selectors exist inside it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root[data-odx-theme="jarvis"] {
+  --tr-cyan: var(--jv-cyan, #4fd8ff);
+  --tr-cyan-hi: var(--jv-cyan-hi, #b8f3ff);
+  --tr-orange: #ff9a3c;
+  --tr-orange-hi: #ffd2a6;
+  --tr-ln: color-mix(in srgb, var(--tr-cyan) 46%, transparent);
+  --tr-ln-dim: color-mix(in srgb, var(--tr-cyan) 20%, transparent);
+  --tr-fill: color-mix(in srgb, var(--jv-panel, #0a1424) 84%, transparent);
+  --tr-fill-solid: color-mix(in srgb, var(--jv-panel, #0a1424) 96%, #000);
+  --tr-ink: var(--jv-text, #d3e9f5);
+  --tr-dim: var(--jv-text-dim, #9fb7c6);
+}
+
+/* ── 1 · The frame recipe ───────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] :is(
+  .msg.msg-ai, .msg.msg-user, .chat-input-bar, .modal-content, .edit-summary,
+  .act-group, .goal-card, .deliverable-card, .queue-tray, .admin-card,
+  .agent-diff-popover, .es-popover, .question-card, .research-job, .rs-panel,
+  .goal-new-btn, .stall-banner, [id="stall-banner"], .deep-dive
+) {
+  --c: 10px;
+  --ln: var(--tr-ln);
+  --hi: var(--tr-cyan-hi);
+  --fill: var(--tr-fill);
+  --fill-top: color-mix(in srgb, var(--tr-cyan) 7%, var(--fill));
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+:root[data-odx-theme="jarvis"] :is(
+  .msg.msg-ai, .msg.msg-user, .chat-input-bar, .modal-content, .edit-summary,
+  .act-group, .goal-card, .deliverable-card, .queue-tray, .admin-card,
+  .agent-diff-popover, .es-popover, .question-card, .research-job, .rs-panel,
+  .goal-new-btn, .stall-banner, [id="stall-banner"], .deep-dive
+)::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: -1 !important;
+  pointer-events: none;
+  padding: 0; margin: 0; opacity: 1 !important; animation: none !important;
+  border: 1px solid transparent;
+  border-radius: 0;
+  -webkit-mask: none; mask: none;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background:
+    /* cut diagonals, drawn */
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
+    /* bright ticks leaving each cut */
+    linear-gradient(var(--hi), var(--hi)) var(--c) 0 / 18px 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) 0 var(--c) / 1.5px 18px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) calc(100% - var(--c)) 100% / 18px 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) 100% calc(100% - var(--c)) / 1.5px 18px no-repeat border-box,
+    /* body */
+    linear-gradient(180deg, var(--fill-top), var(--fill) 60%) padding-box,
+    /* the light line */
+    linear-gradient(var(--ln), var(--ln)) border-box;
+  transition: none;
+}
+/* Interactive frames brighten under the pointer / focus */
+:root[data-odx-theme="jarvis"] :is(.chat-input-bar:focus-within, .act-group:hover, .edit-summary:hover, .deliverable-card:hover, .goal-new-btn:hover, .admin-card:hover) {
+  --ln: color-mix(in srgb, var(--tr-cyan) 75%, transparent);
+}
+
+/* ── 2 · Chat turns: cyan program vs orange user ───────────────────────── */
+:root[data-odx-theme="jarvis"] .msg.msg-ai { --c: 12px; }
+:root[data-odx-theme="jarvis"] .msg.msg-user {
+  --c: 12px;
+  --ln: color-mix(in srgb, var(--tr-orange) 55%, transparent);
+  --hi: var(--tr-orange-hi);
+  --fill-top: color-mix(in srgb, var(--tr-orange) 9%, var(--tr-fill));
+}
+:root[data-odx-theme="jarvis"] .msg.msg-user .role,
+:root[data-odx-theme="jarvis"] .msg.msg-user .role::before { color: var(--tr-orange) !important; }
+:root[data-odx-theme="jarvis"] .msg.msg-user .role::before { background: var(--tr-orange) !important; box-shadow: 0 0 8px var(--tr-orange) !important; }
+:root[data-odx-theme="jarvis"] .msg .body { color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] .msg.msg-continuation { --c: 8px; }
+/* the "queued" user bubble keeps the dashed cue */
+:root[data-odx-theme="jarvis"] .msg.msg-user.msg-queued { --ln: color-mix(in srgb, var(--tr-orange) 30%, transparent); }
+
+/* Code blocks: a lit slot, not a rounded card */
+:root[data-odx-theme="jarvis"] .msg pre {
+  border-radius: 0 !important;
+  border: 1px solid var(--tr-ln-dim) !important;
+  border-left: 2px solid var(--tr-cyan) !important;
+  background: color-mix(in srgb, #000 55%, var(--tr-fill-solid)) !important;
+  box-shadow: inset 12px 0 18px -16px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .msg :not(pre) > code {
+  border-radius: 2px !important;
+  border: 1px solid var(--tr-ln-dim);
+  background: color-mix(in srgb, var(--tr-cyan) 8%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] .msg blockquote { border-left: 2px solid var(--tr-cyan); background: color-mix(in srgb, var(--tr-cyan) 5%, transparent); }
+:root[data-odx-theme="jarvis"] .msg table { border-collapse: collapse; }
+:root[data-odx-theme="jarvis"] .msg :is(th, td) { border: 1px solid var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .msg th { background: color-mix(in srgb, var(--tr-cyan) 9%, transparent) !important; color: var(--tr-cyan-hi); }
+
+/* Thinking panel: a drawn bracket on the left */
+:root[data-odx-theme="jarvis"] .thinking-section {
+  border-radius: 0 !important; border: 0 !important;
+  border-left: 1px solid var(--tr-ln) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 6%, transparent), transparent 70%) !important;
+  box-shadow: inset 2px 0 0 -1px var(--tr-cyan-hi) !important;
+}
+
+/* Sources / findings boxes */
+:root[data-odx-theme="jarvis"] :is(.sources-box, .sources-content, .findings-box, .rag-sources-box) {
+  border-radius: 0 !important; border-color: var(--tr-ln-dim) !important;
+}
+
+/* ── 3 · Agent work log: threads, tool nodes, round separators ─────────── */
+:root[data-odx-theme="jarvis"] .agent-thread::before,
+:root[data-odx-theme="jarvis"] .agent-thread { border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] .agent-thread-dot {
+  border-radius: 0 !important; transform: rotate(45deg);
+  background: var(--tr-cyan) !important; box-shadow: 0 0 8px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .agent-thread-node.error .agent-thread-dot { background: #ff6b81 !important; box-shadow: 0 0 8px #ff6b81 !important; }
+:root[data-odx-theme="jarvis"] :is(.agent-thread-cmd, .agent-tool-output, .agent-tool-output > summary, .agent-spill-full) {
+  border-radius: 0 !important;
+  border: 1px solid var(--tr-ln-dim) !important;
+  background: color-mix(in srgb, #000 45%, var(--tr-fill-solid)) !important;
+}
+:root[data-odx-theme="jarvis"] .agent-thread-cmd { border-left: 2px solid var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] .agent-tool-output > summary { border: 0 !important; background: transparent !important; color: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] :is(.agent-diff-open, .agent-spill-open) {
+  border-radius: 0 !important; border: 1px solid var(--tr-ln) !important; color: var(--tr-cyan-hi) !important;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+:root[data-odx-theme="jarvis"] .round-sep {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--tr-cyan) !important; background: none !important; border: 0 !important;
+}
+:root[data-odx-theme="jarvis"] .round-sep::before,
+:root[data-odx-theme="jarvis"] .round-sep::after {
+  content: ""; flex: 1; height: 1px; border: 0 !important;
+  background: linear-gradient(90deg, transparent, var(--tr-ln)) !important;
+}
+:root[data-odx-theme="jarvis"] .round-sep::after { background: linear-gradient(90deg, var(--tr-ln), transparent) !important; }
+
+/* Groups + deep dive: smaller cuts, coloured per category line */
+:root[data-odx-theme="jarvis"] .act-group { --c: 7px; --ln: color-mix(in srgb, var(--act-acc, var(--tr-cyan)) 40%, transparent); --hi: var(--act-acc, var(--tr-cyan-hi)); }
+:root[data-odx-theme="jarvis"] .act-head:hover { border-radius: 0; }
+:root[data-odx-theme="jarvis"] .deep-dive { --c: 8px; --fill-top: color-mix(in srgb, var(--tr-cyan) 14%, var(--tr-fill)); }
+:root[data-odx-theme="jarvis"] .dd-chip { border-radius: 0; }
+:root[data-odx-theme="jarvis"] .edit-summary { --c: 9px; }
+:root[data-odx-theme="jarvis"] :is(.es-btn, .es-new) { border-radius: 0; }
+
+/* ── 4 · Composer ──────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .chat-input-bar { --c: 14px; --fill: var(--tr-fill-solid); }
+:root[data-odx-theme="jarvis"] .chat-input-bar::after { display: none !important; }
+:root[data-odx-theme="jarvis"] .chat-input-bar :is(button, .input-icon-btn, .mode-toggle-btn) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .send-btn {
+  border-radius: 0 !important;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+:root[data-odx-theme="jarvis"] .send-btn.queue-mode { box-shadow: none !important; background: var(--tr-orange) !important; color: #1a0b00 !important; }
+:root[data-odx-theme="jarvis"] .queue-tray { --c: 7px; border-style: solid !important; }
+:root[data-odx-theme="jarvis"] :is(.queue-chip, .draft-indicator) { border-radius: 0 !important; }
+
+/* ── 5 · Modals, menus, popovers ───────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .modal-content { --c: 16px; --fill: var(--tr-fill-solid); }
+:root[data-odx-theme="jarvis"] .modal-header { border-bottom-color: var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] :is(.es-popover, .agent-diff-popover) { --c: 10px; --fill: var(--tr-fill-solid); }
+:root[data-odx-theme="jarvis"] :is(.dropdown, .sort-dropdown, .export-dropdown, .overflow-menu, .context-menu, .model-picker-menu, .slash-autocomplete) {
+  border-radius: 0 !important;
+  border: 1px solid var(--tr-ln) !important;
+  background: var(--tr-fill-solid) !important;
+  box-shadow: 0 18px 40px -16px #000, inset 0 1px 0 color-mix(in srgb, var(--tr-cyan) 30%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.dropdown-item, .sort-dropdown-item, .export-dropdown-item, .overflow-menu-item):hover {
+  border-radius: 0 !important;
+  background: color-mix(in srgb, var(--tr-cyan) 10%, transparent) !important;
+  box-shadow: inset 2px 0 0 var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .admin-card { --c: 10px; }
+
+/* ── 6 · Controls everywhere outside voice mode ────────────────────────── */
+:root[data-odx-theme="jarvis"] :is(input[type="text"], input[type="search"], input[type="number"], input[type="url"], input[type="email"], input[type="password"], select, textarea):not(.vx *):not(#message):not(.goal-new-form textarea) {
+  border-radius: 2px !important;
+}
+:root[data-odx-theme="jarvis"] :is(input[type="text"], input[type="search"], input[type="number"], input[type="url"], input[type="email"], input[type="password"], select, textarea):not(.vx *):not(#message):focus {
+  border-color: var(--tr-cyan) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tr-cyan) 35%, transparent), 0 0 14px -4px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.admin-btn-add, .admin-btn-sm, .memory-toolbar-btn, .theme-io-btn, .color-reset-btn, .session-bulk-btn, .char-action-btn, .research-start-btn, .research-job-action, .deliverable-btn, .goal-btn, .close-btn):not(.vx *) {
+  border-radius: 0 !important;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+:root[data-odx-theme="jarvis"] :is(.deliverable-btn.primary, .research-start-btn) {
+  background: linear-gradient(180deg, var(--tr-cyan-hi), var(--tr-cyan)) !important;
+  color: #021018 !important; border-color: transparent !important;
+}
+:root[data-odx-theme="jarvis"] :is(.memory-tab, .preset-tab, .preset-chartab, .theme-tab):is(.active, [aria-selected="true"]) {
+  border-radius: 0 !important; box-shadow: inset 0 -2px 0 var(--tr-cyan) !important;
+}
+
+/* ── 7 · Deep research ─────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] :is(.research-cat, .research-cat-badge, .research-setting, .research-settings-row, .research-run-mode-row) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .research-job { --c: 9px; }
+:root[data-odx-theme="jarvis"] .research-job-query { color: var(--tr-cyan-hi); }
+:root[data-odx-theme="jarvis"] .research-cat-badge { border: 1px solid var(--tr-ln) !important; background: color-mix(in srgb, var(--tr-cyan) 8%, transparent) !important; }
+:root[data-odx-theme="jarvis"] :is(.rs-nodes circle, .rs-node) { stroke: var(--tr-cyan); }
+:root[data-odx-theme="jarvis"] .rs-edges line, :root[data-odx-theme="jarvis"] .rs-edges path { stroke: var(--tr-ln); }
+:root[data-odx-theme="jarvis"] .rs-pulse { background: var(--tr-cyan) !important; box-shadow: 0 0 10px var(--tr-cyan) !important; border-radius: 0 !important; transform: rotate(45deg); }
+
+/* ── 8 · Goal panel, deliverables, status notes ────────────────────────── */
+:root[data-odx-theme="jarvis"] .goal-card { --c: 12px; margin: 8px 10px; }
+:root[data-odx-theme="jarvis"] .goal-new-btn { --c: 7px; border-style: solid !important; }
+:root[data-odx-theme="jarvis"] :is(.goal-badge, .goal-todo, .goal-trail-body, .goal-progress-bar, .goal-progress-fill) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .deliverable-card { --c: 9px; }
+:root[data-odx-theme="jarvis"] .status-note {
+  border-radius: 0 !important; border: 0 !important; border-left: 2px solid var(--tr-cyan) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 8%, transparent), transparent 70%) !important;
+}
+:root[data-odx-theme="jarvis"] .status-note.queue-failed-note,
+:root[data-odx-theme="jarvis"] .status-note.tool-timeout-note { border-left-color: var(--jv-amber, #ffb347) !important; }
+
+/* ── 9 · Sidebar finishing touches (base Tron pass lives in jarvis.css) ── */
+:root[data-odx-theme="jarvis"] :is(.list-item, .icon-rail-btn, .section-header-btn, .list-item-plus-btn) { border-radius: 0 !important; }
+
+/* ── a11y gates ────────────────────────────────────────────────────────── */
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] { --tr-ln: var(--tr-cyan); --tr-ln-dim: color-mix(in srgb, var(--tr-cyan) 55%, transparent); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-odx-theme="jarvis"] { --tr-fill: var(--tr-fill-solid); }
+}
+@media (max-width: 600px) {
+  :root[data-odx-theme="jarvis"] :is(.msg.msg-ai, .msg.msg-user) { --c: 9px; }
+  :root[data-odx-theme="jarvis"] .chat-input-bar { --c: 10px; }
+}
+
+/* ── 10 · Remaining soft corners (found by sweeping every open panel) ─── */
+:root[data-odx-theme="jarvis"] :is(
+  .modal-header, .settings-nav-item, .adm-ep-section-head, .research-new-job, .research-add-btn,
+  .msg-action-btn, .footer-copy-btn, .notes-select-trigger, .memory-tab, .research-pane textarea,
+  .research-pane select, .research-pane button, .doclib-modal-content input, .settings-modal-content select
+):not(.vx *) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .settings-nav-item.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 16%, transparent), transparent) !important;
+  box-shadow: inset 2px 0 0 var(--tr-cyan) !important;
+  border-color: transparent !important;
+}
+:root[data-odx-theme="jarvis"] .research-new-job {
+  border: 1px solid var(--tr-ln-dim) !important;
+  background: color-mix(in srgb, #000 30%, var(--tr-fill-solid)) !important;
+}
+:root[data-odx-theme="jarvis"] .mode-toggle { border-radius: 0 !important; clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px); }
+:root[data-odx-theme="jarvis"] .mode-toggle > * { border-radius: 0 !important; }
+
+/* ── 11 · Tool panes swept: compare, gallery, tour tips ────────────────── */
+:root[data-odx-theme="jarvis"] :is(
+  .tour-hint-dismiss, .gallery-select-btn, .gallery-toolbar-action, .gallery-card,
+  .compare-blind-toggle, .compare-parallel-toggle, .compare-dice-toggle, .compare-save-toggle,
+  .compare-reset-toggle, .compare-mode-tab
+):not(.vx *) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .compare-mode-tab.active,
+:root[data-odx-theme="jarvis"] :is(.compare-blind-toggle, .compare-parallel-toggle).active {
+  box-shadow: inset 0 -2px 0 var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .gallery-card { border: 1px solid var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .gallery-card:hover { border-color: var(--tr-cyan) !important; box-shadow: 0 0 14px -6px var(--tr-cyan) !important; }

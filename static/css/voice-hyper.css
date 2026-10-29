@@ -1,0 +1,195 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Advanced Voice — "glass instrument" layer (loads after voice-mode.css)
+   One bold element: the call state under the core, set as a large light
+   display line. Everything else is quieter: readable sentence-case labels,
+   glass panels with a single lit edge, a lit pipeline timeline, a calm dock.
+   Accent still follows the live state (--vx-acc, set by voice.js).
+   ═══════════════════════════════════════════════════════════════════════════ */
+.vx {
+  --vh-void: #04070c;
+  --vh-ink: #eaf2fb;
+  --vh-fog: #93a3b8;
+  --vh-hair: rgba(150, 190, 230, .12);
+  --vh-glass: rgba(12, 20, 33, .55);
+  --vh-ok: #3fd68f;
+  --vh-ember: #ffb547;
+  --vh-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --vh-num: "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+  background: radial-gradient(120% 90% at 50% 38%, #0a1424 0%, var(--vh-void) 62%);
+  color: var(--vh-ink);
+  font-family: var(--vh-sans);
+}
+
+/* ── Top bar ───────────────────────────────────────────────────────────── */
+.vx-top { border-bottom: 1px solid var(--vh-hair); backdrop-filter: blur(14px); }
+.vx-sub { font: 500 11.5px/1.3 var(--vh-sans); letter-spacing: 0; text-transform: none; color: var(--vh-fog); }
+.vx-badge { font: 600 11px/1 var(--vh-sans); letter-spacing: .01em; text-transform: none; }
+.vx-timer, .vx-cost { font-family: var(--vh-num); font-variant-numeric: tabular-nums; color: var(--vh-ink); }
+
+/* ── Panels: glass instruments with one lit edge ───────────────────────── */
+.vx-panel {
+  border: 1px solid var(--vh-hair);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035), transparent 28%),
+    var(--vh-glass);
+  backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: 0 30px 80px -40px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.vx-panel > .vx-panel-h:first-child::after,
+.vx-pane > .vx-panel-h:first-child::after { content: none; }
+.vx-panel { --vh-edge: linear-gradient(90deg, transparent, var(--vx-acc), transparent); }
+.vx-panel::before {        /* the corner bracket becomes a single lit top edge */
+  top: 0; left: 18%; right: 18%; bottom: auto; width: auto; height: 1px;
+  border: 0; border-radius: 0; background: var(--vh-edge); opacity: .75;
+}
+.vx-panel::after { display: none; }
+.vx-panel-h {
+  font: 600 12.5px/1.2 var(--vh-sans); letter-spacing: 0; text-transform: none;
+  color: var(--vh-ink); padding: 18px 20px 10px 20px;
+}
+.vx-panel-h .vx-chat-state, .vx-engine {
+  font: 600 10.5px/1 var(--vh-sans); letter-spacing: .02em; text-transform: none;
+  border-radius: 999px; padding: 4px 9px;
+}
+.vx-link-btn { font: 500 11.5px/1 var(--vh-sans); letter-spacing: 0; text-transform: none; color: var(--vh-fog); }
+.vx-link-btn:hover { color: var(--vh-ink); }
+.vx-empty { color: var(--vh-fog); font-size: 13px; line-height: 1.7; }
+.vx-empty kbd {
+  font: 600 10.5px/1 var(--vh-num); padding: 3px 6px; border-radius: 6px;
+  border: 1px solid var(--vh-hair); background: rgba(255,255,255,.04); color: var(--vh-ink);
+}
+
+/* Transcript + chat feed lines */
+.vx-who, .vx-cmsg .vx-who { font: 600 10.5px/1 var(--vh-sans); letter-spacing: .02em; text-transform: none; color: var(--vh-fog); }
+.vx-say { font-size: 13.5px; line-height: 1.55; color: var(--vh-ink); }
+.vx-cmsg { border-radius: 14px; }
+
+/* Inject box */
+.vx-inject textarea {
+  border-radius: 14px; border: 1px solid var(--vh-hair); background: rgba(255,255,255,.03);
+  color: var(--vh-ink); font: 400 13px/1.5 var(--vh-sans);
+}
+.vx-inject textarea:focus { outline: none; border-color: color-mix(in srgb, var(--vx-acc) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vx-acc) 14%, transparent); }
+.vx-inject-acts small { font: 500 11px/1 var(--vh-sans); color: var(--vh-fog); }
+.vx-inject-acts button { border-radius: 999px; font: 600 12px/1 var(--vh-sans); padding: 8px 14px; }
+
+/* ── The core: state as the hero line ───────────────────────────────────── */
+.vx-orb-label { bottom: -6%; }
+.vx-state {
+  font: 300 clamp(26px, 2.6vw, 38px)/1.05 var(--vh-sans);
+  letter-spacing: -.01em; text-transform: lowercase; color: var(--vh-ink);
+  text-shadow: 0 0 40px color-mix(in srgb, var(--vx-acc) 55%, transparent);
+}
+.vx-state::first-letter { text-transform: uppercase; }
+.vx-orb-hit:hover ~ .vx-orb-label .vx-state { letter-spacing: -.01em; color: #fff; }
+.vx-state-sub { margin-top: 10px; font-size: 13px; color: var(--vh-fog); letter-spacing: 0; }
+.vx-caption { font-weight: 400; letter-spacing: -.005em; }
+.vx-caption[data-who="user"] { color: #d7fff2; }
+.vx-caption[data-who="ai"] { color: #fff3df; }
+
+/* Legend + event log sit together as one quiet row */
+.vx-vec-legend { font: 500 11px/1 var(--vh-sans); letter-spacing: 0; color: var(--vh-fog); gap: 12px; }
+.vx-vec-log-btn {
+  font: 600 12px/1 var(--vh-sans); letter-spacing: 0; text-transform: none;
+  border-radius: 999px; padding: 8px 14px; border: 1px solid var(--vh-hair);
+  background: rgba(255,255,255,.03); color: var(--vh-ink);
+}
+.vx-vec-log-btn:hover { border-color: color-mix(in srgb, var(--vx-acc) 50%, transparent); }
+
+/* ── Pipeline: a lit timeline ───────────────────────────────────────────── */
+.vx-pipe { padding: 4px 16px 12px 18px; }
+.vx-node { opacity: .8; border-radius: 14px; }
+.vx-node-ic { font-family: var(--vh-num); }
+.vx-node-tx b { font: 600 13.5px/1.25 var(--vh-sans); letter-spacing: 0; color: var(--vh-ink); }
+.vx-node-tx small { font: 400 12px/1.35 var(--vh-sans); color: var(--vh-fog); }
+.vx-node-ms { font-family: var(--vh-num); color: var(--vh-fog); }
+.vx-node[data-status="running"] { opacity: 1; background: color-mix(in srgb, var(--vx-acc) 9%, transparent); border-color: color-mix(in srgb, var(--vx-acc) 35%, transparent); }
+.vx-node[data-status="done"] .vx-node-ic { color: #04130b; background: var(--vh-ok); border-color: var(--vh-ok); box-shadow: 0 0 14px color-mix(in srgb, var(--vh-ok) 50%, transparent); }
+.vx-node[data-status="done"] .vx-node-ms { color: var(--vh-ok); }
+.vx-link i { background: linear-gradient(180deg, var(--vh-hair), color-mix(in srgb, var(--vx-acc) 40%, transparent)); }
+.vx-link.flow i { background: linear-gradient(180deg, var(--vh-ok), var(--vx-acc)); box-shadow: 0 0 8px color-mix(in srgb, var(--vx-acc) 60%, transparent); }
+
+/* Decision gauges */
+.vx-decision { border-radius: 18px; border: 1px solid var(--vh-hair); background: rgba(255,255,255,.025); }
+.vx-gauge label { font: 600 11px/1 var(--vh-sans); letter-spacing: .01em; text-transform: none; color: var(--vh-fog); }
+.vx-g-val { font-family: var(--vh-num); color: var(--vh-ink); }
+.vx-chip { font: 600 11px/1 var(--vh-sans); letter-spacing: .01em; text-transform: none; border-radius: 999px; }
+
+/* Memory strata */
+.vx-stratum b, .vx-stratum em, .vx-mem-meta span { font-family: var(--vh-num); letter-spacing: 0; text-transform: none; }
+.vx-mem-meta span { color: var(--vh-fog); font-size: 11px; }
+.vx-stratum .vx-st-pv { font: 400 12px/1.35 var(--vh-sans); color: var(--vh-ink); }
+
+/* ── Dock: one calm capsule, the power key is the only lit control ─────── */
+.vx-dock {
+  border-radius: 999px; border: 1px solid var(--vh-hair);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015)), rgba(8, 14, 24, .72);
+  backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow: 0 30px 70px -30px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.vx-toggle em, .vx-mic-sel select { font: 500 12.5px/1 var(--vh-sans); letter-spacing: 0; color: var(--vh-ink); }
+.vx-dock-btn { border-radius: 16px; }
+.vx-dock-btn.vx-primary {
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--vx-acc) 95%, #fff), color-mix(in srgb, var(--vx-acc) 70%, #001));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vx-acc) 60%, transparent), 0 10px 40px -8px color-mix(in srgb, var(--vx-acc) 80%, transparent);
+  color: #041019;
+}
+.vx-dock-btn:focus-visible, .vx-toggle:focus-within, .vx-icon-btn:focus-visible, .vx-vec-log-btn:focus-visible {
+  outline: 2px solid var(--vx-acc); outline-offset: 2px;
+}
+
+/* ── Queue of forged messages above the dock ───────────────────────────── */
+.vx-queue .vx-q, .vx-queue > * { border-radius: 14px; }
+
+/* ── The one orchestrated moment: on open the core resolves first, then
+   the instruments settle in from the edges. ───────────────────────────── */
+.vx.open .vx-orb-wrap { animation: vh-core-in .9s cubic-bezier(.16, 1, .3, 1) both; }
+.vx.open .vx-left { animation: vh-side-in .7s .18s cubic-bezier(.16, 1, .3, 1) both; --vh-from: -18px; }
+.vx.open .vx-right { animation: vh-side-in .7s .26s cubic-bezier(.16, 1, .3, 1) both; --vh-from: 18px; }
+.vx.open .vx-dock { animation: vh-dock-in .6s .34s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes vh-core-in { from { opacity: 0; transform: scale(.92); filter: blur(6px); } }
+@keyframes vh-side-in { from { opacity: 0; transform: translateX(var(--vh-from)); } }
+@keyframes vh-dock-in { from { opacity: 0; transform: translateY(14px); } }
+
+@media (max-width: 900px) {
+  .vx-state { font-size: 26px; }
+  .vx-panel { border-radius: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vx.open .vx-orb-wrap, .vx.open .vx-left, .vx.open .vx-right, .vx.open .vx-dock { animation: none; }
+}
+@media (prefers-contrast: more) {
+  .vx { --vh-fog: #c3cfdd; --vh-hair: rgba(200, 220, 240, .35); }
+}
+
+/* Specific overrides that the base sheet sets with mono caps */
+.vx .vx-vec-legend span { font: 500 11px/1 var(--vh-sans); letter-spacing: 0; color: var(--vh-fog); }
+.vx .vx-vec-log-btn {
+  font: 600 12px/1 var(--vh-sans); letter-spacing: 0; text-transform: none;
+  border-radius: 999px; padding: 8px 14px; color: var(--vh-ink);
+}
+.vx .vx-who { font: 600 11px/1 var(--vh-sans); letter-spacing: .01em; }
+.vx .vx-who time { font-family: var(--vh-num); letter-spacing: 0; }
+
+/* ── Phones: nothing may run off the right edge ────────────────────────── */
+@media (max-width: 600px) {
+  .vx { max-width: 100vw; overflow-x: hidden; }
+  .vx-top { padding: 10px 12px; gap: 8px; }
+  .vx-badges, .vx-cost { display: none; }
+  .vx-top-right { gap: 6px; margin-left: auto; }
+  .vx-main { grid-template-columns: minmax(0, 1fr); padding: 6px 12px 12px; }
+  .vx-panel, .vx-center { min-width: 0; max-width: 100%; }
+  .vx-orb-label { width: min(92vw, 120%); }
+  .vx-state-sub { font-size: 12.5px; padding: 0 8px; }
+  .vx-vec-legend { padding: 0 8px; }
+  .vx-bottom { padding-left: 10px; padding-right: 10px; }
+  .vx-dock { max-width: calc(100vw - 20px); gap: 6px; padding: 6px 8px; justify-content: space-between; }
+  .vx-mic-sel { display: none; }
+  .vx-dock-btn { width: 46px; height: 46px; }
+  .vx-dock-btn.vx-primary { width: 56px; height: 56px; }
+}
+
+/* The error counter must disappear at zero (base CSS overrode [hidden]) */
+.vx .vx-err-count[hidden] { display: none !important; }

@@ -1580,6 +1580,30 @@ async function _cmdTodo(args, ctx) {
   return true;
 }
 
+async function _cmdGoal(args, ctx) {
+  const gc = window.goalCard || await import('./goalCard.js');
+  const sub = (args[0] || '').toLowerCase();
+  const actions = { pause: 'pause', resume: 'resume', done: 'complete', complete: 'complete' };
+  if (!sub || sub === 'show') {
+    await gc.refreshGoal();
+    const card = document.getElementById('goal-card');
+    if (card && !card.hidden) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); slashReply('Here is your current goal (sidebar).'); }
+    else slashReply('No goal yet. Start one with <code>/goal &lt;objective&gt;</code> or the “Set a goal” button in the sidebar.');
+    return true;
+  }
+  if (actions[sub] && args.length === 1) {
+    const r = await fetch(`${API_BASE}/api/goal/${actions[sub]}`, { method: 'POST', credentials: 'same-origin' });
+    await gc.refreshGoal();
+    slashReply(r.ok ? `Goal ${actions[sub] === 'complete' ? 'completed' : sub + 'd'}.` : 'No active goal to ' + sub + '.');
+    return true;
+  }
+  const objective = args.join(' ').trim();
+  const res = await gc.createGoal(objective);
+  if (res.ok) await typewriterReply(`Goal started: ${ctx.esc(objective)} — I'll keep working toward it; watch the goal panel.`);
+  else slashReply('Could not start the goal: ' + ctx.esc(res.error || 'unknown error'));
+  return true;
+}
+
 async function _cmdEvent(args, ctx) {
   const raw = args.join(' ').trim();
   if (!raw) { slashReply('Usage: /event tomorrow 14:00 Title  ·  /event in 30m Title  ·  /event 2026-04-20 15:00 Title'); return true; }
@@ -5468,6 +5492,14 @@ const COMMANDS = {
     handler: _cmdTodo,
     noUserBubble: true,
     usage: '/todo Your task  ·  /todo list',
+  },
+  goal: {
+    alias: ['meta'],
+    category: 'Productivity',
+    help: 'Start an ongoing goal Odysseus keeps working toward (shown in the goal panel)',
+    handler: _cmdGoal,
+    noUserBubble: true,
+    usage: '/goal Benchmark grassroots collaborations across 10 countries  ·  /goal pause|resume|done',
   },
   event: {
     alias: ['ev'],

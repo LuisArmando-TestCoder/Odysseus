@@ -121,18 +121,31 @@ def _queue_path(session_id=None, owner=None):
     return os.path.join(base, "_default.queue.json")
 
 
-def checkpoint_set_queue(items, session_id=None, owner=None):
+def checkpoint_set_queue(items, session_id=None, owner=None, done=None, current=None):
+    """Replace the task list. ``items`` = not-yet-done steps in order;
+    ``done`` = steps already finished (kept so the UI shows progress);
+    ``current`` = the step in progress (must be one of ``items``)."""
+    import time as _t
     from core.atomic_io import atomic_write_json
-    atomic_write_json(_queue_path(session_id, owner),
-                      {"remaining": list(items), "done": []})
+    items = [str(i) for i in (items or [])]
+    st = {"remaining": items, "done": [str(d) for d in (done or [])],
+          "updated_at": _t.time()}
+    if current and str(current) in items:
+        st["current"] = str(current)
+    atomic_write_json(_queue_path(session_id, owner), st)
 
 
 def checkpoint_queue_state(session_id=None, owner=None):
     p = _queue_path(session_id, owner)
     if not os.path.exists(p):
         return {"remaining": [], "done": []}
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(p, encoding="utf-8") as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        return {"remaining": [], "done": []}
+    st.setdefault("remaining", []); st.setdefault("done", [])
+    return st
 
 
 def checkpoint_next(session_id=None, owner=None):

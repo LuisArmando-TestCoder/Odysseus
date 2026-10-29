@@ -3596,6 +3596,8 @@ function startOdysseusApp() {
   const _sendIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
   const _micIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
   const _stopIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  const _queueIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11"/><path d="M4 12h8"/><path d="M4 17h6"/><path d="M18 9v10"/><path d="m14.5 15.5 3.5 3.5 3.5-3.5"/></svg>';
+  if (messageInput && !messageInput.dataset.placeholder) messageInput.dataset.placeholder = messageInput.placeholder || 'Message Odysseus...';
   const _newChatIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
 
   // Expose icons globally so chat.js updateSubmitButton can use them
@@ -3611,8 +3613,19 @@ function startOdysseusApp() {
 
   function _updateSendBtnIcon() {
     if (!sendBtn) return;
-    // Don't override if streaming (stop button) or recording
-    if (sendBtn.dataset.mode === 'streaming' || sendBtn.dataset.mode === 'recording') return;
+    // While streaming the button is Stop — or Queue once the user types.
+    if (sendBtn.dataset.mode === 'streaming') {
+      const _q = (messageInput && messageInput.value.trim().length > 0) || _hasAttachments();
+      sendBtn.classList.toggle('queue-mode', _q);
+      const _want = _q ? _queueIcon : _stopIcon;
+      if (sendBtn.innerHTML !== _want) sendBtn.innerHTML = _want;
+      sendBtn.title = _q ? 'Queue message — sends when this reply finishes (Enter)' : 'Stop generation';
+      if (messageInput) messageInput.placeholder = 'Queue a follow-up… (Enter) — it sends when this reply finishes';
+      return;
+    }
+    if (messageInput && messageInput.placeholder.startsWith('Queue a follow-up')) messageInput.placeholder = messageInput.dataset.placeholder || 'Message Odysseus...';
+    sendBtn.classList.remove('queue-mode');
+    if (sendBtn.dataset.mode === 'recording') return;
     const prevMode = sendBtn.dataset.mode || '';
     const hasText = messageInput && messageInput.value.trim().length > 0;
     const hasFiles = _hasAttachments();
@@ -3702,6 +3715,15 @@ function startOdysseusApp() {
       // If recording, stop recording
       if (sendBtn.dataset.mode === 'recording' || voiceRecorderModule.getIsRecording()) {
         voiceRecorderModule.stopRecording();
+        return;
+      }
+
+      // A reply is streaming: typed text → QUEUE it (runs after this reply);
+      // empty composer → this is the Stop button and must actually stop.
+      if (sendBtn.dataset.mode === 'streaming') {
+        const _txt = messageInput && messageInput.value.trim().length > 0;
+        if (_txt || _hasAttachments()) { handleSubmit(e); return; }
+        if (chatModule && chatModule.abortCurrentRequest) chatModule.abortCurrentRequest(true);
         return;
       }
 

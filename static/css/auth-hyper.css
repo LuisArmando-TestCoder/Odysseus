@@ -105,6 +105,7 @@
 }
 
 .auth-input {
+  box-sizing: border-box;   /* width:100% must include padding + border (was 22px wider than the card) */
   width: 100%;
   padding: 0.6rem 0.8rem;
   background: var(--auth-input-bg);

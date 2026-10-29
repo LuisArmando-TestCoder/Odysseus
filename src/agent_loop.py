@@ -156,6 +156,8 @@ _API_AGENT_RULES = """\
 - Only call tools when they materially help answer the request.
 - You MUST use tools to take action — do not describe what you would do. Act, don't narrate.
 - Keep answers concise unless the user asks for depth.
+- PLAN VISIBLY: for any task with 3+ steps, your FIRST action is `todo_write` with every step ({"text","status"}); the user watches that checklist live in the chat. Re-send the full list (marking steps done / in_progress) each time a step finishes, and finish with all steps done. Use `create_goal` only for long-running objectives that must keep going across many rounds/turns (deep research, monitoring, large builds). Skip planning for quick one-shot answers.
+- NARRATE BRIEFLY, THINK PRIVATELY: text you write between tool calls is shown to the user as live progress — at most one or two short sentences (what you found / what you'll do next). Never put scratch work in the visible reply: no drafts you then revise, no syllable/character counting, no 'wait, actually…', no self-verification transcripts. Work those out in your reasoning (or with a tool), then show only the result. The final reply is the polished answer, not the path to it.
 - For long code or content, use document tools instead of pasting large blocks into chat.
 - Editing an existing document: ALWAYS use `edit_document` with find/replace. Only use `update_document` for genuine full rewrites (>50% changed) — do NOT echo the entire file back for small edits.
 - If the active editor document is an email draft/compose window, treat that open email as the target for "write this", "write the email", "reply with...", "make it say...", "draft this", and similar requests. Do NOT create another document, search/list/manage documents, or open a different reply unless the user explicitly asks. Edit the open email draft with `edit_document` or `update_document`; preserve To/Cc/Bcc/Subject/In-Reply-To/References/X-* header lines unless the user asks to change them.
@@ -703,7 +705,12 @@ def _build_system_prompt(
             f"Local time is {_now.strftime('%-I:%M %p')} ({_now.strftime('%Z')}, UTC{_off_fmt}); "
             f"current UTC time is {_utc.strftime('%H:%M')}. "
             f"Use this for any 'today'/'tomorrow'/'this week' reasoning — do NOT "
-            f"infer the date from training data or from event timestamps.\n"
+            f"infer the date from training data or from event timestamps. "
+            f"This clock is real and authoritative and is LATER than your training "
+            f"data: news, releases and search results dated up to today are genuine, "
+            f"never 'simulated' or 'hypothetical' — trust them over your memory, "
+            f"which is outdated (newer versions, office-holders, prices exist). "
+            f"For the time in another city, convert from this clock; don't search.\n"
             f"When scheduling a task (manage_tasks), scheduled_time is in UTC: "
             f"subtract the offset above from the user's local time "
             f"(local {_now.strftime('%H:%M')} = {_utc.strftime('%H:%M')} UTC right now).\n\n"
@@ -1255,6 +1262,8 @@ def _compute_final_metrics(
     prep_timings: Optional[Dict[str, float]] = None,
     backend_gen_tps: float = 0,
     backend_prefill_tps: float = 0,
+    deliverables: Optional[list] = None,
+    edited_files: Optional[list] = None,
 ) -> dict:
     """Compute token counts, TPS, and build the final metrics dict."""
     if has_real_usage:
@@ -1307,6 +1316,10 @@ def _compute_final_metrics(
     if tool_events:
         metrics["tool_events"] = tool_events
         metrics["round_texts"] = round_texts
+    if deliverables:
+        metrics["deliverables"] = deliverables
+    if edited_files:
+        metrics["edited_files"] = edited_files
     return metrics
 
 
@@ -1465,6 +1478,64 @@ def _self_ping_delta(reason: str) -> str:
     completion) and is continuing rather than leaving the chat hanging."""
     msg = f"\n\n_[self-ping] {reason} — continuing._\n\n"
     return f'data: {json.dumps({"delta": msg})}\n\n'
+
+
+async def _with_heartbeat(agen, interval: float):
+    """Re-yield ``agen``'s items; while it is silent, yield
+    ``("__silence__", seconds_since_last_item)`` every ``interval`` seconds.
+    The pending ``__anext__`` is never cancelled by a heartbeat, so the
+    underlying stream is unaffected. Closing this generator closes ``agen``."""
+    import asyncio as _aio
+    it = agen.__aiter__()
+    last = time.time()
+    pending = None
+    try:
+        while True:
+            if pending is None:
+                pending = _aio.ensure_future(it.__anext__())
+            done, _ = await _aio.wait({pending}, timeout=interval)
+            if not done:
+                yield ("__silence__", time.time() - last)
+                continue
+            t, pending = pending, None
+            try:
+                item = t.result()
+            except StopAsyncIteration:
+                return
+            last = time.time()
+            yield item
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
+
+
+# Last-sentence promise of work the model never started ("Let me compile a
+# proper benchmark. I'll write it up as a document so it's well-organized.").
+# Only action verbs count: "let me know if…" / "I'll be happy to…" do not.
+_DANGLING_PROMISE_RE = re.compile(
+    r"\b(?:let me|let[’']s|i[’']?ll|i will|i[’']?m going to|i am going to|i[’']?m now going to|now i[’']?ll|next,? i[’']?ll)\s+"
+    r"(?:now\s+|also\s+|then\s+|go ahead and\s+|quickly\s+)?"
+    r"(?:compile|write|draft|create|put together|prepare|build|assemble|generate|produce|make|"
+    r"summari[sz]e|format|save|search|look up|research|gather|pull|fetch|run|check|verify|open|read|"
+    r"start|begin|turn (?:this|it) into)\b",
+    re.I,
+)
+
+
+def _dangling_promise(text: str) -> str | None:
+    """Return the closing promise if the reply ends by announcing work it never did."""
+    t = (text or "").strip()
+    if not t or t.endswith("?") or len(t) > 1500:
+        return None   # a question to the user, or a real (long) answer that merely ends politely
+    tail = re.split(r"(?<=[.!?…])\s+", t)[-2:]
+    for sent in reversed(tail):
+        if _DANGLING_PROMISE_RE.search(sent) and not re.search(r"\bif you\b|\bwould you\b|\bwant me to\b", sent, re.I):
+            return sent.strip()[:200]
+    return None
 
 
 def _malformed_chain_reason(text: str) -> str | None:
@@ -1739,7 +1810,9 @@ async def stream_agent_loop(
     except Exception:
         _next_item = None
         _qstate = {"remaining": [], "done": []}
-    if _next_item:
+    # Only drive the cursor for an ACTIVE goal: a plain todo_write plan from an
+    # earlier turn must never hijack the user's next, unrelated message.
+    if _next_item and _goal and _goal.get("phase") == "active":
         messages.insert(0, {"role": "system", "content": (
             "=== CONTINUOUS TASK ===\n"
             f"Process THIS item: {_next_item}\n"
@@ -1756,12 +1829,23 @@ async def stream_agent_loop(
         from src.constants import DATA_DIR
         _sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(session_id or owner or "shared"))
         _ws = _os.path.join(DATA_DIR, "documents", _sid)
+        # The folder used to exist only after the first saved file, so an agent
+        # told "your files live here" ran ls, found nothing, and burned whole
+        # rounds hunting for a "missing" workspace. Make the promise true.
+        _os.makedirs(_ws, exist_ok=True)
+        _ws_files = sorted(f for f in _os.listdir(_ws) if not f.startswith("."))
     except Exception:
-        _ws = ""
+        _ws, _ws_files = "", []
     if _ws:
+        _ws_state = (
+            "files: " + ", ".join(_ws_files[:20]) + (" …" if len(_ws_files) > 20 else "")
+            if _ws_files else
+            "files: (none yet — it is empty until you save something; that is normal, do not search for it)"
+        )
         messages.insert(0, {"role": "system", "content": (
             "=== YOUR SESSION WORKSPACE ===\n"
             f"path: {_ws}\n"
+            f"{_ws_state}\n"
             "CRUD tools: create_document / document_append / update_document (write), "
             "read_file (read a file in your folder), manage_documents (list). "
             "To recall past findings, use context_tree (keyword search) or read_file — "
@@ -1860,6 +1944,7 @@ async def stream_agent_loop(
     # chat keeps going instead of hanging. Capped to avoid infinite loops.
     _self_ping_count = 0
     _MAX_SELF_PINGS = 3
+    _promise_pings = 0     # "I'll write it up as a document." … and then nothing
 
     # Document streaming state (persists across rounds)
     _doc_acc = ""          # accumulated tool-call JSON arguments
@@ -1947,7 +2032,13 @@ async def stream_agent_loop(
         # complementary cap for the rare stream that trickles bytes forever and
         # so never trips the inactivity timeout. Generous — only catches runaway.
         _round_deadline = time.time() + max(agent_stream_timeout * 4, 1200)
-        async for chunk in stream_llm_with_fallback(
+        # Silence watchdog: providers (DeepSeek, OpenRouter…) send SSE
+        # keep-alive comments while a request sits queued, which resets the
+        # httpx read timeout forever — the user then stares at a frozen turn
+        # for many minutes. Heartbeat the UI every 15s of silence and cut the
+        # round (→ self-ping retry) after `agent_stall_seconds` with no chunk.
+        _stall_limit = float(get_setting("agent_stall_seconds", 150) or 150)
+        async for chunk in _with_heartbeat(stream_llm_with_fallback(
             _candidates,
             messages,
             temperature=temperature,
@@ -1955,7 +2046,15 @@ async def stream_agent_loop(
             prompt_type=prompt_type if round_num == 1 else None,
             tools=all_tool_schemas if all_tool_schemas else None,
             timeout=agent_stream_timeout,
-        ):
+        ), 15.0):
+            if isinstance(chunk, tuple):            # ("__silence__", seconds)
+                _silent_for = chunk[1]
+                yield 'data: ' + json.dumps({"type": "model_wait", "round": round_num, "seconds": int(_silent_for)}) + '\n\n'
+                if _silent_for >= _stall_limit:
+                    logger.warning(f"[agent] round {round_num}: no model output for {_silent_for:.0f}s; cutting off")
+                    _round_timed_out = True
+                    break
+                continue
             if time.time() > _round_deadline:
                 logger.warning(f"[agent] round {round_num} stream exceeded wall-clock deadline; cutting off")
                 _round_timed_out = True
@@ -2240,9 +2339,19 @@ async def stream_agent_loop(
             # chat hanging, emit a self-ping notice and re-invoke the model
             # (capped) so it keeps going with the context of what happened.
             _malformed = _malformed_chain_reason(round_response)
+            # A turn that ENDS by announcing its next step ("Let me compile a
+            # proper benchmark. I'll write it up as a document.") with no tool
+            # call left the user with a promise and no deliverable. Hold it to
+            # its word once per turn.
+            _dangling = None
+            if (_claimed_done and not _malformed and not _force_answer
+                    and _promise_pings < 1):
+                _dangling = _dangling_promise(_THINK_RE.sub("", cleaned_round))
+                if _dangling:
+                    _promise_pings += 1
             _no_completion = (
                 _round_timed_out or not _claimed_done
-                or bool(_malformed) or _stream_error
+                or bool(_malformed) or _stream_error or bool(_dangling)
             )
             if _no_completion and _self_ping_count < _MAX_SELF_PINGS and not _force_answer:
                 _self_ping_count += 1
@@ -2252,6 +2361,8 @@ async def stream_agent_loop(
                     _reason = _malformed
                 elif _stream_error:
                     _reason = "the stream errored before the answer completed"
+                elif _dangling:
+                    _reason = "the answer announced a next step but stopped before doing it"
                 else:
                     _reason = "the model returned no answer and no tool calls"
                 logger.warning(
@@ -2259,7 +2370,15 @@ async def stream_agent_loop(
                     f"(ping {_self_ping_count}/{_MAX_SELF_PINGS})"
                 )
                 yield _self_ping_delta(_reason)
-                if _malformed:
+                if _dangling:
+                    _instruction = (
+                        f"You ended your turn by announcing a next step (\"{_dangling}\") "
+                        "without doing it. Do it NOW in this turn — call the tool or write "
+                        "the deliverable itself (e.g. create_document for a document). Do not "
+                        "re-announce it, do not repeat earlier research, and do not search "
+                        "for files you have not created."
+                    )
+                elif _malformed:
                     _instruction = (
                         "Your previous turn ended with an unfinished tool call "
                         f"({_reason}). Re-emit the COMPLETE tool call and execute "
@@ -2278,6 +2397,7 @@ async def stream_agent_loop(
                     "content": _instruction,
                 })
                 full_response += "\n\n"
+                yield 'data: ' + json.dumps({"delta": "\n\n", "round_sep": True}) + '\n\n'   # keeps saved text readable between rounds
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
                 continue
             break  # no tools — done
@@ -2338,6 +2458,7 @@ async def stream_agent_loop(
                 ),
             })
             full_response += "\n\n"
+            yield 'data: ' + json.dumps({"delta": "\n\n", "round_sep": True}) + '\n\n'   # keeps saved text readable between rounds
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
             continue
 
@@ -2424,6 +2545,10 @@ async def stream_agent_loop(
                                 "session_id": session_id, "owner": owner,
                             })
                             _content = _pre.get("content", block.content)
+                            # A PRE hook may veto the call (read-before-write
+                            # guard): return its error as the tool result.
+                            if isinstance(_pre.get("blocked"), dict):
+                                return (f"{block.tool_type}: blocked by guard", _pre["blocked"])
                         except Exception:
                             _content = block.content
                         _blk = ToolBlock(block.tool_type, _content)
@@ -2459,6 +2584,7 @@ async def stream_agent_loop(
                             from src.hooks import run_hooks as _run_hooks_post, HookPoint as _HP_post
                             _post = await _run_hooks_post(_HP_post.POST_TOOL_USE, {
                                 "tool": _blk.tool_type,
+                                "content": _blk.content,
                                 "result": dict(_res) if isinstance(_res, dict) else {"output": str(_res)},
                                 "session_id": session_id, "owner": owner,
                             })
@@ -2739,12 +2865,20 @@ async def stream_agent_loop(
             if result.get("doc_id"):
                 tool_event["doc_id"] = result["doc_id"]
                 tool_event["doc_title"] = result.get("title", "")
+            # Persist the edit diff + guard verdict on the event itself so the
+            # "edited N files" summary and diff popovers survive a reload.
+            if result.get("diff"):
+                tool_event["diff"] = result["diff"]
+            if result.get("path"):
+                tool_event["path"] = str(result["path"])
+            if result.get("guard"):
+                tool_event["guard"] = result["guard"]
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
 
             # H3 — deliverable registry: files this turn wrote (dedupe by path).
-            if result.get("success") and result.get("path"):
+            if (result.get("success") or result.get("exit_code") == 0) and result.get("path"):
                 _path = str(result["path"])
                 if not any(d.get("path") == _path for d in deliverables):
                     deliverables.append({
@@ -2834,6 +2968,7 @@ async def stream_agent_loop(
             yield _self_ping_delta("macOS privacy (TCC) blocked direct file access — switching to user-assisted access")
 
         # Emit agent_step event
+        yield 'data: ' + json.dumps({"delta": "\n\n", "round_sep": True}) + '\n\n'   # keeps saved text readable between rounds
         yield (
             f'data: {json.dumps({"type": "agent_step", "round": round_num + 1, "round_ms": int((time.time() - _round_t0) * 1000)})}\n\n'
         )
@@ -2843,7 +2978,7 @@ async def stream_agent_loop(
 
     # H1 — deliverable cards (DSH `present`): the files this turn produced,
     # emitted once at turn end so the frontend renders one card per file.
-    if deliverables:
+    if deliverables or any(isinstance(_te, dict) and _te.get("diff") for _te in tool_events):
         yield (
             f'data: {json.dumps({"type": "present", "data": {"files": deliverables, "edited": edited_files}})}\n\n'
         )
@@ -2867,6 +3002,8 @@ async def stream_agent_loop(
         prep_timings=prep_timings,
         backend_gen_tps=backend_gen_tps,
         backend_prefill_tps=backend_prefill_tps,
+        deliverables=deliverables,
+        edited_files=edited_files,
     )
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
 

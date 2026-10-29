@@ -39,9 +39,13 @@ def on_finish(cb: _RunFinishCallback) -> None:
 
 
 class _Run:
-    __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "owner")
+    __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "owner", "kind", "started_at", "label")
 
-    def __init__(self, owner: Optional[str] = None) -> None:
+    def __init__(self, owner: Optional[str] = None, kind: str = "chat", label: str = "") -> None:
+        import time as _t
+        self.kind: str = kind               # chat | autopilot | goal | queued
+        self.started_at: float = _t.time()
+        self.label: str = label
         self.buffer: list = []          # ordered SSE event strings (replay log)
         self.subscribers: set = set()   # one asyncio.Queue per connected client
         self.status: str = "running"    # running | done | error | stopped
@@ -169,7 +173,9 @@ def publish_to_owner(owner: str, event: str) -> None:
 def list_active() -> List[dict]:
     """Cheap inventory of all runs (sidebar dots, /api/chat/active)."""
     return [
-        {"session_id": sid, "status": run.status, "owner": run.owner}
+        {"session_id": sid, "status": run.status, "owner": run.owner,
+         "kind": getattr(run, "kind", "chat"), "started_at": getattr(run, "started_at", None),
+         "label": getattr(run, "label", "")}
         for sid, run in _RUNS.items()
     ]
 
@@ -247,7 +253,7 @@ async def _drain(session_id: str, agen: AsyncGenerator[str, None],
 
 
 def start(session_id: str, agen: AsyncGenerator[str, None],
-          *, owner: Optional[str] = None) -> _Run:
+          *, owner: Optional[str] = None, kind: str = "chat", label: str = "") -> _Run:
     """Start a detached run draining `agen` for a session. If a run is already in
     flight for this session (e.g. a rapid double-send), it's cancelled first.
     `owner` is stored for publish_to_owner()/list_active() routing."""
@@ -259,7 +265,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None],
             prev_task = prev.task   # new run awaits this before it starts writing
         if prev.evict_task and not prev.evict_task.done():
             prev.evict_task.cancel()
-    run = _Run(owner=owner)
+    run = _Run(owner=owner, kind=kind, label=label)
     _RUNS[session_id] = run
     run.task = asyncio.create_task(_drain(session_id, agen, prev_task))
     return run

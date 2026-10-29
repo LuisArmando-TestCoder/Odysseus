@@ -111,6 +111,9 @@ DEFAULT_SETTINGS = {
     # Layer 0 / F0.5 — harness limits, tunable per deployment.
     # Max agent rounds per turn (was the hardcoded MAX_AGENT_ROUNDS=20).
     "agent_max_rounds": 20,
+    # Block write_file on an existing file the session never read (DSH guard).
+    # False = advisory warning only.
+    "file_guard_enforce": True,
     # Ask-user seam (Cluster B): how long an unanswered mid-task question
     # stays pending before it auto-resolves with {"timeout": true}.
     "ask_user_timeout_seconds": 600,

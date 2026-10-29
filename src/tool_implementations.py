@@ -523,6 +523,22 @@ def _sync_document_to_file(db, doc) -> None:
         logger.warning("document file sync failed for %s: %s", getattr(doc, "id", "?"), e)
 
 
+def _doc_diff(doc_id, title, old, new):
+    """Unified diff for a document edit, shaped like file_guard's write_file
+    diff so the "Edited N files" card + diff popover cover documents too."""
+    try:
+        from src.file_guard import _diff
+        d = _diff(title or "document", old or "", new or "")
+        if not d:
+            return None
+        d["path"] = f"doc:{doc_id}"
+        d["doc_id"] = doc_id
+        d["name"] = title or "document"
+        return d
+    except Exception:
+        return None
+
+
 async def do_create_document(content_block: str, session_id: Optional[str] = None, owner: Optional[str] = None) -> Dict:
     """Create a new document. Supports two formats:
       1) Line-based: line 1 = title, line 2 (optional) = language, rest = content
@@ -633,6 +649,7 @@ async def do_create_document(content_block: str, session_id: Optional[str] = Non
             "language": language,
             "content": content,
             "version": 1,
+            "diff": _doc_diff(doc_id, title, "", content),
         }
     except Exception as e:
         db.rollback()
@@ -662,6 +679,7 @@ async def do_update_document(content: str, doc_id: Optional[str] = None, owner: 
         if not doc:
             return {"error": "No documents exist to update"}
 
+        _old_content = doc.current_content or ""
         is_email_doc = doc.language == "email" or _looks_like_email_document(doc.current_content or "", doc.title or "")
         new_content = _coerce_email_document_content(doc.current_content or "", content) if is_email_doc else content.strip()
         if is_email_doc:
@@ -689,6 +707,7 @@ async def do_update_document(content: str, doc_id: Optional[str] = None, owner: 
             "language": doc.language,
             "content": new_content,
             "version": new_ver,
+            "diff": _doc_diff(target_id, doc.title, _old_content, new_content),
         }
     except Exception as e:
         db.rollback()
@@ -854,6 +873,7 @@ async def do_edit_document(content: str, doc_id: Optional[str] = None, owner: Op
             return {"error": "No documents exist to edit"}
 
         updated_content = doc.current_content
+        _old_content = updated_content or ""
         applied = 0
         skipped = 0
         for edit in edits:
@@ -904,6 +924,7 @@ async def do_edit_document(content: str, doc_id: Optional[str] = None, owner: Op
             "version": new_ver,
             "applied": applied,
             "skipped": skipped,
+            "diff": _doc_diff(target_id, doc.title, _old_content, updated_content),
         }
     except Exception as e:
         db.rollback()

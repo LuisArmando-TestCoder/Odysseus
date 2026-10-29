@@ -300,5 +300,35 @@ async function initBackground() {
   }
 }
 
+// Tron frame: the sign-in card's chamfered outline, drawn as an SVG in exact
+// pixels (so the 45° cuts stay crisp at any size) and traced once on load.
+function drawTronFrame(card) {
+  if (!card) return;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'tron-frame draw');
+  svg.setAttribute('aria-hidden', 'true');
+  const outline = document.createElementNS(NS, 'path');
+  const ticks = document.createElementNS(NS, 'path');
+  ticks.setAttribute('class', 'tron-frame-ticks');
+  svg.append(outline, ticks);
+  card.appendChild(svg);
+  const paint = () => {
+    const w = card.clientWidth, h = card.clientHeight;
+    const c = parseFloat(getComputedStyle(card).getPropertyValue('--tr-cut')) || 16;
+    const i = 0.75;                                       // keep the stroke inside the clip
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    outline.setAttribute('d', `M${c},${i} H${w - i} V${h - c} L${w - c},${h - i} H${i} V${c} Z`);
+    // Brighter ticks on the two cut corners — the "drawn" accents.
+    ticks.setAttribute('d', `M${i},${c + 22} V${c} L${c},${i} H${c + 22} M${w - i},${h - c - 22} V${h - c} L${w - c},${h - i} H${w - c - 22}`);
+    for (const p of [outline, ticks]) {
+      try { p.style.setProperty('--len', String(Math.ceil(p.getTotalLength()))); } catch (_) {}
+    }
+  };
+  paint();
+  if (window.ResizeObserver) new ResizeObserver(paint).observe(card);
+}
+
 init();
 initBackground();
+drawTronFrame(document.querySelector('.auth-card'));

@@ -174,6 +174,9 @@ class VoiceMemory:
         # >0 while a pipeline decision/forge runs. Compression never competes
         # with it for the utility model — it is a background nice-to-have.
         self.pipeline_active = 0
+        # A forged message the guard was unsure about, waiting for the user's
+        # yes/no ({"message", "title", "ts"}). In-memory only: it expires fast.
+        self.pending_confirm: Optional[Dict[str, Any]] = None
         self._load()
 
     # ── Persistence ──
@@ -253,8 +256,13 @@ class VoiceMemory:
                 speaker = "user_note"
             else:
                 speaker = "assistant"      # the voice model (GPT-Live)
+            # A relay is the voice model reading the CHAT AGENT's output aloud
+            # ("I'll write it up as a document"). It is not the assistant's own
+            # promise, so it must never be forged into a new chat request.
+            relay = bool(t.get("relay")) and speaker == "assistant"
             # Merge streaming fragments from the same speaker into one turn.
-            if self.live and self.live[-1]["speaker"] == speaker and not t.get("final_break"):
+            if (self.live and self.live[-1]["speaker"] == speaker and not t.get("final_break")
+                    and bool(self.live[-1].get("relay")) == relay):
                 last = self.live[-1]
                 if time.time() - last.get("ts", 0) < 12:
                     sep = "" if (text[:1] in ",.!?;:" or last["text"].endswith((" ", "-"))) else " "
@@ -268,7 +276,10 @@ class VoiceMemory:
                         self.transcript[-1]["ts"] = last["ts"]
                     continue
             self.seq += 1
-            self.live.append({"speaker": speaker, "text": text, "ts": time.time(), "seq": self.seq})
+            entry = {"speaker": speaker, "text": text, "ts": time.time(), "seq": self.seq}
+            if relay:
+                entry["relay"] = True
+            self.live.append(entry)
             self.turns_total += 1
             added += 1
             # The permanent transcript is the full conversation the chat must be
@@ -297,7 +308,8 @@ class VoiceMemory:
 
     def new_assistant_turns(self) -> List[Dict[str, Any]]:
         """Assistant speech not yet checked for a concrete promise."""
-        return [t for t in self.live if t["speaker"] == "assistant" and t.get("seq", 0) > self.commit_seq]
+        return [t for t in self.live if t["speaker"] == "assistant" and not t.get("relay")
+                and t.get("seq", 0) > self.commit_seq]
 
     def consume_commitments(self):
         """Mark assistant speech as checked for promises."""

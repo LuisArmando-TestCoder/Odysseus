@@ -781,6 +781,14 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             if doc.current_content == req.content:
                 return _doc_to_dict(doc)
 
+            if req.base_version is not None and (doc.version_count or 1) > req.base_version:
+                _lv = db.query(DocumentVersion).filter(
+                    DocumentVersion.document_id == doc_id,
+                ).order_by(DocumentVersion.version_number.desc()).first()
+                if _lv is not None and _lv.source != "user":
+                    raise HTTPException(409, {"error": "stale_base_version",
+                                              "document": _doc_to_dict(doc)})
+
             _assert_pdf_marker_upload_owned(request, req.content, user, upload_handler)
 
             # Check if we can coalesce with the latest version

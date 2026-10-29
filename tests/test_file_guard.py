@@ -22,7 +22,41 @@ def test_mark_read_roundtrip(tmp_path):
     assert not fg.was_read("s2", str(p))
 
 
+async def test_unread_overwrite_is_blocked(tmp_path, monkeypatch):
+    monkeypatch.setattr(fg, "_enforce", lambda: True)
+    p = tmp_path / "keep.md"
+    p.write_text("precious\n", encoding="utf-8")
+    out = await fg.pre_tool_use_hook(
+        {"tool": "write_file", "content": f"{p}\nclobber\n", "session_id": "blk", "result": None})
+    assert out["blocked"]["error_code"] == "unread_edit_blocked"
+    assert p.read_text(encoding="utf-8") == "precious\n"
+
+
+async def test_new_file_allowed_and_diffed(tmp_path, monkeypatch):
+    monkeypatch.setattr(fg, "_enforce", lambda: True)
+    p = tmp_path / "fresh.py"
+    payload = {"tool": "write_file", "content": f"{p}\nprint(1)\n", "session_id": "nf", "result": None}
+    out = await fg.pre_tool_use_hook(payload)
+    assert "blocked" not in out
+    p.write_text("print(1)\n", encoding="utf-8")
+    payload["result"] = {"output": "Wrote", "exit_code": 0}
+    res = (await fg.post_tool_use_hook(payload))["result"]
+    assert res["diff"]["new_file"] and res["diff"]["added"] == 1
+    assert fg.was_read("nf", str(p))            # its own write counts as read
+
+
+async def test_shell_read_counts_as_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(fg, "_enforce", lambda: True)
+    p = tmp_path / "config.yml"
+    p.write_text("a: 1\n", encoding="utf-8")
+    await fg.pre_tool_use_hook({"tool": "bash", "content": f"cat {p}", "session_id": "sh"})
+    out = await fg.pre_tool_use_hook(
+        {"tool": "write_file", "content": f"{p}\na: 2\n", "session_id": "sh", "result": None})
+    assert "blocked" not in out
+
+
 async def test_pre_and_post_hooks_diff_and_unread_warning(tmp_path, monkeypatch):
+    monkeypatch.setattr(fg, "_enforce", lambda: False)   # advisory mode
     p = tmp_path / "notes.md"
     p.write_text("old line\n", encoding="utf-8")
     sid = "diff-session"

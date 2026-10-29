@@ -20,10 +20,10 @@ const _GSVG = {
 export function renderGoal(goal, extra = {}) {
   const card = document.getElementById('goal-card');
   if (!card) return;
+  _ensureNewGoalButton(!goal || goal.phase === 'complete');
   if (!goal) {
     card.hidden = true;
-    const banner = document.getElementById('goal-banner');
-    if (banner) banner.hidden = true;
+    renderChatGoal(null, extra);       // may still show a todo_write plan for this chat
     return;
   }
   card.hidden = false;
@@ -47,7 +47,8 @@ export function renderGoal(goal, extra = {}) {
   const pct = goal.maxGoalRounds ? Math.min(100, (goal.roundsStarted / goal.maxGoalRounds) * 100) : 0;
   fill.style.width = pct + '%';
   document.getElementById('goal-rounds').textContent =
-    `Ronda ${goal.roundsStarted ?? 0}${goal.maxGoalRounds ? '/' + goal.maxGoalRounds : ''}`;
+    `Ronda ${goal.roundsStarted ?? 0}${goal.maxGoalRounds ? '/' + goal.maxGoalRounds : ''}`
+    + (goal.createdAt ? ` · ${_ago(goal.createdAt)}` : '');
 
   // ── GAP 1: cola de items (tarea continua) ──
   const queue = extra.queue || { remaining: [], done: [] };
@@ -126,17 +127,178 @@ export function renderGoal(goal, extra = {}) {
   card.classList.toggle('blocked', goal.phase === 'blocked');
   card.classList.toggle('complete', goal.phase === 'complete');
 
-  // ── GAP 7: banner in-chat ──
-  const banner = document.getElementById('goal-banner');
-  if (banner) {
-    banner.hidden = false;
-    // Reset any prior phase class so the base (neutral) style is the fallback,
-    // then apply the current phase's class for the visible state.
-    banner.classList.remove('active', 'paused', 'blocked', 'complete');
-    banner.classList.add(phase);
-    banner.innerHTML = _GSVG.target + '<span>' + (goal.phase === 'active' ? 'Meta activa' : 'Meta ' + goal.phase) + ': ' + goal.objective + '</span>';
-    banner.onclick = () => document.getElementById('goal-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // ── In-chat goal panel (DSH parity: the ongoing goal lives IN the chat) ──
+  renderChatGoal(goal, extra);
+}
+
+// The goal panel docked at the top of the conversation. Compact by default
+// (objective · phase · round/step progress · elapsed); click to expand the
+// task list (current step lit), the latest trail lines and the controls.
+// Shown only in the chat whose session the goal runs in.
+let _lastGoal = null, _lastExtra = {};
+const _openKey = (gid) => 'odysseus-goal-panel-open-' + (gid || '');
+export function renderChatGoal(goal, extra = {}) {
+  _lastGoal = goal; _lastExtra = extra;
+  const host = document.getElementById('goal-banner');
+  if (!host) return;
+  const sid = window.sessionModule?.getCurrentSessionId?.() || null;
+  const card = document.getElementById('goal-card');
+  const q0 = extra.queue || { remaining: [], done: [] };
+  const queueHere = !q0.session_id || !sid || q0.session_id === sid;
+  const goalHere = goal && !(goal.session_id && sid && goal.session_id !== sid);
+  const hasPlan = queueHere && ((q0.remaining || []).length + (q0.done || []).length) > 0;
+  if (!goalHere && !hasPlan) {
+    host.hidden = true; host.innerHTML = '';
+    if (card) card.hidden = !goal;            // goal of another chat → keep it reachable in the sidebar
+    return;
   }
+  if (card) card.hidden = !!goalHere || !goal;
+  // Plan mode: no goal in this chat, but the agent wrote a todo_write checklist.
+  const planMode = !goalHere;
+  if (planMode) {
+    goal = { id: 'plan-' + (sid || ''), phase: (q0.remaining || []).length ? 'active' : 'complete',
+             objective: (q0.remaining || []).length ? (q0.current || q0.remaining[0]) : 'All steps done',
+             createdAt: q0.updated_at };
+  }
+  if (!queueHere) extra = { ...extra, queue: { remaining: [], done: [] } };
+  const phase = goal.phase || 'active';
+  const queue = extra.queue || { remaining: [], done: [] };
+  const done = queue.done || [], remaining = queue.remaining || [];
+  const total = done.length + remaining.length;
+  const rounds = goal.roundsStarted ?? 0, maxR = goal.maxGoalRounds || 0;
+  let open = false;
+  try { open = localStorage.getItem(_openKey(goal.id)) === '1'; } catch (_) {}
+  host.hidden = false;
+  host.className = 'goal-banner goal-dock ' + phase + (open ? ' open' : '') + (planMode ? ' plan' : '');
+  host.setAttribute('role', 'region');
+  host.setAttribute('aria-label', planMode ? 'Plan' : 'Ongoing goal');
+  host.onclick = null;
+  const pct = (n, d) => d ? Math.min(100, Math.round((n / d) * 100)) : 0;
+  const stepTxt = total ? `step ${Math.min(done.length + 1, total)}/${total}` : 'no task list yet';
+  host.innerHTML = `
+    <button type="button" class="gd-head" aria-expanded="${open}">
+      <span class="gd-ico">${_GSVG.target}</span>
+      <span class="gd-label">${planMode ? 'Plan' : 'Goal'}</span>
+      <span class="gd-phase ${phase}">${{ active: _GSVG.play, paused: _GSVG.pause, blocked: _GSVG.blocked, complete: _GSVG.check }[phase] || ''}<span>${planMode ? (phase === 'complete' ? 'done' : 'working') : phase}</span></span>
+      <span class="gd-obj"></span>
+      <span class="gd-meta"></span>
+      <span class="gd-chev" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </button>
+    <div class="gd-bars" aria-hidden="true">
+      <i class="gd-bar-r" style="width:${pct(rounds, maxR)}%"></i><i class="gd-bar-s" style="width:${pct(done.length, total)}%"></i>
+    </div>
+    <div class="gd-body">
+      <ol class="gd-steps"></ol>
+      <div class="gd-trail-wrap"><span class="gd-sub">Latest progress</span><pre class="gd-trail"></pre></div>
+      <p class="gd-blocked" hidden></p>
+      <div class="gd-acts">
+        <button type="button" data-act="pause">${_GSVG.pause}<span>Pause</span></button>
+        <button type="button" data-act="resume">${_GSVG.play}<span>Resume</span></button>
+        <button type="button" data-act="complete">${_GSVG.check}<span>Mark complete</span></button>
+      </div>
+    </div>`;
+  host.querySelector('.gd-obj').textContent = goal.objective || '';
+  host.querySelector('.gd-obj').title = goal.objective || '';
+  host.querySelector('.gd-meta').textContent = planMode
+    ? `${done.length}/${total} done` + (goal.createdAt ? ` · updated ${_ago(goal.createdAt)} ago` : '')
+    : `round ${rounds}${maxR ? '/' + maxR : ''} · ${stepTxt}` + (goal.createdAt ? ` · ${_ago(goal.createdAt)}` : '');
+  const ol = host.querySelector('.gd-steps');
+  if (!total) {
+    const li = document.createElement('li'); li.className = 'gd-empty';
+    li.textContent = 'The agent has not written a task list yet — it appears here as soon as it plans the steps.';
+    ol.appendChild(li);
+  }
+  done.forEach(t => { const li = document.createElement('li'); li.className = 'done'; li.innerHTML = _GSVG.boxChecked; li.append(document.createTextNode(' ' + t)); ol.appendChild(li); });
+  const curIdx = Math.max(0, queue.current ? remaining.indexOf(queue.current) : 0);
+  remaining.forEach((t, i) => { const li = document.createElement('li'); li.className = i === curIdx ? 'current' : ''; li.innerHTML = _GSVG.box; li.append(document.createTextNode(' ' + t)); ol.appendChild(li); });
+  const trail = String(extra.checkpoint || '').trim().split('\n').filter(Boolean).slice(-4).join('\n');
+  const tw = host.querySelector('.gd-trail-wrap');
+  if (trail && !planMode) host.querySelector('.gd-trail').textContent = trail; else tw.hidden = true;
+  if (planMode) { host.querySelector('.gd-acts').style.display = 'none'; host.querySelector('.gd-bar-r').style.width = '0'; }
+  const reason = goal.blockedReason?.message || '';
+  const bl = host.querySelector('.gd-blocked'); bl.hidden = !reason; bl.textContent = reason;
+  host.querySelector('[data-act="pause"]').hidden = phase !== 'active';
+  host.querySelector('[data-act="resume"]').hidden = phase !== 'paused';
+  host.querySelector('[data-act="complete"]').hidden = phase === 'complete';
+  const head = host.querySelector('.gd-head');
+  head.addEventListener('click', () => {
+    const o = host.classList.toggle('open');
+    head.setAttribute('aria-expanded', String(o));
+    try { localStorage.setItem(_openKey(goal.id), o ? '1' : '0'); } catch (_) {}
+  });
+  host.querySelectorAll('.gd-acts button').forEach(b => b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await fetch('/api/goal/' + b.dataset.act, { method: 'POST', credentials: 'same-origin' });
+    refreshGoal();
+  }));
+}
+
+function _ago(ts) {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - Number(ts)));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${(s / 3600).toFixed(1)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+// ── Goal creation (UI entry point; the agent can also call create_goal) ──
+export async function createGoal(objective, sessionId) {
+  objective = String(objective || '').trim();
+  if (!objective) return { ok: false, error: 'objective is required' };
+  const sid = sessionId || window.sessionModule?.getCurrentSessionId?.() || undefined;
+  try {
+    const r = await fetch('/api/goal', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objective, session_id: sid }),
+    });
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { const j = await r.json(); msg = j.detail || msg; } catch (_) {}
+      if (r.status === 409) msg = 'A goal is already active — complete or pause it first.';
+      return { ok: false, error: msg };
+    }
+    await refreshGoal();
+    showGoalToast(_GSVG.target + ' Goal started: ' + _esc(objective.slice(0, 80)), 'done');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+const _esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function _ensureNewGoalButton(show) {
+  const card = document.getElementById('goal-card');
+  if (!card) return;
+  let box = document.getElementById('goal-new');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'goal-new';
+    box.className = 'goal-new';
+    box.innerHTML = '<button type="button" class="goal-new-btn">' + _GSVG.target +
+      '<span>Set a goal</span><kbd>/goal</kbd></button>' +
+      '<form class="goal-new-form" hidden><textarea rows="2" maxlength="600" ' +
+      'placeholder="What should Odysseus keep working toward? (Enter to start · Esc to cancel)"></textarea>' +
+      '<p class="goal-new-err" hidden></p></form>';
+    card.parentNode.insertBefore(box, card.nextSibling);
+    const btn = box.querySelector('.goal-new-btn');
+    const form = box.querySelector('.goal-new-form');
+    const ta = form.querySelector('textarea');
+    const err = form.querySelector('.goal-new-err');
+    btn.addEventListener('click', () => { btn.hidden = true; form.hidden = false; ta.focus(); });
+    const cancel = () => { form.hidden = true; btn.hidden = false; ta.value = ''; err.hidden = true; };
+    ta.addEventListener('keydown', async (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const res = await createGoal(ta.value);
+        if (res.ok) cancel();
+        else { err.textContent = res.error; err.hidden = false; }
+      }
+    });
+  }
+  box.hidden = !show;
 }
 
 export function setGoalActivity(state) {
@@ -171,7 +333,9 @@ export async function refreshGoal() {
   try {
     const [g, q, c] = await Promise.all([
       fetch('/api/goal').then(r => r.ok ? r.json() : null),
-      fetch('/api/goal/queue').then(r => r.ok ? r.json() : null).catch(() => null),
+      (() => { const sid = window.sessionModule?.getCurrentSessionId?.();
+        return fetch('/api/goal/queue' + (sid ? '?session_id=' + encodeURIComponent(sid) : ''))
+          .then(r => r.ok ? r.json() : null).catch(() => null); })(),
       fetchCheckpoint(),
     ]);
     renderGoal(g?.goal || null, { queue: q || { remaining: [], done: [] }, checkpoint: c });
@@ -191,6 +355,11 @@ export function initGoalCard() {
   bind('goal-resume', 'resume');
   bind('goal-complete', 'complete');
   refreshGoal();
+  // Keep "Ronda n · 12m" and the task list fresh even between SSE events.
+  setInterval(() => { if (!document.hidden) refreshGoal(); }, 30000);
+  // Switching chats shows/hides the in-chat goal panel for that chat.
+  window.addEventListener('odysseus:session-changed', () => { renderChatGoal(_lastGoal, { checkpoint: _lastExtra.checkpoint }); refreshGoal(); });
+  window.goalCard = { createGoal, refreshGoal };
   // Re-render on the agent's goal events (wire to your SSE here).
   // window.addEventListener('goal-update', () => refreshGoal());
 }

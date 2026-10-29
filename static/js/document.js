@@ -110,6 +110,10 @@ import * as Modals from './modalManager.js';
 
   // Multi-document state
   let activeDocId = null;           // currently visible doc
+  // Which document the editor textarea currently holds. Saves are refused
+  // when it differs from activeDocId, so one doc's text can never be written
+  // into another doc (tab restore / agent-switch races).
+  let _taDocId = null;
   let _lastSessionId = '';          // session context for "+" button
   const docs = new Map();           // docId -> { id, title, language, content, version, sessionId }
 
@@ -3450,7 +3454,7 @@ import * as Modals from './modalManager.js';
     }
     if (!docs.has(docId)) return;
     _hideLoadingOverlay();
-    if (_diffModeActive) exitDiffMode(true);
+    if (_diffModeActive) exitDiffMode('keep');
 
     // Save current doc state before switching
     saveCurrentToMap();
@@ -3487,6 +3491,7 @@ import * as Modals from './modalManager.js';
     if (titleInput) titleInput.value = doc.title || '';
     // For email docs, _showEmailFields will set textarea to body only (not raw header)
     if (textarea && doc.language !== 'email') textarea.value = doc.content || '';
+    _taDocId = docId;
     if (langSelect) langSelect.value = doc.language || 'markdown';
     if (badge) { const _v = doc.version || 1; badge.textContent = `v${_v}`; badge.style.display = _v > 1 ? '' : 'none'; }
     { const _v = doc.version || 1; const _dbtn = document.getElementById('doc-diff-toggle-btn'); if (_dbtn) _dbtn.style.display = _v > 1 ? '' : 'none'; }
@@ -3668,6 +3673,7 @@ import * as Modals from './modalManager.js';
       const d = docs.get(doc.id);
       if (d) d.content = content;
       activeDocId = doc.id;
+      _taDocId = doc.id;
       // Update textarea (keep existing content the user typed)
       const textarea = document.getElementById('doc-editor-textarea');
       if (textarea) {
@@ -3691,6 +3697,7 @@ import * as Modals from './modalManager.js';
   /** Save current editor state back into the docs map */
   function saveCurrentToMap() {
     if (!activeDocId || !docs.has(activeDocId)) return;
+    if (_taDocId && _taDocId !== activeDocId) return;   // editor holds another doc
     const doc = docs.get(activeDocId);
     const textarea = document.getElementById('doc-editor-textarea');
     const titleInput = document.getElementById('doc-title-input');
@@ -4621,7 +4628,7 @@ import * as Modals from './modalManager.js';
     const diffToggleBtn = document.getElementById('doc-diff-toggle-btn');
     if (diffToggleBtn) diffToggleBtn.addEventListener('click', async () => {
       if (_diffModeActive) {
-        exitDiffMode(true);
+        exitDiffMode('keep');
         return;
       }
       if (!activeDocId) return;
@@ -4723,7 +4730,7 @@ import * as Modals from './modalManager.js';
       // Tab key inserts a real tab; Escape clears selection
       ta.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          if (_diffModeActive) { exitDiffMode(true); return; }
+          if (_diffModeActive) { exitDiffMode('keep'); return; }
           // First Esc clears any pinned selection without closing the
           // panel. Second Esc (no selection left) minimises the panel
           // to a dock chip. The previous all-in-one path made one Esc
@@ -6169,6 +6176,7 @@ import * as Modals from './modalManager.js';
 
     if (titleInput) titleInput.value = doc.title || '';
     if (textarea) textarea.value = doc.current_content || doc.content || '';
+    if (doc.id) _taDocId = doc.id;
     if (langSelect) langSelect.value = doc.language || 'markdown';
     if (badge) { const _v = doc.version_count || doc.version || 1; badge.textContent = `v${_v}`; badge.style.display = _v > 1 ? '' : 'none'; }
     { const _v = doc.version_count || doc.version || 1; const _dbtn = document.getElementById('doc-diff-toggle-btn'); if (_dbtn) _dbtn.style.display = _v > 1 ? '' : 'none'; }
@@ -6871,7 +6879,7 @@ import * as Modals from './modalManager.js';
    *  follow-up batch) can keep adding edits while the user reviews; the count
    *  and "n of m" header update on the fly. */
   export function handleDocSuggestions(data) {
-    if (_diffModeActive) exitDiffMode(true);
+    if (_diffModeActive) exitDiffMode('keep');
     if (!data.suggestions || !data.suggestions.length) return;
 
     if (!isOpen) openPanel();
@@ -7195,7 +7203,7 @@ import * as Modals from './modalManager.js';
 
   /** Enter diff mode — show line-level diff for review */
   function enterDiffMode(oldContent, newContent) {
-    if (_diffModeActive) exitDiffMode(true);
+    if (_diffModeActive) exitDiffMode('keep');
 
     _diffModeActive = true;
     _diffOldContent = oldContent;
@@ -7464,7 +7472,15 @@ import * as Modals from './modalManager.js';
     const wrap = document.getElementById('doc-editor-wrap');
     if (wrap) wrap.classList.remove('diff-mode');
 
-    if (discard) {
+    // 'keep' = leave review WITHOUT deciding (tab switch, Esc, toggle, a new
+    // edit arriving). The document on the server already holds the new
+    // content, so show it and do NOT save — restoring the old text here used
+    // to PUT it back as a "Manual edit", silently reverting the agent's edit.
+    const keep = discard === 'keep';
+    if (keep) {
+      if (textarea && _diffNewContent != null) textarea.value = _diffNewContent;
+      if (activeDocId && docs.has(activeDocId) && _diffNewContent != null) docs.get(activeDocId).content = _diffNewContent;
+    } else if (discard) {
       // Reject all — restore original content
       if (textarea) textarea.value = _diffOldContent || '';
     } else {
@@ -7520,7 +7536,7 @@ import * as Modals from './modalManager.js';
 
     syncHighlighting();
     updateLineNumbers(textarea ? textarea.value : '');
-    saveDocument({ silent: true });
+    if (!keep) saveDocument({ silent: true });
   }
 
   /** Check if diff mode is active */
@@ -8007,14 +8023,49 @@ import * as Modals from './modalManager.js';
     if (!activeDocId) return;
     const textarea = document.getElementById('doc-editor-textarea');
     if (!textarea) return;
+    if (_taDocId && _taDocId !== activeDocId) {
+      console.warn('[doc] save skipped: editor holds', _taDocId, 'not', activeDocId);
+      return;
+    }
+    const _known = docs.get(activeDocId);
+    if (_known && !String(activeDocId).startsWith('_streaming_') && textarea.value === (_known.content || '')
+        && _known._savedOnce) return;                    // nothing changed since last load/save
 
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}`, {
+      const _saveId = activeDocId;
+      const res = await fetch(`${API_BASE}/api/document/${_saveId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: textarea.value }),
+        body: JSON.stringify({ content: textarea.value, base_version: _known ? (_known.version || null) : null }),
       });
+      if (res.status === 409) {
+        // The agent changed this document after the editor loaded it: never
+        // overwrite its version with a stale buffer — reload the latest.
+        const cur = await res.json().catch(() => null);
+        const d = cur && (cur.detail && cur.detail.document || cur.document);
+        const m = docs.get(_saveId);
+        const userTyped = !!(m && textarea.value !== (m.content || ''));
+        if (d && m) m.version = d.version_count || m.version;
+        if (userTyped) {
+          // The user really edited a buffer that predates the agent's change:
+          // their edit wins, the agent's version stays in version history.
+          const r2 = await fetch(`${API_BASE}/api/document/${_saveId}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: textarea.value }),
+          });
+          if (r2.ok) { const d2 = await r2.json(); if (m) { m.content = textarea.value; m.version = d2.version_count || m.version; } }
+          if (uiModule) uiModule.showToast('Saved your edit — the agent\'s newer version is kept in version history');
+          return;
+        }
+        // Untouched stale buffer → just show the agent's latest content.
+        if (d && m) {
+          m.content = d.current_content || '';
+          if (activeDocId === _saveId && _taDocId === _saveId) { textarea.value = m.content; syncHighlighting(); }
+        }
+        return;
+      }
       const doc = await res.json();
+      if (_known) _known._savedOnce = true;
       const badge = document.getElementById('doc-version-badge');
       if (badge) { const _v = doc.version_count || 1; badge.textContent = `v${_v}`; badge.style.display = _v > 1 ? '' : 'none'; }
       // Update map
@@ -8910,6 +8961,7 @@ import * as Modals from './modalManager.js';
     }
     _streamDocId = docId;
     activeDocId = docId;
+    _taDocId = docId;
     _syncDocIndicator();
 
     if (!isOpen) openPanel();
@@ -9102,6 +9154,7 @@ import * as Modals from './modalManager.js';
       if (data.language) tempDoc.language = data.language;
       tempDoc.content = newContent;
       docs.set(docId, tempDoc);
+      if (_taDocId === streamingId) _taDocId = docId;
       // Fix activeDocId reference
       if (activeDocId === streamingId) activeDocId = docId;
     }
@@ -9176,8 +9229,13 @@ import * as Modals from './modalManager.js';
     const docInd = document.getElementById('doc-indicator-btn');
     if (docInd) docInd.classList.add('visible');
 
-    // Switch to this doc's tab
+    // Switch to this doc's tab — keep the doc we're leaving in sync first.
+    if (activeDocId && activeDocId !== docId) {
+      if (_diffModeActive) exitDiffMode('keep');
+      saveCurrentToMap();
+    }
     activeDocId = docId;
+    _taDocId = docId;
 
     const badge = document.getElementById('doc-version-badge');
     const titleInput = document.getElementById('doc-title-input');

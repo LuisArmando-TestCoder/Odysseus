@@ -422,11 +422,12 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "todo_write",
-            "description": "Maintain the expandable task list shown with the ongoing goal: set the ordered list of remaining sub-tasks (replaces the queue). The harness marks items done when you advance the goal's item cursor; the user watches the list live in the goal panel.",
+            "description": "Your visible plan: the checklist the user watches live in the chat's goal/plan panel. Call it at the START of any multi-step task (3+ steps) with every step, then call it AGAIN whenever a step finishes or the plan changes — send the FULL list each time with statuses, so the user sees steps tick off.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "items": {"type": "array", "items": {"type": "string"}, "description": "Ordered list of remaining task items."}
+                    "items": {"type": "array", "description": "Every step in order. Each item: {\"text\": \"...\", \"status\": \"pending|in_progress|done\"}.",
+                              "items": {"type": "object", "properties": {"text": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "done"]}}, "required": ["text"]}}
                 },
                 "required": ["items"]
             }

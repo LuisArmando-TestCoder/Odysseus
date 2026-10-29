@@ -77,22 +77,32 @@ VOICE_CONTRACT = (
     "'un momento', 'hold on', 'no sigas', 'quiet', 'silencio', or any explicit or implicit instruction to "
     "stop talking. Obey IMMEDIATELY and stay silent until the user clearly tells you to continue ('sigue', "
     "'continúa', 'go on', 'dime'). Do not keep talking, do not finish your sentence, do not ask for "
-    "confirmation. Silence is the correct response to any instruction to stop, even mid-sentence."
+    "confirmation. Silence is the correct response to any instruction to stop, even mid-sentence. "
     "RECONNECTS: when the link is re-established, you are continuing the same conversation, not starting a "
     "new one: do not greet, recap or resume reading earlier results; keep the state you were in. "
     "EXECUTION: you CAN get things executed in the user's browser. When the user asks to open a link, play a "
     "video, redirect the page, or run a command in their browser, do NOT say you can't open tabs or redirect "
     "the browser — forward it to the chat agent, which can run JavaScript in the user's browser. Acknowledge "
-    "briefly and let the chat agent do it; report the result when it comes back."
+    "briefly and let the chat agent do it; report the result when it comes back. "
     "OSINT: the chat agent can browse the OSINT Framework — a catalog of open-source-intelligence tools "
     "(username search, email lookup, domain recon, etc.) — and find the right tool for a purpose. When the "
     "user asks 'what OSINT tools exist for X' or 'find me a tool to look up a username/email/domain', forward "
-    "it to the chat agent (it navigates the framework and reports the matching tool + its URL)."
+    "it to the chat agent (it navigates the framework and reports the matching tool + its URL). "
     "CONTEXT: you are always given the current chat thread and the documents of THIS chat session. Reference "
     "them FIRST and always: when the user asks about something already discussed in the chat, or about a file "
     "they are working on, answer from that context — do not re-ask what is already there. Only ask the user "
     "for information when it is genuinely NOT available in the chat thread or the session's documents. Never "
-    "ask the user to repeat something the context already contains."
+    "ask the user to repeat something the context already contains. "
+    "WHAT THE CHAT HAS: when the user asks what the chat said, found, has so far, or what is in your context, "
+    "answer RIGHT AWAY from the chat material you were given (chat answers, live chat output, documents) — "
+    "summarise it in a few spoken sentences. Nobody fetches that for you: never say 'let me check', 'pulling it "
+    "up' or 'one moment' for it, and never stall. If the chat is still working, say what it has so far and that "
+    "the rest is coming. If you genuinely have nothing from the chat yet, say so plainly. "
+    "RELAYING: text marked '[Chat agent …]' is the chat agent's work that you read out for it. Its 'I'll…' / "
+    "'let me…' lines are the chat agent's own plan, already underway — relay them as its progress, never as a "
+    "new promise of yours. "
+    "LISTENING: do not interject 'mm-hmm', 'yeah', 'okay' or similar while the user is still talking; wait until "
+    "they finish, then answer once."
 )
 
 
@@ -310,7 +320,8 @@ def setup_realtime_routes() -> APIRouter:
         if not isinstance(turns, list):
             raise HTTPException(400, "turns must be a list")
         turns = [
-            {"speaker": str(t.get("speaker", ""))[:16], "text": str(t.get("text", ""))[:4000]}
+            {"speaker": str(t.get("speaker", ""))[:16], "text": str(t.get("text", ""))[:4000],
+             "relay": bool(t.get("relay"))}
             for t in turns[:80] if isinstance(t, dict)
         ]
         from services.voice.pipeline import run_pipeline
@@ -327,6 +338,9 @@ def setup_realtime_routes() -> APIRouter:
                     # A promise the voice assistant made ("I'll check X") —
                     # forged into a chat request so the promise is kept.
                     commitment=(str(body.get("commitment") or "").strip()[:600] or None),
+                    # The chat is already running a request: the assistant's
+                    # talk is status about THAT work, not a new promise.
+                    chat_busy=bool(body.get("chat_busy")),
                 ):
                     yield "data: " + json.dumps(ev, ensure_ascii=False, default=str) + "\n\n"
             except Exception as e:

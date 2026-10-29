@@ -1250,6 +1250,9 @@ def setup_chat_routes(
                     "status": r["status"],
                     "owner": r["owner"],
                     "queued": turn_inbox.queued_count(r["session_id"]),
+                    "kind": r.get("kind", "chat"),
+                    "started_at": r.get("started_at"),
+                    "label": r.get("label", ""),
                 })
             return {"runs": runs}
         except Exception:
