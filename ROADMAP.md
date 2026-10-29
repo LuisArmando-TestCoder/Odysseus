@@ -64,10 +64,10 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
 `jarvis` — a calm holographic-HUD theme — is now the default preset
 (users with a saved theme keep theirs). Foundation shipped: tokens, canvas,
 global primitives in `static/css/jarvis.css`, scoped to
-`:root[data-odx-theme="jarvis"]`; sidebar/icon rail restyled ("blue Tron":
-neon edge, neon-bar states). Next areas, one per pass: chat
-bubbles → composer/voice core → modals → settings → notes/tasks/calendar →
-documents → email → cookbook/research/compare → login/landing → /cases →
+`:root[data-odx-theme="jarvis"]`; the "drawn in light" Tron layer
+(`static/css/tron.css`) now covers shell, chat, composer, modals, settings,
+research/compare, login, and notes/tasks/calendar. Next areas, one per pass:
+documents → email → cookbook → landing → /cases →
 mobile. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority

@@ -281,3 +281,232 @@
 }
 :root[data-odx-theme="jarvis"] .gallery-card { border: 1px solid var(--tr-ln-dim) !important; }
 :root[data-odx-theme="jarvis"] .gallery-card:hover { border-color: var(--tr-cyan) !important; box-shadow: 0 0 14px -6px var(--tr-cyan) !important; }
+
+/* ── 12 · Notes · tasks · calendar (run 4) ────────────────────────────────
+   Same drawn-light language as the chat: note + task cards and the note
+   editor get the chamfered frame; everything else inside the three tools
+   is squared, hairlined, and labelled in mono. Note colours become the
+   frame's light (not a fill), reminders that are due turn AMBER. */
+:root[data-odx-theme="jarvis"] :is(.note-card, .task-card.memory-item, .note-form) {
+  --c: 9px;
+  --ln: var(--tr-ln-dim);
+  --hi: color-mix(in srgb, var(--tr-cyan-hi) 80%, transparent);
+  --fill: var(--tr-fill);
+  --fill-top: color-mix(in srgb, var(--tr-cyan) 5%, var(--fill));
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+:root[data-odx-theme="jarvis"] :is(.note-card, .task-card.memory-item, .note-form)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid transparent;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background:
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) var(--c) 0 / 14px 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) calc(100% - var(--c)) 100% / 14px 1.5px no-repeat border-box,
+    linear-gradient(180deg, var(--fill-top), var(--fill) 60%) padding-box,
+    linear-gradient(var(--ln), var(--ln)) border-box;
+}
+:root[data-odx-theme="jarvis"] :is(.note-card, .task-card.memory-item):hover { --ln: var(--tr-ln); }
+:root[data-odx-theme="jarvis"] .note-card.note-card-pinned { --ln: var(--tr-ln); --fill-top: color-mix(in srgb, var(--tr-cyan) 10%, var(--tr-fill)); }
+:root[data-odx-theme="jarvis"] .note-card-selected { --ln: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] .note-form { --c: 12px; --fill: var(--tr-fill-solid); --ln: var(--tr-ln); }
+:root[data-odx-theme="jarvis"] .task-card.memory-item { --c: 7px; }
+:root[data-odx-theme="jarvis"] .task-card.memory-item.task-paused { --ln: color-mix(in srgb, var(--tr-cyan) 10%, transparent); --hi: var(--tr-ln-dim); }
+
+/* Note colours are the frame's light, not a fill */
+:root[data-odx-theme="jarvis"] .note-color-red    { --tint: #ff6b81; }
+:root[data-odx-theme="jarvis"] .note-color-orange { --tint: var(--tr-orange); }
+:root[data-odx-theme="jarvis"] .note-color-yellow { --tint: #ffd166; }
+:root[data-odx-theme="jarvis"] .note-color-green  { --tint: var(--jv-ok, #5ef2b3); }
+:root[data-odx-theme="jarvis"] .note-color-blue   { --tint: #6ea8ff; }
+:root[data-odx-theme="jarvis"] .note-color-purple { --tint: #b892ff; }
+:root[data-odx-theme="jarvis"] :is(.note-card, .note-form)[class*="note-color-"] {
+  --ln: color-mix(in srgb, var(--tint, var(--tr-cyan)) 50%, transparent);
+  --hi: var(--tint, var(--tr-cyan-hi));
+  --fill-top: color-mix(in srgb, var(--tint, var(--tr-cyan)) 12%, var(--tr-fill));
+}
+
+/* Squared, everywhere inside the three tools (native colour swatches excepted) */
+:root[data-odx-theme="jarvis"] :is(#notes-pane, .note-fullscreen-overlay, #tasks-modal, #calendar-modal) :is(button, input, select, textarea, [class*="note-"], [class*="notes-"], [class*="task-"], [class*="tasks-"], [class*="memory-"], [class*="cal-"]):not(.cal-s-color):not(.note-card-image):not(img) {
+  border-radius: 0 !important;
+}
+
+/* Notes pane: a docked panel lit along its inner edge */
+:root[data-odx-theme="jarvis"] .notes-pane {
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tr-cyan) 5%, var(--tr-fill-solid)), var(--tr-fill-solid) 30%) !important;
+  border-color: var(--tr-ln-dim) !important;
+  box-shadow: inset 1px 0 0 var(--tr-ln), -24px 0 48px -32px color-mix(in srgb, var(--tr-cyan) 40%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] .notes-pane-header { border-bottom: 1px solid var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .notes-pane-title {
+  font-family: var(--jv-mono) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.12em !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  color: var(--tr-cyan) !important;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--tr-cyan) 35%, transparent);
+}
+:root[data-odx-theme="jarvis"] :is(.notes-header-btn-label, .notes-select-trigger) {
+  font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10.5px;
+}
+:root[data-odx-theme="jarvis"] .notes-select-trigger { border: 1px solid var(--tr-ln-dim) !important; color: var(--tr-dim) !important; }
+:root[data-odx-theme="jarvis"] .notes-select-trigger:hover { border-color: var(--tr-cyan) !important; color: var(--tr-cyan-hi) !important; }
+
+/* Filter chips — mono micro-labels; active = lit underline */
+:root[data-odx-theme="jarvis"] :is(.notes-label-chip, .cal-filter-item, .cal-filter-toggle) {
+  font-family: var(--jv-mono) !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0;
+  white-space: nowrap;
+  border: 1px solid var(--tr-ln-dim) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 3%, transparent) !important;
+  color: var(--tr-dim) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.notes-label-chip, .cal-filter-item, .cal-filter-toggle):hover { border-color: var(--tr-ln) !important; color: var(--tr-ink) !important; }
+:root[data-odx-theme="jarvis"] .notes-label-chip.active {
+  color: var(--tr-cyan-hi) !important;
+  border-color: var(--tr-ln) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .notes-label-chip-count { background: color-mix(in srgb, var(--tr-cyan) 14%, transparent) !important; color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] .cal-filter-important { border-color: color-mix(in srgb, var(--jv-amber) 45%, transparent) !important; color: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] .cal-filter-dot { border-radius: 0 !important; transform: rotate(45deg) scale(.85); }
+
+/* Quick-add bars: a lit input slot (the caret ::before stays) */
+:root[data-odx-theme="jarvis"] :is(.notes-quick-add, .cal-quickadd-row) {
+  border-radius: 0 !important;
+  border: 1px solid var(--tr-ln) !important;
+  background: color-mix(in srgb, #000 30%, var(--tr-fill-solid)) !important;
+  box-shadow: inset 2px 0 0 var(--tr-cyan) !important;
+  animation: none !important;
+}
+:root[data-odx-theme="jarvis"] :is(.notes-quick-add:focus-within, .cal-quickadd-row:focus-within) {
+  border-color: var(--tr-cyan) !important;
+  box-shadow: inset 2px 0 0 var(--tr-cyan-hi), 0 0 16px -6px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .notes-quick-type-seg { border-color: var(--tr-ln-dim) !important; background: transparent !important; }
+:root[data-odx-theme="jarvis"] .notes-quick-type-pill.active { background: color-mix(in srgb, var(--tr-cyan) 16%, transparent) !important; color: var(--tr-cyan-hi) !important; box-shadow: inset 0 -2px 0 var(--tr-cyan) !important; }
+
+:root[data-odx-theme="jarvis"] .cal-quickadd-row { padding-left: 14px !important; }
+:root[data-odx-theme="jarvis"] .cal-quickadd-hint { left: 14px !important; }
+:root[data-odx-theme="jarvis"] #calendar-modal .cal-quickadd-input,
+:root[data-odx-theme="jarvis"] #calendar-modal .cal-quickadd-input:focus { border: 0 !important; box-shadow: none !important; background: transparent !important; }
+
+/* Inside a note card */
+:root[data-odx-theme="jarvis"] .note-card-title { color: var(--tr-ink); letter-spacing: -0.005em; }
+:root[data-odx-theme="jarvis"] .note-check-dot { border-radius: 1px !important; border-color: color-mix(in srgb, var(--tr-cyan) 45%, transparent) !important; background: transparent !important; }
+:root[data-odx-theme="jarvis"] .note-checkbox.done .note-check-dot,
+:root[data-odx-theme="jarvis"] .note-check-dot.done,
+:root[data-odx-theme="jarvis"] .done > .note-check-dot { background: var(--tr-cyan) !important; border-color: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] :is(.done > .note-check-dot, .note-check-dot.done)::after { border-color: #021018 !important; }
+:root[data-odx-theme="jarvis"] .note-card-pin {
+  border-radius: 0 !important;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  width: 20px !important; height: 20px !important;
+}
+:root[data-odx-theme="jarvis"] .note-card-pin.active { background: var(--tr-cyan) !important; color: #021018 !important; border-color: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] .note-card-label-chip {
+  font-family: var(--jv-mono) !important; font-size: 10px !important; font-weight: 500 !important;
+  background: transparent !important; border: 1px solid var(--tr-ln-dim) !important; color: var(--tr-cyan) !important;
+  height: auto !important; min-height: 0 !important; padding: 2px 6px !important; line-height: 1.3 !important; position: relative;
+}
+:root[data-odx-theme="jarvis"] .note-card-label-chip:hover { border-color: var(--tr-cyan) !important; color: var(--tr-cyan-hi) !important; }
+@media (pointer: coarse) {
+  /* keep the old ~32px hit area without drawing it */
+  :root[data-odx-theme="jarvis"] .note-card-label-chip::after { content: ""; position: absolute; inset: -7px -2px; }
+}
+:root[data-odx-theme="jarvis"] .note-card-reminder {
+  font-family: var(--jv-mono) !important; font-size: 10px !important; letter-spacing: 0.02em;
+  border: 1px solid var(--tr-ln-dim);
+  background: color-mix(in srgb, var(--tr-cyan) 8%, transparent) !important; color: var(--tr-cyan-hi) !important;
+}
+:root[data-odx-theme="jarvis"] .note-card-reminder.overdue {
+  border-color: color-mix(in srgb, var(--jv-amber) 55%, transparent);
+  background: color-mix(in srgb, var(--jv-amber) 12%, transparent) !important; color: var(--jv-amber) !important;
+}
+:root[data-odx-theme="jarvis"] .note-card-color-dot { border-radius: 0 !important; }
+
+/* Tasks list */
+:root[data-odx-theme="jarvis"] .task-card .memory-item-title { color: var(--tr-ink); font-size: 13px; }
+:root[data-odx-theme="jarvis"] .task-card .memory-item-meta { font-family: var(--jv-mono); font-size: 10.5px; color: var(--tr-dim); letter-spacing: 0.02em; }
+:root[data-odx-theme="jarvis"] .task-status-badge { font-family: var(--jv-mono) !important; letter-spacing: 0.08em; }
+:root[data-odx-theme="jarvis"] .task-active-badge { color: var(--jv-ok) !important; border-color: color-mix(in srgb, var(--jv-ok) 45%, transparent) !important; background: color-mix(in srgb, var(--jv-ok) 9%, transparent) !important; }
+:root[data-odx-theme="jarvis"] .task-paused-badge { color: var(--jv-amber) !important; border-color: color-mix(in srgb, var(--jv-amber) 40%, transparent) !important; background: color-mix(in srgb, var(--jv-amber) 7%, transparent) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .tasks-clock { font-family: var(--jv-mono); letter-spacing: 0.08em; color: var(--tr-dim); font-variant-numeric: tabular-nums; }
+
+/* Calendar: toolbar */
+:root[data-odx-theme="jarvis"] .cal-title { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--tr-cyan-hi); font-size: 13px !important; }
+:root[data-odx-theme="jarvis"] .cal-view-toggle { border: 1px solid var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .cal-view-btn { font-family: var(--jv-mono) !important; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px !important; color: var(--tr-dim) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .cal-view-btn + .cal-view-btn { border-left-color: var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .cal-view-btn:hover { color: var(--tr-ink) !important; }
+:root[data-odx-theme="jarvis"] .cal-view-btn.active { color: var(--tr-cyan-hi) !important; background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important; box-shadow: inset 0 -2px 0 var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] .cal-nav { border: 1px solid var(--tr-ln-dim) !important; background: transparent !important; }
+:root[data-odx-theme="jarvis"] .cal-nav:hover { border-color: var(--tr-cyan) !important; color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] .cal-today-btn { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px !important; }
+:root[data-odx-theme="jarvis"] .cal-add-btn {
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  background: linear-gradient(180deg, var(--tr-cyan-hi), var(--tr-cyan)) !important;
+  color: #021018 !important; border-color: transparent !important; box-shadow: none !important;
+}
+:root[data-odx-theme="jarvis"] .cal-add-btn :is(.cal-add-plus, .cal-add-label, svg) { color: #021018 !important; stroke: currentColor; }
+:root[data-odx-theme="jarvis"] .cal-add-label { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+
+/* Calendar: the grid is drawn in hairlines */
+:root[data-odx-theme="jarvis"] .cal-grid { background: color-mix(in srgb, var(--tr-cyan) 14%, transparent) !important; border: 1px solid var(--tr-ln-dim); }
+:root[data-odx-theme="jarvis"] .cal-weekday {
+  background: color-mix(in srgb, var(--tr-cyan) 6%, var(--jv-void)) !important;
+  font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.14em; font-size: 10px !important;
+  color: var(--tr-cyan); opacity: 0.85 !important;
+}
+:root[data-odx-theme="jarvis"] .cal-day { background: color-mix(in srgb, var(--jv-void) 88%, var(--tr-fill-solid)) !important; }
+:root[data-odx-theme="jarvis"] .cal-day:hover { background: color-mix(in srgb, var(--tr-cyan) 6%, var(--jv-void)) !important; }
+:root[data-odx-theme="jarvis"] .cal-day-num { font-family: var(--jv-mono); font-variant-numeric: tabular-nums; color: var(--tr-dim); opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .cal-day.cal-other { opacity: 0.4 !important; }
+:root[data-odx-theme="jarvis"] .cal-day.cal-today {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tr-cyan) 18%, var(--jv-void)), color-mix(in srgb, var(--tr-cyan) 6%, var(--jv-void))) !important;
+  box-shadow: inset 0 0 0 1px var(--tr-cyan), inset 0 2px 0 var(--tr-cyan-hi), 0 0 18px -6px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .cal-day.cal-today .cal-day-num { background: var(--tr-cyan) !important; color: #021018 !important; padding: 1px 5px !important; }
+:root[data-odx-theme="jarvis"] .cal-day.cal-selected:not(.cal-today) {
+  background: color-mix(in srgb, var(--tr-cyan) 9%, var(--jv-void)) !important;
+  box-shadow: inset 0 0 0 1px var(--tr-ln) !important;
+}
+:root[data-odx-theme="jarvis"] .cal-day.cal-selected:not(.cal-today) .cal-day-num { color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] :is(.cal-event-row-dot, .cal-dot, .cal-event-dot, .cal-event-row-dot) { border-radius: 0 !important; transform: rotate(45deg); }
+:root[data-odx-theme="jarvis"] .cal-event-row:hover { background: color-mix(in srgb, var(--tr-cyan) 10%, transparent) !important; }
+:root[data-odx-theme="jarvis"] .cal-event-row-time { font-family: var(--jv-mono); font-variant-numeric: tabular-nums; }
+
+/* Calendar: day detail + search */
+:root[data-odx-theme="jarvis"] .cal-search-input { background: color-mix(in srgb, #000 30%, var(--tr-fill-solid)) !important; border-color: var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .cal-detail-header { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] .cal-event-item { border-left: 2px solid transparent; }
+:root[data-odx-theme="jarvis"] .cal-event-item:hover { background: color-mix(in srgb, var(--tr-cyan) 7%, transparent) !important; border-left-color: var(--tr-cyan); }
+:root[data-odx-theme="jarvis"] .cal-event-time { font-family: var(--jv-mono); font-variant-numeric: tabular-nums; color: var(--tr-dim); }
+:root[data-odx-theme="jarvis"] .cal-splitter-grip { background: var(--tr-ln) !important; }
+
+@media (max-width: 600px) {
+  /* mono is wider — keep the meta line and chips from colliding on phones */
+  :root[data-odx-theme="jarvis"] .task-card .memory-item-meta { font-family: inherit; letter-spacing: 0; }
+  :root[data-odx-theme="jarvis"] .notes-label-chip { font-family: var(--jv-ui) !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] .cal-day.cal-today { box-shadow: inset 0 0 0 1px var(--tr-cyan), inset 0 2px 0 var(--tr-cyan-hi) !important; }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] :is(.note-card, .task-card.memory-item, .note-form) { --ln: var(--tr-cyan); }
+  :root[data-odx-theme="jarvis"] .cal-day.cal-other { opacity: 0.65 !important; }
+}

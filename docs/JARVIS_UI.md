@@ -51,7 +51,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 4. ✅ Composer (Tron pass) — voice mode itself is out of scope (`voice-hyper.css`)
 5. ✅ Modals / windows / dropdowns (Tron pass)
 6. Settings
-7. Notes / tasks / calendar
+7. ✅ Notes / tasks / calendar
 8. Documents / editor
 9. Email
 10. Cookbook / ✅ research / compare
@@ -128,6 +128,37 @@ every component drawn — except Advanced Voice Mode (already done).*
 - Verified headless at 1440×900 and 390×844 (chat, settings, deep research,
   login) + a radius sweep of open panels (no soft corners left outside voice).
 
-**Next:** notes / tasks / calendar, documents / editor, email, cookbook /
+**Next:** documents / editor, email, cookbook /
 compare, landing, `/cases`, then a mobile pass — reuse the `tron.css` frame
 recipe (add the surface to the selector list, tune `--c`).
+
+### Run 4 — 2026-10-29 · Notes / tasks / calendar
+New section 12 in `static/css/tron.css` (all under the jarvis scope).
+- **Cards drawn, not filled:** note cards, task cards and the note editor
+  (`.note-form`) get the chamfered frame (`--c` 9px / 7px / 12px, ticks on
+  both cuts); pinned notes burn brighter, paused tasks dim their line.
+- **Note colours = light:** `note-color-*` sets `--tint`, which drives the
+  frame line, the ticks and a faint top wash — no more solid colour slabs.
+- **Attention is amber:** an overdue reminder chip is amber (in jarvis
+  `--red` is cyan, so the old "overdue" looked identical to a normal one);
+  paused task badge amber, active badge `--jv-ok`.
+- **Squared everything** inside `#notes-pane`, `.note-fullscreen-overlay`,
+  `#tasks-modal`, `#calendar-modal` (native colour swatches excepted);
+  checklist ticks are square, the pin is a diamond, event/filter dots are
+  diamonds.
+- **Notes pane:** solid dark glass with a lit inner edge, mono uppercase
+  title (matches modal headers), mono filter chips with a lit underline
+  when active; quick-add is a lit input slot (`inset 2px` cyan bar).
+- **Calendar:** grid drawn in cyan hairlines, mono uppercase weekdays /
+  title / view toggle (active = underline), today = cyan outline + top bar
+  + square day chip, selected = dim outline; primary "New" is a chamfered
+  cyan slab; quick-add row is the same lit slot as notes.
+- Mobile: task meta + note filter chips fall back to Inter (mono is wider
+  and collided); tag chips keep a ~32px touch area via an invisible
+  `::after` on coarse pointers.
+- Verified headless (1440×900, 390×844) — notes list, note editor, tasks,
+  calendar month + week — in jarvis and light; light screenshots match
+  the pre-change ones apart from ambient animation (clock, pulses).
+  No console errors besides the blocked CDN fetches.
+
+**Next:** documents / editor (`document.js`, `documentLibrary.js`).
