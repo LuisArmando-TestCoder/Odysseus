@@ -1761,6 +1761,7 @@ async function _cmdWebSearch(args, ctx) {
 
 async function _hub() { return window.hubDashboard || (await import('./hubDashboard.js')).default; }
 async function _cmdDashboard(args) { (await _hub()).open('overview'); return true; }
+async function _cmdPowers(args) { (await _hub()).open('powers', args.join(' ').trim()); return true; }
 async function _cmdUsage(args) { (await _hub()).open('usage'); return true; }
 async function _cmdBoard(args) {
   const text = args.join(' ').trim();
@@ -5735,6 +5736,14 @@ const COMMANDS = {
     handler: _cmdWebSearch,
     noUserBubble: true,
     usage: '/search query'
+  },
+  powers: {
+    alias: ['recon', 'osint', 'superpowers'],
+    category: 'Productivity',
+    help: 'OSINT superpowers console — /powers <target> runs instant recon (domain, IP, email, @user, phone, wallet…)',
+    handler: _cmdPowers,
+    noUserBubble: true,
+    usage: '/powers [target]',
   },
   dashboard: {
     alias: ['dash', 'agents', 'status'],

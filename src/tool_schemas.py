@@ -562,6 +562,44 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "factcheck",
+            "description": "Fact-check claims and spot what is off. action=claim (default): analyse the exact quote — figures, dates, absolutes, red-flag signals, candidate vices, the primary documents that would prove it, the questions to ask and a plan; give source_url to test whether the claim's figures are actually in the source it cites; run=true also searches primary repositories and prior fact-checks. action=anomalies: give items=[{source,text}] to find figures/dates that disagree across sources (moving numbers, outliers, impossible timelines). action=recalc: claimed, documented, optional rate → gap/ratio/%. action=method: the full method.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["claim", "anomalies", "recalc", "method"]},
+                    "claim": {"type": "string", "description": "Exact words of the claim"},
+                    "speaker": {"type": "string"}, "date": {"type": "string"},
+                    "context": {"type": "string", "description": "Where/when it was said, topic"},
+                    "source_url": {"type": "string", "description": "The source the speaker cites (checked for the claim's figures)"},
+                    "run": {"type": "boolean", "description": "Also search primary repositories and prior checks"},
+                    "items": {"type": "array", "items": {"type": "object", "properties": {"source": {"type": "string"}, "text": {"type": "string"}}}, "description": "anomalies: texts to cross-read"},
+                    "claimed": {"type": "number"}, "documented": {"type": "number"}, "rate": {"type": "number"}, "unit": {"type": "string"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recon",
+            "description": "OSINT superpowers. Instant reconnaissance using free public sources. action=auto (default) detects the target type and runs every relevant module in parallel. Individual actions: dns, whois, subdomains, http (fingerprint a live site), ip, wayback, email, username (15 platforms), github, reddit, hackernews, phone, geocode (place or 'lat,lon'), exif (image URL or workspace path), reverse_image, dorks (set run=true to execute them), crypto (BTC/ETH address), framework (best tools from the OSINT Framework for a type/category/keyword). Never use it to locate a private person's home, family or whereabouts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["auto", "dns", "whois", "subdomains", "http", "ip", "wayback", "email", "username", "github", "reddit", "hackernews", "phone", "geocode", "exif", "reverse_image", "dorks", "crypto", "framework"]},
+                    "target": {"type": "string", "description": "Domain, URL, IP, email, username, phone, wallet, place, coordinates, image URL/path, or a topic for framework"},
+                    "run": {"type": "boolean", "description": "dorks only: also execute the top queries"},
+                    "purpose": {"type": "string", "description": "One line: why this lookup (kept with the finding)"}
+                },
+                "required": ["target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "session_read",
             "description": "Read a dense recap of another chat (its summary + latest exchanges, or only passages matching `query`). Use to pull context from another chat instead of asking the user to re-explain.",
             "parameters": {

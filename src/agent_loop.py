@@ -719,6 +719,15 @@ def _build_system_prompt(
     except Exception:
         pass
 
+    # Superpowers manifest — the agent always knows (and uses) its OSINT
+    # capabilities. Setting `superpowers_manifest` (default on).
+    try:
+        if str(get_setting("superpowers_manifest", True)).lower() not in ("false", "0"):
+            from src.superpowers import manifest as _sp_manifest
+            agent_prompt = _sp_manifest() + agent_prompt
+    except Exception:
+        pass
+
     # Concise output style (default on; setting `output_style`: concise|normal).
     try:
         if str(get_setting("output_style", "concise") or "concise").lower() == "concise":

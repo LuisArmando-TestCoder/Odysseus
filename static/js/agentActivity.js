@@ -16,10 +16,12 @@ const CATS = {
   edit:   { label: 'Edited',   noun: ['file', 'files'],      icon: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>' },
   run:    { label: 'Ran',      noun: ['command', 'commands'], icon: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>' },
   plan:   { label: 'Planned',  noun: ['step', 'steps'],      icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>' },
+  recon:  { label: 'Recon',    noun: ['probe', 'probes'],    icon: '<circle cx="12" cy="12" r="9"/><path d="M12 12 19 5"/><circle cx="12" cy="12" r="4"/>' },
   other:  { label: 'Used',     noun: ['tool', 'tools'],      icon: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.8-2.8Z"/>' },
 };
 
 const TOOL_CAT = {
+  recon: 'recon', factcheck: 'recon', sherlock_osint: 'recon', osint_framework: 'recon', case_file: 'recon', watch_target: 'recon',
   web_search: 'search', reddit_search: 'search', scrapebadger: 'search', trigger_research: 'search',
   registros_cr: 'search', sinalevi_search: 'search', corteidh_search: 'search', search_chats: 'search',
   read_file: 'read', web_fetch: 'read', youtube_transcript: 'read', docfind: 'read', corteidh_case: 'read',

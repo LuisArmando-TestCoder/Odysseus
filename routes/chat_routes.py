@@ -524,7 +524,15 @@ def setup_chat_routes(
             from src import hub as _hub
             # Project-scoped: only chats in the same sidebar folder share context.
             _hub_on = not incognito
-            for _blk in ((_hub.mention_context(ctx.user, message, session), _hub.inbox_context(ctx.user, session)) if _hub_on else ()):
+            _regional = None
+            try:
+                from src.factcheck import regional_context as _rc
+                _recent = " ".join(str(m.get("content") or "")[:400] for m in (sess.get_context_messages() or [])[-4:]
+                                   if isinstance(m.get("content"), str))
+                _regional = _rc(f"{message}\n{_recent}\n{getattr(sess, 'name', '') or ''}")
+            except Exception:
+                _regional = None
+            for _blk in (_regional,) + ((_hub.mention_context(ctx.user, message, session), _hub.inbox_context(ctx.user, session)) if _hub_on else ()):
                 if _blk:
                     _m = {"role": "system", "content": _blk}
                     ctx.messages.insert(len(ctx.preface), _m)

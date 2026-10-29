@@ -124,3 +124,11 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #session-list .session-folder > .session-folder-header .folder-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Powers tab — recon console */
+.hd-recon select { flex: 0 0 auto; min-width: 140px; }
+.hd-recon-report { white-space: pre-wrap; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; margin-bottom: 14px; }
+.hd-recon-report h4 { margin: 0 0 6px; font-size: 14px; }
+.hd-recon-report a { color: var(--hd-acc); }
+.hd-recon-report code { font-size: 12px; padding: 0 4px; background: color-mix(in srgb, var(--hd-acc) 10%, transparent); }
+.hd-powers p { margin: 0; font-size: 12.5px; color: var(--muted, #9aa4b2); line-height: 1.5; }

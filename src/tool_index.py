@@ -31,6 +31,8 @@ ALWAYS_AVAILABLE = frozenset({
     # Cross-session knowledge hub (src/hub.py): find / read other chats,
     # share findings between chats, publish documents as live pages.
     "search_chats", "session_read", "share_finding", "publish_live",
+    # OSINT superpowers (src/superpowers.py) — always in the toolbox.
+    "recon", "factcheck",
     "document_append",
     "docfind",
     "registros_cr",
@@ -96,6 +98,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "checkpoint": "Persistent append-only working memory for THIS task. action='append' writes a timestamped note (confirmed file paths, working API endpoints, findings index, next action) to a per-session file so you never re-derive or re-explore; action='read' returns everything already done so a nudge/continue resumes instead of restarting from a fresh `find /`. Use after every discovery, and read at the start of a new turn.",
     "create_goal": "Start a persistent ongoing GOAL for a multi-step objective (research project, benchmark, build, investigation). The user sees it in the goal panel with round progress; the harness keeps advancing it. Use at the start of any task with 3+ steps or that spans several replies.",
     "todo_write": "Show your plan as a live checklist in the chat (plan panel). Use at the start of any task with 3+ steps, and re-send the full list with statuses (pending/in_progress/done) as steps finish.",
+    "recon": "OSINT superpowers: instant reconnaissance on any domain, URL, IP, email, @username, phone, crypto wallet, image or place. action=auto detects the target and runs DNS/whois/subdomains/HTTP fingerprint/Wayback/IP/email/username/GitHub/Reddit/HN/phone/geocode/EXIF/reverse-image/dorks/crypto modules in parallel; action=framework ranks tools from the 1,166-tool OSINT Framework.",
+    "factcheck": "Fact-check a claim with the Doble Check method: verifiable atoms (figures, dates, absolutes), red-flag signals, candidate vices (inflated/moving figures, forced equivalence, cropped timeline, ghost source…), the primary repositories that hold the proof, a step plan; checks whether the claim's figures appear in the source it cites; action=anomalies cross-reads sources for numbers that disagree; action=recalc recomputes gaps; run=true searches primary sources and prior checks.",
     "search_chats": "Search ALL of the user's chats (full transcripts). Syntax: words, \"exact phrase\", -exclude, in:<chat name or id>, role:user|ai, tool:<tool>, after:YYYY-MM-DD, before:YYYY-MM-DD; paste a URL (e.g. a pull-request link) to find chats that touched it. Use when the user refers to earlier work, a past decision, or another chat.",
     "session_read": "Read a dense recap of another chat (by id or id prefix from search_chats / list_sessions), optionally only the passages matching a query. Use to pull context from other chats instead of asking the user to re-explain.",
     "share_finding": "Post a key finding, decision or result to the cross-session board so OTHER chats get it automatically; optionally address it to one chat (to_session). Use whenever you reach a conclusion or decision another line of work will need.",

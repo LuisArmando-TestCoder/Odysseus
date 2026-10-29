@@ -45,7 +45,7 @@ function shell() {
       <header class="hd-top">
         <span class="hd-title">Dashboard</span>
         <nav class="hd-tabs" role="tablist">
-          ${['overview', 'outputs', 'board', 'search', 'usage'].map(t =>
+          ${['overview', 'powers', 'outputs', 'board', 'search', 'usage'].map(t =>
             `<button type="button" role="tab" data-tab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}
         </nav>
         <span class="hd-live" title="Refreshes every 3 seconds"></span>
@@ -90,6 +90,7 @@ function show(tab, arg) {
   } else if (tab === 'board') renderBoard(body);
   else if (tab === 'search') renderSearch(body, arg);
   else if (tab === 'usage') renderUsage(body);
+  else if (tab === 'powers') renderPowers(body, arg);
 }
 
 // ── Overview ────────────────────────────────────────────────────────────────
@@ -212,6 +213,47 @@ function renderSearch(body, q0 = '') {
   input.value = q0 || '';
   input.focus();
   if (q0) run();
+}
+
+// ── Powers (OSINT superpowers console) ─────────────────────────────────────
+function _md(text) {
+  // Tiny markdown → HTML for recon reports (bold, code, links, bullets, headings).
+  return esc(text)
+    .replace(/^## (.*)$/gm, '<h4>$1</h4>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/_([^_\n]+)_/g, '<i>$1</i>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+    .replace(/^(\s*)- (.*)$/gm, '$1• $2');
+}
+async function renderPowers(body, q0 = '') {
+  body.innerHTML = '<p class="hd-empty">Loading…</p>';
+  let d;
+  try { d = await j('/api/hub/powers'); } catch (e) { body.innerHTML = `<p class="hd-empty">${esc(e.message)}</p>`; return; }
+  body.innerHTML = `
+    <form class="hd-search hd-recon"><select aria-label="Recon action">${d.actions.map(a => `<option value="${a}">${a === 'auto' ? 'auto (detect)' : a}</option>`).join('')}</select>
+      <input type="search" placeholder="Domain, URL, IP, email, @username, phone, wallet, place, image URL…" aria-label="Recon target">
+      <button type="submit">Run recon</button></form>
+    <p class="hd-hint">Odysseus uses these on its own whenever a request involves one of these targets · public, keyless sources · <span title="${esc(d.policy)}">no doxxing of private people</span>.</p>
+    <div class="hd-recon-out"></div>
+    <div class="hd-grid hd-powers">${d.capabilities.map(c => `<section><h3>${esc(c.name)}</h3><p>${esc(c.detail)}</p></section>`).join('')}
+      <section><h3>Sherlock (400+ sites)</h3><p>${d.sherlock ? 'Installed — the agent can enumerate a handle across 400+ sites.' : 'Not installed — install with <code>pipx install sherlock-project</code> to enable deep username sweeps.'}</p></section></div>`;
+  const form = body.querySelector('form'), out = body.querySelector('.hd-recon-out');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const target = form.querySelector('input').value.trim();
+    const action = form.querySelector('select').value;
+    if (!target && action !== 'framework') return;
+    out.innerHTML = '<p class="hd-empty"><span class="hd-pulse"></span> Running recon…</p>';
+    try {
+      const r = await j('/api/hub/recon', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, target, session_id: window.sessionModule?.getCurrentSessionId?.() || null }) });
+      out.innerHTML = `<article class="hd-card hd-recon-report">${_md(r.output || r.error || 'No result')}</article>`;
+    } catch (err) { out.innerHTML = `<p class="hd-empty">${esc(err.message)}</p>`; }
+  });
+  if (q0) { form.querySelector('input').value = q0; form.requestSubmit(); }
+  else form.querySelector('input').focus();
 }
 
 // ── Usage ───────────────────────────────────────────────────────────────────

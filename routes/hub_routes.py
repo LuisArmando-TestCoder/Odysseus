@@ -250,6 +250,27 @@ def setup_hub_routes(session_manager=None, research_handler=None) -> APIRouter:
             out["usage"] = None
         return out
 
+    # ── superpowers (OSINT recon) ──────────────────────────────────────────
+    @router.get("/api/hub/powers")
+    async def powers(request: Request):
+        _user(request)
+        from src import superpowers as sp
+        try:
+            from src.osint_research import sherlock_available
+            sher = bool(sherlock_available())
+        except Exception:
+            sher = False
+        return {"capabilities": [{"name": n, "detail": d} for n, d in sp.CAPABILITIES],
+                "actions": sp.ACTIONS, "sherlock": sher, "policy": sp.POLICY}
+
+    @router.post("/api/hub/recon")
+    async def recon(request: Request):
+        u = _user(request)
+        b = await request.json()
+        from src import superpowers as sp
+        return await sp.run(b.get("action") or "auto", str(b.get("target") or ""), owner=u,
+                            session_id=b.get("session_id"), run_dorks=bool(b.get("run")))
+
     # ── live artifacts ────────────────────────────────────────────────────
     @router.post("/api/hub/live")
     async def live_publish(request: Request):

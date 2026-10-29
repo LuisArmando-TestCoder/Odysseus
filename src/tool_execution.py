@@ -1334,6 +1334,29 @@ async def execute_tool_block(
     elif tool == "vault_unlock":
         desc = "vault_unlock"
         result = await do_vault_unlock(content, owner=owner)
+    elif tool == "factcheck":
+        from src import factcheck as _fc
+        try:
+            _fa = json.loads(content) if content.strip().startswith("{") else {"action": "claim", "claim": content.strip()}
+        except (json.JSONDecodeError, TypeError):
+            _fa = {"action": "claim", "claim": content.strip()}
+        desc = f"factcheck {_fa.get('action', 'claim')}: {str(_fa.get('claim') or '')[:60]}"
+        result = await _fc.run(_fa)
+    elif tool == "recon":
+        from src import superpowers as _sp
+        try:
+            _ra = json.loads(content) if content.strip().startswith("{") else {}
+        except (json.JSONDecodeError, TypeError):
+            _ra = {}
+        if not _ra:
+            _parts = content.strip().split(None, 1)
+            if _parts and _parts[0].lower() in _sp.ACTIONS:
+                _ra = {"action": _parts[0], "target": _parts[1] if len(_parts) > 1 else ""}
+            else:
+                _ra = {"action": "auto", "target": content.strip()}
+        desc = f"recon {_ra.get('action', 'auto')}: {str(_ra.get('target', ''))[:60]}"
+        result = await _sp.run(_ra.get("action") or "auto", str(_ra.get("target") or ""), owner=owner,
+                               session_id=session_id, run_dorks=bool(_ra.get("run")), purpose=str(_ra.get("purpose") or ""))
     elif tool == "sherlock_osint":
         desc = "sherlock_osint"
         result = await do_sherlock_osint(content, owner=owner)

@@ -1574,6 +1574,8 @@ import agentActivity from './agentActivity.js';
       const _searchIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
       const _toolLabels = {
         'web_search': _searchIcon + 'Searching',
+        'recon': 'Recon',
+        'factcheck': 'Fact-checking',
         'bash': 'Running',
         'python': 'Running',
         'create_document': 'Writing',
