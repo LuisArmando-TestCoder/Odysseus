@@ -527,6 +527,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     titleEl.innerHTML = (_langSvg || _GEN_DOC_ICON) + _hlSearch(doc.title || 'Untitled');
     titleRow.appendChild(titleEl);
     const verBadge = document.createElement('span');
+    verBadge.className = 'doclib-ver-badge';  // hook for theme sheets (jarvis)
     verBadge.style.cssText = 'font-size:9px;padding:1px 6px;border-radius:8px;background:color-mix(in srgb, var(--red) 15%, transparent);border:1px solid color-mix(in srgb, var(--red) 40%, transparent);color:var(--red);flex-shrink:0;';
     verBadge.textContent = 'v' + (doc.version_count || 1);
     titleRow.appendChild(verBadge);

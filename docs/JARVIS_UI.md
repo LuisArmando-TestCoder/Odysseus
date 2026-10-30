@@ -52,7 +52,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 5. ✅ Modals / windows / dropdowns (Tron pass)
 6. Settings
 7. ✅ Notes / tasks / calendar
-8. Documents / editor
+8. ✅ Documents / editor (+ library documents tab)
 9. Email
 10. Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + landing (`static/landing.html`, not yet)
@@ -162,3 +162,44 @@ New section 12 in `static/css/tron.css` (all under the jarvis scope).
   No console errors besides the blocked CDN fetches.
 
 **Next:** documents / editor (`document.js`, `documentLibrary.js`).
+
+### Run 5 — 2026-10-30 · Documents / editor + library
+New section 13 in `static/css/tron.css` (all under the jarvis scope).
+- **Docked console:** the doc pane is near-void glass with a faint overhead
+  light; the drag divider is the neon seam (brightest mid-height, like the
+  sidebar edge); collapse/hide handles squared.
+- **Tab strip:** squared, Inter 12px, dim → ink on hover; active tab =
+  cyan text + rising wash + glowing bottom bar. Version tags (`v3`) in tabs,
+  header and library cards are squared mono chips (the library badge gets a
+  `doclib-ver-badge` class hook in `documentLibrary.js` — no base styles).
+- **Controls at full strength:** toolbar / header / footer icons were 35 %
+  opacity ghosts (below 3:1); in jarvis they are `--tr-dim` at full opacity,
+  hover = cyan + 2px light bar. Edit/preview and code/run toggles are a
+  squared segment with the same underline for the active side.
+- **Editor:** drawn gutter (mono tabular line numbers, hairline rule, faint
+  cyan wash — the old 18 % opacity numbers were near invisible), cyan caret
+  and selection. Find matches are amber (attention).
+- **Preview reads like a briefing:** Inter 14px / 1.65, 76ch measure; H1 in
+  cyan-hi over a fading light rule, H2 with a diamond bullet, cyan list
+  markers, lit code slots + cyan-bar quotes (same as chat), mono uppercase
+  table headers. CSV grid in hairlines with mono headers.
+- **Footer:** path readout in mono, squared language picker, Copy/Export split
+  as a squared cyan outline with mono uppercase label.
+- **Semantics fixed:** diff accept/reject now `--jv-ok` / `--jv-danger`
+  (in jarvis `--red` is cyan, so "reject" looked primary); library Delete
+  is danger-red; the streaming "editing" indicator is amber.
+- **Library (documents tab):** cards drawn with the chamfered frame (scoped
+  to `#doclib-modal` — the email library reuses `.doclib-card` and is next
+  run's job), lit preview slot on desktop, squared action buttons.
+- Touch: toolbar buttons ≥ 40px wide, footer controls ≥ 40px tall on coarse
+  pointers. More-contrast: no glows, full-strength gutter, solid card line.
+- Verified headless (1440×900, 390×844) — markdown source, markdown preview,
+  python source, library with an expanded card — in jarvis and light; light
+  screenshots match the pre-change ones apart from ambient animation.
+  Pre-existing, not jarvis: loading several docs back-to-back without
+  waiting can leave the CSV preview visible over a markdown doc; hljs has
+  no `csv` grammar (console error from the library preview).
+
+**Next:** email (inbox library `#email-lib-modal`, reader, compose — the doc
+pane's email mode shares `.doc-email-actions` / `.email-send-btn`).
+

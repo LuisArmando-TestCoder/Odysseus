@@ -510,3 +510,326 @@
   :root[data-odx-theme="jarvis"] :is(.note-card, .task-card.memory-item, .note-form) { --ln: var(--tr-cyan); }
   :root[data-odx-theme="jarvis"] .cal-day.cal-other { opacity: 0.65 !important; }
 }
+
+/* ── 13 · Documents / editor + library (run 5) ────────────────────────────
+   The doc pane is a lit console docked to the canvas: one neon seam where
+   it meets the chat, a squared tab strip whose active tab carries the light
+   bar, controls at full-strength dim ink (no 35%-opacity ghosts), a drawn
+   gutter, and a rendered preview that reads like a briefing (Inter prose,
+   lit code slots). Diff accept/reject use ok/danger — in jarvis --red is
+   cyan, so the old "reject" looked like a primary action. */
+:root[data-odx-theme="jarvis"] .doc-editor-pane {
+  background:
+    radial-gradient(120% 60% at 50% -10%, color-mix(in srgb, var(--tr-cyan) 7%, transparent), transparent 60%),
+    color-mix(in srgb, var(--jv-void) 70%, var(--tr-fill-solid)) !important;
+  border-left: 1px solid var(--tr-ln-dim) !important;
+  box-shadow: -18px 0 36px -18px rgba(0, 0, 0, 0.7) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-divider {
+  background: linear-gradient(180deg, transparent, var(--tr-ln) 30%, var(--tr-cyan) 50%, var(--tr-ln) 70%, transparent) !important;
+  box-shadow: 0 0 calc(10px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--tr-cyan) 35%, transparent);
+}
+:root[data-odx-theme="jarvis"] .doc-divider:hover { background: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] :is(.doc-divider-collapse, .doc-divider-hide) {
+  border-radius: 0 !important;
+  border-color: var(--tr-ln) !important;
+  background: var(--tr-fill-solid) !important;
+  color: var(--tr-cyan-hi) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-mobile-grabber::before,
+:root[data-odx-theme="jarvis"] .doc-mobile-grabber { border-radius: 0 !important; }
+
+/* Tab strip */
+:root[data-odx-theme="jarvis"] .doc-tab-bar {
+  background: color-mix(in srgb, #000 35%, var(--tr-fill-solid)) !important;
+  border-bottom: 1px solid var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-tab {
+  font-family: var(--jv-ui) !important;
+  font-size: 12px;
+  color: var(--tr-dim) !important;
+  opacity: 1 !important;
+  border-right-color: var(--tr-ln-dim) !important;
+  border-radius: 0 !important;
+  transition: color var(--jv-fast) var(--jv-ease), background var(--jv-fast) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .doc-tab:hover { color: var(--tr-ink) !important; background: color-mix(in srgb, var(--tr-cyan) 5%, transparent) !important; }
+:root[data-odx-theme="jarvis"] .doc-tab.active {
+  color: var(--tr-cyan-hi) !important;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--tr-cyan) 14%, transparent), transparent 85%) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-tab.active::after {
+  background: var(--tr-cyan) !important;
+  box-shadow: 0 0 calc(10px * var(--jv-glow-k, 1)) var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] :is(.doc-tab-close, .doc-tab-arrow, .doc-tab-new, .doc-tab-play) { color: var(--tr-dim) !important; opacity: 1 !important; border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] :is(.doc-tab-close, .doc-tab-arrow, .doc-tab-new, .doc-tab-play):hover { color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] .doc-tab-arrow { background: color-mix(in srgb, #000 35%, var(--tr-fill-solid)) !important; }
+
+/* Version chips: squared mono tags */
+:root[data-odx-theme="jarvis"] :is(.doc-tab-version, .doc-version-badge, #doclib-modal .doclib-card-ver, #doclib-modal .doclib-ver-badge) {
+  font-family: var(--jv-mono) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  border-radius: 1px !important;
+  border: 1px solid var(--tr-ln) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 9%, transparent) !important;
+  color: var(--tr-cyan-hi) !important;
+  opacity: 1 !important;
+}
+:root[data-odx-theme="jarvis"] :is(.doc-tab-version, .doc-version-badge):hover { border-color: var(--tr-cyan) !important; background: color-mix(in srgb, var(--tr-cyan) 18%, transparent) !important; }
+
+/* Formatting toolbar */
+:root[data-odx-theme="jarvis"] .doc-md-toolbar {
+  background: color-mix(in srgb, #000 18%, var(--tr-fill-solid)) !important;
+  border-bottom: 1px solid var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-md-toolbar button,
+:root[data-odx-theme="jarvis"] .doc-editor-header .doc-action-icon-btn {
+  color: var(--tr-dim) !important;
+  opacity: 1 !important;
+  border-radius: 0 !important;
+  transition: color var(--jv-fast) var(--jv-ease), background var(--jv-fast) var(--jv-ease), box-shadow var(--jv-fast) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .doc-md-toolbar button:hover,
+:root[data-odx-theme="jarvis"] .doc-editor-header .doc-action-icon-btn:hover {
+  color: var(--tr-cyan-hi) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 8%, transparent) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] .doc-md-toolbar button svg { opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .doc-md-toolbar button.is-active {
+  color: var(--tr-cyan-hi) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 14%, transparent) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] .md-toolbar-sep { background: var(--tr-ln-dim) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .md-view-toggle { border-radius: 0 !important; border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] .md-view-toggle .md-view-opt { box-shadow: none; animation: none !important; }
+:root[data-odx-theme="jarvis"] .md-view-toggle .md-view-opt + .md-view-opt { border-left: 1px solid var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .md-view-toggle .md-view-opt.active {
+  color: var(--tr-cyan-hi) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 16%, transparent) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] .doc-fontsize-levels i { color: inherit; }
+
+/* Editor surface: drawn gutter, cyan caret + selection */
+:root[data-odx-theme="jarvis"] .doc-line-numbers {
+  font-family: var(--jv-mono) !important;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--tr-dim) 70%, transparent) !important;
+  opacity: 1 !important;
+  border-right: 1px solid var(--tr-ln-dim);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--tr-cyan) 4%, transparent));
+}
+:root[data-odx-theme="jarvis"] .doc-editor-textarea {
+  caret-color: var(--tr-cyan) !important;
+  color: var(--tr-ink) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-editor-textarea::selection { background: color-mix(in srgb, var(--tr-cyan) 30%, transparent); color: #fff; }
+:root[data-odx-theme="jarvis"] .doc-editor-textarea::placeholder { color: var(--jv-text-faint, var(--tr-dim)); }
+
+/* Rendered markdown: a briefing, not a terminal dump */
+:root[data-odx-theme="jarvis"] .doc-md-preview {
+  font-family: var(--jv-ui) !important;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--tr-ink);
+  background: transparent !important;
+  padding: 22px 28px 32px;
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview > * { max-width: 76ch; }
+:root[data-odx-theme="jarvis"] .doc-md-preview :is(h1, h2, h3, h4) {
+  color: var(--tr-ink);
+  font-family: var(--jv-ui);
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview h1 {
+  font-size: 1.7em; font-weight: 650; color: var(--tr-cyan-hi);
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(90deg, var(--tr-cyan), var(--tr-ln-dim) 40%, transparent) 1;
+  text-shadow: 0 0 calc(18px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--tr-cyan) 30%, transparent);
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview h2 { font-size: 1.3em; font-weight: 600; }
+:root[data-odx-theme="jarvis"] .doc-md-preview h2::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 10px 0.18em 0;
+  background: var(--tr-cyan); transform: rotate(45deg); vertical-align: middle;
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview h3 { font-size: 1.08em; font-weight: 600; color: var(--tr-cyan-hi); }
+:root[data-odx-theme="jarvis"] .doc-md-preview :is(strong, b) { color: #fff; font-weight: 650; }
+:root[data-odx-theme="jarvis"] .doc-md-preview a { color: var(--tr-cyan-hi); text-decoration-color: var(--tr-ln); text-underline-offset: 3px; }
+:root[data-odx-theme="jarvis"] .doc-md-preview :is(ul, ol) { padding-left: 4px; }
+:root[data-odx-theme="jarvis"] .doc-md-preview li::marker { color: var(--tr-cyan); font-family: var(--jv-mono); font-variant-numeric: tabular-nums; }
+:root[data-odx-theme="jarvis"] .doc-md-preview pre {
+  font-family: var(--jv-mono) !important;
+  font-size: 12.5px;
+  border-radius: 0 !important;
+  border: 1px solid var(--tr-ln-dim) !important;
+  border-left: 2px solid var(--tr-cyan) !important;
+  background: color-mix(in srgb, #000 55%, var(--tr-fill-solid)) !important;
+  box-shadow: inset 12px 0 18px -16px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview :not(pre) > code {
+  font-family: var(--jv-mono);
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--tr-ln-dim);
+  background: color-mix(in srgb, var(--tr-cyan) 8%, transparent);
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview blockquote {
+  border-left: 2px solid var(--tr-cyan) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 7%, transparent), transparent 80%);
+  padding: 8px 14px !important;
+  color: var(--tr-dim);
+  opacity: 1 !important;
+}
+:root[data-odx-theme="jarvis"] .doc-md-preview blockquote > :first-child { margin-top: 0; }
+:root[data-odx-theme="jarvis"] .doc-md-preview blockquote > :last-child { margin-bottom: 0; }
+:root[data-odx-theme="jarvis"] .doc-md-preview hr { border: 0; height: 1px; background: linear-gradient(90deg, var(--tr-cyan), var(--tr-ln-dim) 50%, transparent); }
+:root[data-odx-theme="jarvis"] .doc-md-preview table { border-collapse: collapse; }
+:root[data-odx-theme="jarvis"] .doc-md-preview :is(th, td) { border: 1px solid var(--tr-ln-dim) !important; padding: 5px 10px; }
+:root[data-odx-theme="jarvis"] .doc-md-preview th {
+  background: color-mix(in srgb, var(--tr-cyan) 9%, transparent) !important; color: var(--tr-cyan-hi);
+  font-family: var(--jv-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; text-align: left;
+}
+
+/* CSV preview: a data grid in hairlines */
+:root[data-odx-theme="jarvis"] .doc-csv-preview { background: transparent !important; }
+:root[data-odx-theme="jarvis"] .doc-csv-preview :is(th, td) { border-color: var(--tr-ln-dim) !important; font-variant-numeric: tabular-nums; }
+:root[data-odx-theme="jarvis"] .doc-csv-preview th {
+  background: color-mix(in srgb, var(--tr-cyan) 10%, var(--tr-fill-solid)) !important; color: var(--tr-cyan-hi) !important;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px;
+}
+
+/* Footer: path readout + squared controls */
+:root[data-odx-theme="jarvis"] #doc-actions-footer {
+  background: color-mix(in srgb, #000 25%, var(--tr-fill-solid)) !important;
+  border-top: 1px solid var(--tr-ln-dim) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tr-cyan) 8%, transparent);
+}
+:root[data-odx-theme="jarvis"] .doc-path-label { font-family: var(--jv-mono) !important; font-size: 10.5px; letter-spacing: 0.02em; color: var(--tr-dim) !important; }
+:root[data-odx-theme="jarvis"] #doc-actions-footer .doc-action-icon-btn,
+:root[data-odx-theme="jarvis"] #doc-undo-btn { color: var(--tr-dim) !important; opacity: 1 !important; border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .doc-langpicker-trigger {
+  border-radius: 0 !important;
+  border-color: var(--tr-ln-dim) !important;
+  background: color-mix(in srgb, #000 30%, var(--tr-fill-solid)) !important;
+  font-family: var(--jv-mono); font-size: 11px; color: var(--tr-ink) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-langpicker-trigger:hover { border-color: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] #doc-actions-footer .email-send-btn {
+  border-radius: 0 !important;
+  font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px;
+  color: var(--tr-cyan-hi) !important;
+  border-color: var(--tr-ln) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] #doc-actions-footer .email-send-btn:hover { background: color-mix(in srgb, var(--tr-cyan) 22%, transparent) !important; border-color: var(--tr-cyan) !important; }
+
+/* Pop-overs inside the editor: squared solid glass */
+:root[data-odx-theme="jarvis"] :is(.doc-overflow-menu, .doc-tab-dropdown, .doc-langpicker-menu, .md-toolbar-overflow-menu, .doc-find-bar, .doc-version-panel, .doc-suggestion-card, .doc-run-output, .diff-toolbar) {
+  border-radius: 0 !important;
+  border-color: var(--tr-ln) !important;
+  background: var(--tr-fill-solid) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.doc-overflow-menu, .doc-tab-dropdown, .doc-langpicker-menu, .md-toolbar-overflow-menu) {
+  box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 color-mix(in srgb, var(--tr-cyan) 22%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.doc-overflow-item, .doc-langpicker-item, .doc-version-item) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] :is(.doc-overflow-item, .doc-langpicker-item, .doc-version-item):hover {
+  background: color-mix(in srgb, var(--tr-cyan) 9%, transparent) !important; box-shadow: inset 2px 0 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] :is(.doc-langpicker-item.is-selected, .doc-version-item.active) {
+  color: var(--tr-cyan-hi) !important; background: color-mix(in srgb, var(--tr-cyan) 14%, transparent) !important; box-shadow: inset 2px 0 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] .doc-version-header { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--tr-cyan-hi); border-color: var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .doc-find-input { border-radius: 0 !important; border-color: var(--tr-ln-dim) !important; background: color-mix(in srgb, #000 30%, var(--tr-fill-solid)) !important; }
+:root[data-odx-theme="jarvis"] .doc-find-count { font-family: var(--jv-mono); font-variant-numeric: tabular-nums; color: var(--tr-dim); }
+:root[data-odx-theme="jarvis"] body.doc-find-active mark.doc-find-mark { background: color-mix(in srgb, var(--jv-amber) 70%, transparent) !important; }
+:root[data-odx-theme="jarvis"] body.doc-find-active mark.doc-find-mark.current { background: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn, .diff-chunk-btn) { border-radius: 0 !important; font-family: var(--jv-mono); }
+:root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-accept, .diff-chunk-btn-accept) { color: var(--jv-ok) !important; border-color: color-mix(in srgb, var(--jv-ok) 40%, transparent) !important; }
+:root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-reject, .diff-chunk-btn-reject) { color: var(--jv-danger) !important; border-color: color-mix(in srgb, var(--jv-danger) 40%, transparent) !important; }
+:root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-accept, .diff-chunk-btn-accept):hover { background: color-mix(in srgb, var(--jv-ok) 12%, transparent) !important; border-color: var(--jv-ok) !important; }
+:root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-reject, .diff-chunk-btn-reject):hover { background: color-mix(in srgb, var(--jv-danger) 12%, transparent) !important; border-color: var(--jv-danger) !important; }
+:root[data-odx-theme="jarvis"] .doc-stream-dot { border-radius: 0 !important; transform: rotate(45deg); background: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] .doc-stream-indicator { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; color: var(--jv-amber) !important; }
+
+/* Library (documents tab): drawn cards, lit preview slot */
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card {
+  --c: 8px;
+  --ln: var(--tr-ln-dim);
+  --hi: color-mix(in srgb, var(--tr-cyan-hi) 75%, transparent);
+  --fill: var(--tr-fill);
+  --fill-top: color-mix(in srgb, var(--tr-cyan) 5%, var(--fill));
+  isolation: isolate;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+}
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid transparent;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background:
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) var(--c) 0 / 14px 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) calc(100% - var(--c)) 100% / 14px 1.5px no-repeat border-box,
+    linear-gradient(180deg, var(--fill-top), var(--fill) 60%) padding-box,
+    linear-gradient(var(--ln), var(--ln)) border-box;
+}
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card:hover { --ln: var(--tr-ln); }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card.doclib-card-expanded { --ln: var(--tr-ln); --c: 11px; }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card:has(.memory-select-cb:checked) { --ln: var(--tr-cyan); outline: none !important; }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card-title { font-family: var(--jv-ui); font-size: 12.5px; color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card-preview {
+  font-family: var(--jv-mono) !important;
+  font-size: 10.5px;
+  border-top: 1px solid var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card-preview pre {
+  background: color-mix(in srgb, #000 45%, var(--tr-fill-solid));
+  border-left: 2px solid var(--tr-cyan);
+  padding: 8px 10px;
+  color: var(--tr-ink);
+}
+:root[data-odx-theme="jarvis"] #doclib-modal :is(.doclib-card-action-btn, .doclib-card-text-btn, .doclib-load-more) {
+  border-radius: 0 !important;
+  border-color: var(--tr-ln-dim) !important;
+  color: var(--tr-ink) !important;
+  background: transparent !important;
+}
+:root[data-odx-theme="jarvis"] #doclib-modal :is(.doclib-card-action-btn, .doclib-card-text-btn, .doclib-load-more):hover { border-color: var(--tr-cyan) !important; color: var(--tr-cyan-hi) !important; box-shadow: inset 0 -2px 0 var(--tr-cyan); }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card-text-btn-danger { color: var(--jv-danger) !important; border-color: color-mix(in srgb, var(--jv-danger) 45%, transparent) !important; }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-card-text-btn-danger:hover { border-color: var(--jv-danger) !important; color: var(--jv-danger) !important; box-shadow: inset 0 -2px 0 var(--jv-danger); }
+:root[data-odx-theme="jarvis"] #doclib-modal :is(.lib-tab) { border-radius: 0 !important; color: var(--tr-dim); }
+:root[data-odx-theme="jarvis"] #doclib-modal .lib-tab:hover { color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] #doclib-modal .lib-tab.active { color: var(--tr-cyan-hi) !important; border-bottom-color: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] #doclib-modal :is(.doclib-card-lang, .memory-cat-chip) { border-radius: 1px !important; font-family: var(--jv-mono); }
+:root[data-odx-theme="jarvis"] #doclib-modal .doclib-search-hl { background: color-mix(in srgb, var(--jv-amber) 35%, transparent); color: #fff; border-radius: 0; }
+
+@media (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] .doc-md-toolbar button { min-width: 40px; }
+  :root[data-odx-theme="jarvis"] #doc-actions-footer .email-send-btn,
+  :root[data-odx-theme="jarvis"] .doc-langpicker-trigger { min-height: 40px; }
+}
+@media (max-width: 600px) {
+  :root[data-odx-theme="jarvis"] .doc-md-preview { padding: 16px 16px 28px; font-size: 15px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-odx-theme="jarvis"] .doc-editor-pane { background: var(--jv-void) !important; }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] :is(.doc-divider, .doc-tab-bar, .doc-md-toolbar, #doc-actions-footer) { box-shadow: none !important; }
+  :root[data-odx-theme="jarvis"] .doc-line-numbers { color: var(--tr-dim) !important; }
+  :root[data-odx-theme="jarvis"] #doclib-modal .doclib-card { --ln: var(--tr-cyan); }
+}
