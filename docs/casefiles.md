@@ -94,6 +94,18 @@ Dedup state lives in `data/cases/<owner>/.nudges.json`; titles/steps are
 cleaned and capped before they reach a notification. Silent no-op when nothing
 is cold.
 
+### Intel Board in the main app
+
+The main SPA links to `/cases` from the Tools sidebar ("Intel Board"), the
+icon rail, and the `/cases` slash command (aliases `/intel`, `/casefiles`,
+`/watchlist`). `static/js/intelLink.js` polls `GET /api/intel/status` (on load,
+every 5 minutes while visible, and when the tab regains focus) and shows a
+badge with the number of things that want you: cold cases + watches that
+changed in the last 24h + watches failing 3+ times in a row. The tooltip
+summarizes open cases/steps and the case a goal is driving. The summary is
+built by `src/intel_status.py` (owner-scoped, never raises — an unreadable
+store is listed under `degraded`). Hide the entry under Settings → Appearance.
+
 ## Agent tools
 
 ```case_file
@@ -123,6 +135,7 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | POST | `/api/cases/{id}/drive` | bind to the goal (creates one if none is live) / `{"on": false}` releases |
 | GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes, typed + co-mention edges, hubs, isolated |
 | GET | `/api/cases/{id}/export` | markdown dossier |
+| GET | `/api/intel/status` | badge summary: open cases/steps, cold cases, driven case, watch changes/failures, `attention` |
 | GET/POST | `/api/watchlist` | list / add |
 | DELETE | `/api/watchlist/{id}` | remove |
 | POST | `/api/watchlist/{id}/active` · `/check` | pause/resume · check now |

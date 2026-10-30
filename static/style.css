@@ -1152,6 +1152,23 @@ body.bg-pattern-sparkles {
       left: -1px;
       color: var(--accent, var(--red));
     }
+    /* Intel Board sidebar entry — count of cases going cold / watches
+       that changed or keep failing (static/js/intelLink.js). */
+    .intel-badge {
+      margin-left: auto;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 5px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--accent, var(--red)) 85%, var(--bg));
+      color: var(--bg);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 16px;
+      text-align: center;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
     /* Shared notification dot for sidebar section titles. Single source of
        truth so chats / email / assistant / future-section dots all sit at
        the same offset from their label. */

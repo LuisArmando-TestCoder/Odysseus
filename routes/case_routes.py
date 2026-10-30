@@ -181,6 +181,12 @@ def setup_case_routes() -> APIRouter:
         md = _guard(get_case_store().export_markdown, _owner(request), case_id)
         return PlainTextResponse(md, media_type="text/markdown; charset=utf-8")
 
+    # ----- intel badge (main SPA) -------------------------------------------
+    @router.get("/api/intel/status")
+    def intel_status_route(request: Request):
+        from src.intel_status import intel_status
+        return intel_status(_owner(request))
+
     # ----- watchlist -------------------------------------------------------
     @router.get("/api/watchlist")
     def list_watches(request: Request):

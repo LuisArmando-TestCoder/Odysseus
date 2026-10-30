@@ -68,9 +68,15 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   task "Intel Cold Cases", daily brief section): open cases idle 3+ days with
   no goal driving them get one concrete next move (drive with goal / top
   pivot), nudged once per quiet spell.
-- Next: a link to /cases from the main SPA; cross-case entity overlap ("this
-  email also appears in case X") in the graph; one-click "Drive with goal"
-  from a cold-case notification.
+- **Intel Board in the main app** (`src/intel_status.py`,
+  `GET /api/intel/status`, `static/js/intelLink.js`): "Intel Board" in the
+  Tools sidebar + icon rail and a `/cases` (`/intel`) slash command, with a
+  badge counting what wants attention — cases going cold, watches changed in
+  the last 24h, watches failing 3+ times — and a tooltip summary (open cases,
+  open steps, the case a goal is driving). Hideable in Appearance; degrades
+  to a plain link if the status call fails.
+- Next: cross-case entity overlap ("this email also appears in case X") in
+  the graph; one-click "Drive with goal" from a cold-case notification.
 
 ## Jarvis UI (in progress)
 

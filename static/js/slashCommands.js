@@ -5672,6 +5672,13 @@ const COMMANDS = {
     handler: (args, ctx) => _cmdToolPanel('email', args, ctx),
     usage: '/email'
   },
+  cases: {
+    alias: ['intel', 'casefiles', 'watchlist'],
+    category: 'Tools',
+    help: 'Open the Intel Board (Case Files + Watchlist)',
+    handler: () => { window.location.assign('/cases'); return true; },
+    usage: '/cases'
+  },
   notes: {
     alias: [],
     category: 'Tools',

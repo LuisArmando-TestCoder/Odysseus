@@ -2404,6 +2404,7 @@ function initializeEventListeners() {
     'tool-notes':          '#tool-notes-btn',
     'tool-tasks':          '#tool-tasks-btn',
     'tool-theme':          '#tool-theme-btn',
+    'tool-cases':          '#tool-cases-btn, #rail-cases',
     'user-bar':            '#user-bar-profile',
     'sidebar-settings-btn':'#user-bar-settings',
     'chat-meta':           '.chat-meta-overlay',
