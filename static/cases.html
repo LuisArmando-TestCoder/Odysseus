@@ -59,6 +59,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .graph-wrap .g-node:focus{outline:none}.graph-wrap .g-node:focus-visible{stroke:var(--fg);stroke-width:3}
 .graph-wrap text{font:13px var(--mono);fill:var(--fg);pointer-events:none;paint-order:stroke;stroke:var(--panel2);stroke-width:3px}
 .graph-wrap .dim{opacity:.15}
+.graph-wrap .g-node.x{stroke:var(--accent);stroke-width:3;stroke-dasharray:3 2}
+.overlap{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.overlap button{font-size:12px;padding:3px 8px}
 .goalbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:10px;padding:8px 10px;border:1px dashed var(--border);border-radius:10px}
 .goalbar.on{border-style:solid;border-color:var(--accent)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px}
@@ -254,7 +257,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     const showLabels = g.nodes.length <= 30;
     const nodeEls = g.nodes.map(nd => { const p = pos.get(nd.id), r = 5 + Math.min(9, nd.degree * 1.5);
       const c = mk('circle', { cx: p.x, cy: p.y, r, fill: TYPE_COLORS[nd.type] || TYPE_COLORS.other, class: 'g-node', tabindex: 0, 'data-node': nd.id });
-      const tt = mk('title', {}); tt.textContent = `[${nd.type}] ${nd.value} · ${nd.degree} link(s) · conf ${nd.confidence.toFixed(2)}`; c.appendChild(tt);
+      const also = nd.also_in || [];
+      if (also.length) c.classList.add('x');
+      const tt = mk('title', {}); tt.textContent = `[${nd.type}] ${nd.value} · ${nd.degree} link(s) · conf ${nd.confidence.toFixed(2)}${also.length ? ` · also in ${also.length} other case(s)` : ''}`; c.appendChild(tt);
       svg.appendChild(c);
       let lbl = null;
       if (showLabels || nd.degree >= 3) { const right = p.x > W * 0.68; lbl = mk('text', { x: right ? p.x - r - 3 : p.x + r + 3, y: p.y + 4, 'text-anchor': right ? 'end' : 'start' }); lbl.textContent = nd.value.length > 28 ? nd.value.slice(0, 27) + '…' : nd.value; svg.appendChild(lbl); }
@@ -273,16 +278,26 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       const nd = byId.get(focused);
       const rel = g.edges.filter(e => e.a === focused || e.b === focused).map(e => { const o = byId.get(e.a === focused ? e.b : e.a);
         return e.kind === 'link' ? `<b>${esc(e.relation)}</b> ${esc(o.value)}` : esc(o.value); });
-      info.innerHTML = `<code>${esc(nd.value)}</code> <span class="chip">${esc(nd.type)}</span> conf ${nd.confidence.toFixed(2)} · ${nd.sources} src${rel.length ? ` · ${rel.slice(0, 8).join(' · ')}${rel.length > 8 ? ` · +${rel.length - 8}` : ''}` : ' · no connections'}`;
+      const also = (nd.also_in || []).map(o => `<button class="ghost" data-open="${esc(o.case_id)}">${esc(o.title)}</button>`).join(' ');
+      info.innerHTML = `<code>${esc(nd.value)}</code> <span class="chip">${esc(nd.type)}</span> conf ${nd.confidence.toFixed(2)} · ${nd.sources} src${rel.length ? ` · ${rel.slice(0, 8).join(' · ')}${rel.length > 8 ? ` · +${rel.length - 8}` : ''}` : ' · no connections'}${also ? `<div class="overlap"><span>Also in:</span> ${also}</div>` : ''}`;
     };
     svg.addEventListener('click', (ev) => { const id = ev.target.getAttribute && ev.target.getAttribute('data-node'); focus(id || focused); });
     svg.addEventListener('keydown', (ev) => { const id = ev.target.getAttribute && ev.target.getAttribute('data-node'); if (id && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); focus(id); } });
     const wrap = document.createElement('div'); wrap.className = 'graph-wrap'; wrap.appendChild(svg);
     const types = [...new Set(g.nodes.map(nd => nd.type))].sort();
     const legend = document.createElement('div'); legend.className = 'legend';
+    const ovc = g.overlap_cases || [];
     legend.innerHTML = types.map(t => `<span><i style="background:${TYPE_COLORS[t] || TYPE_COLORS.other}"></i>${esc(t)}</span>`).join('') +
-      '<span>— relation</span><span>┄ co-mentioned</span>';
-    box.replaceChildren(wrap, legend, info);
+      '<span>— relation</span><span>┄ co-mentioned</span>' + (ovc.length ? '<span>◌ ringed = also in another case</span>' : '');
+    const parts = [wrap, legend, info];
+    if (ovc.length) {
+      const ov = document.createElement('div'); ov.className = 'overlap meta'; ov.id = 'g-overlap';
+      ov.innerHTML = `<b>Shared with other cases:</b> ` + ovc.slice(0, 6).map(o =>
+        `<button class="ghost" data-open="${esc(o.case_id)}" title="${esc(o.values.join(', '))}">${esc(o.title)} · ${o.shared}${o.status !== 'open' ? ` (${esc(o.status)})` : ''}</button>`).join(' ') +
+        (ovc.length > 6 ? ` +${ovc.length - 6} more` : '');
+      parts.push(ov);
+    }
+    box.replaceChildren(...parts);
   }
 
   const loadGraph = async (id) => {
@@ -302,6 +317,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   $('#detail').addEventListener('click', run(async (e) => {
     if (!current) return;
     const id = current.id;
+    const jump = e.target.closest && e.target.closest('[data-open]');
+    if (jump) { e.stopPropagation(); return openCase(jump.dataset.open); }
     if (e.target.id === 'f-go') {
       const text = $('#f-text').value.trim(); if (!text) return;
       const { finding } = await api(`/api/cases/${id}/findings`, { method: 'POST', body: { text, source_url: $('#f-src').value.trim(), confidence: parseFloat($('#f-conf').value) || 0.6 } });

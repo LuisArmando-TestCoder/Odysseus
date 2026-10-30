@@ -34,6 +34,19 @@ the best-connected `max_nodes`; the response reports how many were hidden.
 as "where to dig next". Tap/Enter on a node focuses it and lists its
 neighbours.
 
+### Cross-case overlap
+
+`CaseStore.overlaps()` answers "does this selector show up in any of my other
+investigations?". Entities are matched across the owner's cases (never other
+users') by the same canonical key used for dedupe, plus aliases — so
+`OPS@acme.io` meets `ops@acme.io` and `@JDoe` meets `jdoe`. Keys shorter than
+3 characters are ignored to avoid accidental collisions. On `/cases`, nodes
+shared with another case get a dashed ring, the focused node lists "Also in:"
+buttons that jump to those cases, and a "Shared with other cases" row ranks
+the other cases by how many selectors they share. The agent sees the same
+signal: `add_entity` / `add_finding` append a `Cross-case:` note when a newly
+recorded selector already exists elsewhere, and `op=overlap` lists it all.
+
 ### Drive a case with a goal (`src/case_goal.py`)
 
 A case can be **bound to the owner's goal** so the goal works it on its own:
@@ -114,7 +127,8 @@ store is listed under `degraded`). Hide the entry under Settings → Appearance.
 
 ops: `open`, `list`, `get`, `update`, `add_entity`, `add_finding`, `link`,
 `alias`, `add_step`, `done_step`, `pivots` (`queue: true` to add them as steps),
-`search` (across all cases), `export`, `delete`. Cases can be referenced by id,
+`search` (across all cases), `overlap` (selectors shared with your other
+cases), `export`, `drive`/`release`, `delete`. Cases can be referenced by id,
 id prefix or title.
 
 ```watch_target
@@ -133,7 +147,8 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | POST | `/api/cases/{id}/entities` · `/findings` · `/links` · `/steps` | add (`/steps` with `{"pivots": true}` queues all pivots) |
 | POST | `/api/cases/{id}/steps/{step}/done` | complete a step |
 | POST | `/api/cases/{id}/drive` | bind to the goal (creates one if none is live) / `{"on": false}` releases |
-| GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes, typed + co-mention edges, hubs, isolated |
+| GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes (each with `also_in`), typed + co-mention edges, hubs, isolated, `overlap_cases` |
+| GET | `/api/cases/{id}/overlap` | selectors shared with the caller's other cases: per-entity `entities`, ranked `cases` |
 | GET | `/api/cases/{id}/export` | markdown dossier |
 | GET | `/api/intel/status` | badge summary: open cases/steps, cold cases, driven case, watch changes/failures, `attention` |
 | GET/POST | `/api/watchlist` | list / add |

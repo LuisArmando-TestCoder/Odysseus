@@ -589,7 +589,8 @@ class CaseStore:
         return out
 
     # -- graph -------------------------------------------------------------
-    def graph(self, owner, case_ref: str, max_nodes: int = 80) -> Dict[str, Any]:
+    def graph(self, owner, case_ref: str, max_nodes: int = 80,
+              include_overlap: bool = False) -> Dict[str, Any]:
         """Entity-relationship graph for the /cases graph view.
 
         Edges come from two places: explicit ``links`` (typed, ``kind="link"``)
@@ -659,8 +660,103 @@ class CaseStore:
         hubs = [{"id": n["id"], "value": n["value"], "degree": n["degree"]}
                 for n in nodes if n["degree"] > 0][:5]
         isolated = [n["id"] for n in nodes if n["degree"] == 0]
-        return {"case_id": case["id"], "nodes": nodes, "edges": out_edges, "hubs": hubs,
-                "isolated": isolated, "truncated": max(0, len(ents) - len(nodes))}
+        out = {"case_id": case["id"], "nodes": nodes, "edges": out_edges, "hubs": hubs,
+               "isolated": isolated, "truncated": max(0, len(ents) - len(nodes))}
+        if include_overlap:
+            ov = self.overlaps(owner, case["id"])
+            for n in nodes:
+                n["also_in"] = ov["entities"].get(n["id"], [])
+            out["overlap_cases"] = ov["cases"]
+        return out
+
+    # -- cross-case overlap ------------------------------------------------
+    @staticmethod
+    def _entity_keys(e: Dict[str, Any]) -> List[Tuple[str, str]]:
+        """Every (type, key) an entity answers to: its canonical key plus aliases.
+
+        Keys shorter than 3 characters are skipped — they collide by accident
+        ("us", "1") far more often than they mean the same thing.
+        """
+        keys = [e.get("key") or ""] + list(e.get("alias_keys") or [])
+        return [(e.get("type", "other"), k) for k in dict.fromkeys(keys) if len(k) >= 3]
+
+    def _overlap_index(self, owner, exclude_case: Optional[str] = None
+                       ) -> Dict[Tuple[str, str], List[Dict[str, Any]]]:
+        """(type, key) → the other cases (owner-scoped) that hold that selector."""
+        index: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        for meta in self.list_cases(owner, status=None):
+            if meta["id"] == exclude_case:
+                continue
+            try:
+                case = self._read(owner, meta["id"])
+            except (KeyError, OSError, ValueError):
+                continue
+            for e in (case.get("entities") or {}).values():
+                ref = {"case_id": case["id"], "title": case.get("title", ""),
+                       "status": case.get("status", "open"), "entity_id": e.get("id"),
+                       "value": e.get("value", "")}
+                for k in self._entity_keys(e):
+                    bucket = index.setdefault(k, [])
+                    if all(r["case_id"] != case["id"] for r in bucket):
+                        bucket.append(ref)
+        return index
+
+    def overlaps(self, owner, case_ref: str, limit: int = 20) -> Dict[str, Any]:
+        """Selectors this case shares with the owner's other cases.
+
+        "This email also appears in case X" — the cross-investigation signal
+        an analyst would otherwise only find by searching every selector by
+        hand. Matching uses the same canonical keys as dedupe (and aliases), so
+        ``@JDoe`` and ``jdoe`` meet across cases. Only the owner's own cases are
+        consulted.
+
+        Returns ``entities`` (entity id → other cases holding it) and ``cases``
+        (other cases ranked by how many selectors they share, with up to five
+        of the shared values).
+        """
+        case = self.get_case(owner, case_ref)
+        index = self._overlap_index(owner, exclude_case=case["id"])
+        per_entity: Dict[str, List[Dict[str, Any]]] = {}
+        per_case: Dict[str, Dict[str, Any]] = {}
+        for e in (case.get("entities") or {}).values():
+            seen: Dict[str, Dict[str, Any]] = {}
+            for k in self._entity_keys(e):
+                for ref in index.get(k, []):
+                    seen.setdefault(ref["case_id"], ref)
+            if not seen:
+                continue
+            per_entity[e["id"]] = [{"case_id": r["case_id"], "title": r["title"], "status": r["status"]}
+                                   for r in seen.values()]
+            for r in seen.values():
+                pc = per_case.setdefault(r["case_id"], {"case_id": r["case_id"], "title": r["title"],
+                                                        "status": r["status"], "shared": 0, "values": []})
+                pc["shared"] += 1
+                if len(pc["values"]) < 5:
+                    pc["values"].append(e.get("value", ""))
+        ranked = sorted(per_case.values(), key=lambda c: (-c["shared"], c["status"] != "open", c["title"]))
+        return {"case_id": case["id"], "entities": per_entity,
+                "cases": ranked[:max(1, int(limit or 20))], "shared_entities": len(per_entity)}
+
+    def cases_with_entity(self, owner, value: str, etype: Optional[str] = None,
+                          exclude_case: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Other cases that already hold ``value`` (canonicalized like dedupe)."""
+        value = (value or "").strip()
+        if not value:
+            return []
+        t = (etype or guess_entity_type(value)).lower()
+        if t not in ENTITY_TYPES:
+            t = "other"
+        key = normalize_entity(t, value)
+        if len(key) < 3:
+            return []
+        excl = None
+        if exclude_case:
+            try:
+                excl = self.resolve_case_id(owner, exclude_case)
+            except KeyError:
+                excl = None
+        return [{"case_id": r["case_id"], "title": r["title"], "status": r["status"]}
+                for r in self._overlap_index(owner, exclude_case=excl).get((t, key), [])]
 
     # -- search / export ---------------------------------------------------
     def search(self, owner, query: str, limit: int = 25) -> List[Dict[str, Any]]:

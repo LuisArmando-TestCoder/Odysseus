@@ -75,8 +75,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   the last 24h, watches failing 3+ times — and a tooltip summary (open cases,
   open steps, the case a goal is driving). Hideable in Appearance; degrades
   to a plain link if the status call fails.
-- Next: cross-case entity overlap ("this email also appears in case X") in
-  the graph; one-click "Drive with goal" from a cold-case notification.
+- **Cross-case overlap** (`CaseStore.overlaps`, `case_file op=overlap`,
+  `GET /api/cases/{id}/overlap`, `also_in` on graph nodes): selectors shared
+  with your other cases (canonical keys + aliases, owner-scoped) are ringed in
+  the graph with jump-to-case buttons and a "Shared with other cases" row;
+  recording a selector another case already holds adds a `Cross-case:` note
+  to the agent's tool result.
+- Next: one-click "Drive with goal" from a cold-case notification; surface
+  new cross-case hits in the daily brief.
 
 ## Jarvis UI (in progress)
 

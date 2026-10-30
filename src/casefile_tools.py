@@ -6,7 +6,7 @@ two names:
 
   case_file     {"op": "open"|"list"|"get"|"update"|"add_entity"|"add_finding"|
                         "link"|"alias"|"add_step"|"done_step"|"pivots"|"search"|
-                        "export"|"drive"|"release"|"delete", ...}
+                        "overlap"|"export"|"drive"|"release"|"delete", ...}
   watch_target  {"op": "add"|"list"|"remove"|"pause"|"resume"|"check", ...}
 
 Handlers return the standard tool dict ({"output": str, "exit_code": int} or
@@ -70,6 +70,31 @@ def _case_summary(case: Dict[str, Any], max_items: int = 15) -> str:
     return "\n".join(lines)
 
 
+def _also_in(st, owner, case_id: str, values, max_cases: int = 3) -> str:
+    """" Also in: …" note for selectors other cases already hold (empty if none)."""
+    parts = []
+    for etype, value in values:
+        try:
+            others = st.cases_with_entity(owner, value, etype, exclude_case=case_id)
+        except (KeyError, OSError, ValueError):
+            continue
+        if others:
+            names = ", ".join(f"{o['title']} ({o['case_id']})" for o in others[:max_cases])
+            more = f" +{len(others) - max_cases}" if len(others) > max_cases else ""
+            parts.append(f"{value} also appears in {names}{more}")
+    return ("\nCross-case: " + "; ".join(parts) + ".") if parts else ""
+
+
+def _overlap_text(ov: Dict[str, Any]) -> str:
+    if not ov["cases"]:
+        return "No selectors shared with your other cases."
+    lines = [f"{ov['shared_entities']} selector(s) shared with {len(ov['cases'])} other case(s):"]
+    for c in ov["cases"]:
+        lines.append(f"  - {c['title']} ({c['case_id']}, {c['status']}): {c['shared']} shared — "
+                     + ", ".join(c["values"]) + ("…" if c["shared"] > len(c["values"]) else ""))
+    return "\n".join(lines)
+
+
 def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None,
                   session_id: Optional[str] = None, goal_api=None) -> Dict[str, Any]:
     from src.casefiles import get_case_store
@@ -108,7 +133,8 @@ def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None,
                               notes=args.get("notes", ""), source=args.get("source", ""),
                               confidence=args.get("confidence"), label=args.get("label", ""))
             verb = "Added" if e["created"] else "Corroborated existing"
-            return _ok(f"{verb} {e['type']} {e['value']} ({e['id']}, conf {e['confidence']:.2f}).")
+            return _ok(f"{verb} {e['type']} {e['value']} ({e['id']}, conf {e['confidence']:.2f})."
+                       + _also_in(st, owner, case_ref, [(e["type"], e["value"])]))
         if op in ("add_finding", "finding", "note"):
             f = st.add_finding(owner, case_ref, args.get("text", ""), source_url=args.get("source_url") or args.get("source", ""),
                                confidence=float(args.get("confidence", 0.6)), kind=args.get("kind", "fact"),
@@ -118,6 +144,7 @@ def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None,
             msg = f"Recorded finding {f['id']}."
             if f["new_entities"]:
                 msg += " New selectors: " + ", ".join(f"{e['type']}:{e['value']}" for e in f["new_entities"])
+                msg += _also_in(st, owner, case_ref, [(e["type"], e["value"]) for e in f["new_entities"][:10]])
             return _ok(msg)
         if op == "link":
             l = st.link(owner, case_ref, str(args.get("a", "")), str(args.get("b", "")),
@@ -138,6 +165,8 @@ def run_case_file(args: Dict[str, Any], owner: Optional[str], store=None,
                 for p in pivots:
                     st.add_step(owner, case_ref, p)
             return _ok("\n".join(f"- {p}" for p in pivots) or "No new pivots — every known selector has queued steps.")
+        if op in ("overlap", "overlaps", "cross", "shared"):
+            return _ok(_overlap_text(st.overlaps(owner, case_ref)))
         if op in ("export", "dossier", "report"):
             md = st.export_markdown(owner, case_ref)
             return _ok(md)

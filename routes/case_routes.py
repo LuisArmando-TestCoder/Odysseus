@@ -174,7 +174,13 @@ def setup_case_routes() -> APIRouter:
 
     @router.get("/api/cases/{case_id}/graph")
     def case_graph(case_id: str, request: Request, max_nodes: int = 80):
-        return _guard(get_case_store().graph, _owner(request), case_id, max_nodes=max_nodes)
+        return _guard(get_case_store().graph, _owner(request), case_id, max_nodes=max_nodes,
+                      include_overlap=True)
+
+    @router.get("/api/cases/{case_id}/overlap")
+    def case_overlap(case_id: str, request: Request):
+        """Selectors this case shares with the caller's other cases."""
+        return _guard(get_case_store().overlaps, _owner(request), case_id)
 
     @router.get("/api/cases/{case_id}/export")
     def export_case(case_id: str, request: Request):
