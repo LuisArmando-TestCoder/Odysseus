@@ -91,9 +91,9 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
 global primitives in `static/css/jarvis.css`, scoped to
 `:root[data-odx-theme="jarvis"]`; the "drawn in light" Tron layer
 (`static/css/tron.css`) now covers shell, chat, composer, modals, settings,
-research/compare, login, notes/tasks/calendar, and the document editor +
-library. Next areas, one per pass: email → cookbook → landing → /cases →
-mobile. Spec + log: `docs/JARVIS_UI.md`.
+research/compare, login, notes/tasks/calendar, the document editor +
+library, and email (inbox, reader, compose). Next areas, one per pass:
+cookbook → landing → /cases → mobile. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

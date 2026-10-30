@@ -53,7 +53,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 6. Settings
 7. ✅ Notes / tasks / calendar
 8. ✅ Documents / editor (+ library documents tab)
-9. Email
+9. ✅ Email (inbox library, reader + pop-out readers, compose fields)
 10. Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + landing (`static/landing.html`, not yet)
 12. `/cases` Intel Board (`static/cases.html`)
@@ -203,3 +203,45 @@ New section 13 in `static/css/tron.css` (all under the jarvis scope).
 **Next:** email (inbox library `#email-lib-modal`, reader, compose — the doc
 pane's email mode shares `.doc-email-actions` / `.email-send-btn`).
 
+
+### Run 6 — 2026-10-30 · Email
+New section 14 in `static/css/tron.css` (all under the jarvis scope;
+covers `#email-lib-modal`, `.email-reader-tab-modal`, `.email-window-modal`
+and the doc pane's compose fields).
+- **Inbox = signal log:** every message is a drawn card (documents-library
+  chamfer, `--c` 8px; expanded 11px on a darker fill). **Unread is the warm
+  light:** amber left edge + amber diamond (replaces the sender-hued dot,
+  which read as decoration) + white semibold subject; the unread badge in the
+  title bar is an amber outlined mono chip. Done mail dims its subject; the
+  done check is `--jv-ok`.
+- Meta line (sender · date) in mono tabular; account chips mono uppercase,
+  active = light bar; inline search toggles (done/reminders/attachments) are
+  bare icons that light up when on.
+- **Reader = briefing:** header band with a faint top-light, mono `FROM / TO /
+  CC` micro-labels, squared address chips (from-chip lit cyan). Action rack is
+  squared keys with mono uppercase labels sized to fit — "REPLY ALL" was
+  clipped at 48px; desktop keys are now auto-width (min 50px), mobile keeps
+  the 48px grid.
+- **Digits bug (jarvis-scoped fix):** the base `.email-reader-body` sets
+  `font-variant-emoji: emoji`, which made 0-9 render from the colour-emoji
+  font — dim and spaced ("case 1 4", "0 1:1 0"). Jarvis sets it to `normal`
+  and uses Inter 13.5/1.62 for body copy. *Other themes still have this bug —
+  worth fixing in `style.css` (one line) in a non-UI pass.*
+- Attachments: mono header, chips as lit slots (cyan left bar). AI summary:
+  lit slot with a cyan bar and mono header. Quote/signature folds: mono
+  uppercase summary rows. Links cyan-hi; quotes cyan bar; `<mark>` amber.
+- Thread bubbles follow chat: **yours in orange light, theirs in cyan**,
+  squared, mono heads.
+- Tags squared mono chips (semantic hues kept); urgent / reply-soon burn amber.
+- Compose (doc pane): mono uppercase field labels, inputs as dark slots with a
+  cyan inset bar on focus; Discard hovers danger-red. Mobile "New" FAB is a
+  chamfered cyan slab.
+- A11y: more-contrast → solid card line, no glows, full-strength done check;
+  reduced-motion → static unread diamond; coarse pointers → 36px account chips.
+- Verified headless (1440×900, 390×844) — inbox list, expanded reader, compose
+  — in jarvis and light; light renders match the pre-change ones apart from
+  ambient animation and the clock. Pre-existing with mocked APIs, not
+  email: the first-run "Pro tip" card and an empty Environment Variables modal
+  can pop over the canvas.
+
+**Next:** cookbook (then landing → `/cases` → mobile pass).

@@ -833,3 +833,339 @@
   :root[data-odx-theme="jarvis"] .doc-line-numbers { color: var(--tr-dim) !important; }
   :root[data-odx-theme="jarvis"] #doclib-modal .doclib-card { --ln: var(--tr-cyan); }
 }
+
+/* ── 14 · Email: inbox library, reader, compose (run 6) ───────────────────
+   The inbox reads like a signal log: every message is a drawn card (same
+   chamfer as the documents library), unread mail carries the one warm
+   light (an amber diamond + an amber edge — unread is attention, not
+   decoration), done mail recedes. The reader is a briefing: mono FROM /
+   TO / CC labels, squared address chips, a squared action rack with mono
+   labels, Inter body copy. Bubbles reuse the chat's two programs: your
+   mail in orange light, theirs in cyan. Scope: #email-lib-modal plus the
+   two pop-out reader windows; compose lives in the doc pane. */
+
+/* Cards — same frame recipe as #doclib-modal (section 13) */
+:root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .doclib-card {
+  --c: 8px;
+  --ln: var(--tr-ln-dim);
+  --hi: color-mix(in srgb, var(--tr-cyan-hi) 70%, transparent);
+  --fill: var(--tr-fill);
+  --fill-top: color-mix(in srgb, var(--tr-cyan) 5%, var(--fill));
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transition: transform var(--jv-fast) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .doclib-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid transparent;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background:
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) var(--c) 0 / 14px 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) calc(100% - var(--c)) 100% / 14px 1.5px no-repeat border-box,
+    linear-gradient(180deg, var(--fill-top), var(--fill) 60%) padding-box,
+    linear-gradient(var(--ln), var(--ln)) border-box;
+}
+:root[data-odx-theme="jarvis"] #email-lib-modal .doclib-card:hover { --ln: var(--tr-ln); }
+:root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .doclib-card.doclib-card-expanded {
+  --c: 11px;
+  --ln: var(--tr-ln);
+  --fill: color-mix(in srgb, #000 30%, var(--tr-fill-solid));
+}
+:root[data-odx-theme="jarvis"] #email-lib-modal .doclib-card:is(.selected, :has(.memory-select-cb:checked)) { --ln: var(--tr-cyan); outline: none !important; }
+
+/* Unread = the warm light: amber edge on the left, amber diamond, brighter title */
+:root[data-odx-theme="jarvis"] #email-lib-modal .doclib-card.email-card-unread {
+  --hi: color-mix(in srgb, var(--jv-amber) 85%, transparent);
+}
+:root[data-odx-theme="jarvis"] #email-lib-modal .doclib-card.email-card-unread:not(.doclib-card-expanded)::after {
+  content: "";
+  position: absolute;
+  left: 0; top: 10px; bottom: 10px;
+  width: 2px;
+  background: var(--jv-amber);
+  box-shadow: 0 0 calc(8px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--jv-amber) 55%, transparent);
+  pointer-events: none;
+}
+:root[data-odx-theme="jarvis"] #email-lib-modal .email-card-unread .memory-item-title { color: #fff !important; font-weight: 600; }
+:root[data-odx-theme="jarvis"] .email-card-unread-dot {
+  width: 6px !important; height: 6px !important;
+  border-radius: 0 !important;
+  transform: rotate(45deg);
+  background: var(--jv-amber) !important;
+  box-shadow: 0 0 calc(6px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--jv-amber) 60%, transparent);
+  animation: jv-em-unread 2.4s var(--jv-ease) infinite;
+}
+@keyframes jv-em-unread {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+/* Done recedes; the check is the ok light */
+:root[data-odx-theme="jarvis"] #email-lib-modal .doclib-card.email-card-answered:not(.doclib-card-expanded) .memory-item-title { color: var(--tr-dim) !important; }
+:root[data-odx-theme="jarvis"] .email-card-done { color: var(--tr-dim); opacity: 0.45; }
+:root[data-odx-theme="jarvis"] .email-card-done:not(.active):hover { color: var(--jv-ok) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .email-card-done.active,
+:root[data-odx-theme="jarvis"] .email-card-done.active:hover { color: var(--jv-ok) !important; opacity: 1 !important; }
+
+/* Card text */
+:root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .doclib-card .memory-item-title {
+  font-family: var(--jv-ui);
+  font-size: 13px;
+  color: var(--tr-ink);
+  letter-spacing: 0;
+}
+:root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .doclib-card .memory-item-meta {
+  font-family: var(--jv-mono);
+  font-size: 10.5px !important;
+  letter-spacing: 0.02em;
+  opacity: 1 !important;
+  color: var(--tr-dim);
+}
+:root[data-odx-theme="jarvis"] #email-lib-modal .email-meta-sep { color: var(--tr-ln); }
+:root[data-odx-theme="jarvis"] :is(.email-card-nav-btn, .email-card-header-menu, #email-lib-modal .memory-item-btn) {
+  border-radius: 0 !important;
+  color: var(--tr-dim) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.email-card-nav-btn, .email-card-header-menu, #email-lib-modal .memory-item-btn):hover { color: var(--tr-cyan-hi) !important; background: color-mix(in srgb, var(--tr-cyan) 10%, transparent) !important; }
+
+/* Window chrome: unread badge is attention (amber), stats in mono */
+:root[data-odx-theme="jarvis"] .email-lib-unread-badge {
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--jv-amber) !important;
+  border: 1px solid color-mix(in srgb, var(--jv-amber) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jv-amber) 10%, transparent), 0 0 calc(10px * var(--jv-glow-k, 1)) -2px color-mix(in srgb, var(--jv-amber) 50%, transparent);
+  font-family: var(--jv-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+:root[data-odx-theme="jarvis"] .email-lib-unread-badge:hover { background: color-mix(in srgb, var(--jv-amber) 14%, transparent) !important; filter: none; }
+:root[data-odx-theme="jarvis"] #email-lib-stats { font-family: var(--jv-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--tr-dim); opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] #email-lib-modal .doclib-desc { color: var(--tr-dim); font-size: 12px; }
+
+/* Account chips: mono, active carries the light bar */
+:root[data-odx-theme="jarvis"] #email-lib-accounts .gallery-chip {
+  font-family: var(--jv-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tr-dim) !important;
+  background: transparent !important;
+  border-color: var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] #email-lib-accounts .gallery-chip:hover { color: var(--tr-ink) !important; border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] #email-lib-accounts .gallery-chip.active {
+  color: var(--tr-cyan-hi) !important;
+  border-color: var(--tr-ln) !important;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--tr-cyan) 16%, transparent), transparent 85%) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan) !important;
+}
+/* Inline search toggles (done / reminders / attachments): lit when on */
+:root[data-odx-theme="jarvis"] #email-lib-modal .email-search-wrap .memory-toolbar-btn { clip-path: none; color: var(--tr-dim) !important; background: transparent !important; border-color: transparent !important; }
+:root[data-odx-theme="jarvis"] #email-lib-modal .email-search-wrap .memory-toolbar-btn:hover { color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] #email-lib-modal .email-search-wrap .memory-toolbar-btn.active { color: var(--tr-cyan-hi) !important; box-shadow: inset 0 -2px 0 var(--tr-cyan) !important; }
+
+/* Reader — header band with mono labels and squared address chips */
+:root[data-odx-theme="jarvis"] .email-reader-header {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tr-cyan) 5%, transparent), transparent) !important;
+  border-bottom: 1px solid var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] .email-reader-meta { opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .email-reader-meta-row strong {
+  font-family: var(--jv-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tr-dim);
+  opacity: 1 !important;
+}
+:root[data-odx-theme="jarvis"] .recipient-chip {
+  border-radius: 1px !important;
+  background: color-mix(in srgb, var(--tr-cyan) 5%, transparent) !important;
+  border-color: var(--tr-ln-dim) !important;
+  color: var(--tr-ink) !important;
+  font-size: 10.5px;
+}
+:root[data-odx-theme="jarvis"] .recipient-chip.from-chip { color: var(--tr-cyan-hi) !important; border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] .recipient-chip:hover,
+:root[data-odx-theme="jarvis"] .recipient-chip.expanded {
+  background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important;
+  border-color: var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .recipient-chip-copy:is(:hover, .copied) { color: var(--tr-cyan-hi) !important; }
+
+/* Action rack: squared keys, mono labels that fit ("REPLY ALL" was clipped) */
+:root[data-odx-theme="jarvis"] .memory-toolbar-btn.reader-icon-btn {
+  width: auto !important;
+  min-width: 50px;
+  padding: 4px 6px !important;
+  color: var(--tr-ink) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 4%, transparent) !important;
+  border-color: var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] .memory-toolbar-btn.reader-icon-btn:hover {
+  color: var(--tr-cyan-hi) !important;
+  border-color: var(--tr-ln) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .memory-toolbar-btn.reader-icon-btn:is(.active, .reader-more-active),
+:root[data-odx-theme="jarvis"] .memory-toolbar-btn.reader-icon-btn[data-act="more"] { color: var(--tr-cyan-hi) !important; border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] .memory-toolbar-btn.reader-icon-btn:is(.active, .reader-more-active) { background: color-mix(in srgb, var(--tr-cyan) 16%, transparent) !important; }
+:root[data-odx-theme="jarvis"] .reader-btn-label {
+  font-family: var(--jv-mono) !important;
+  font-size: 8.5px !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase;
+  opacity: 1 !important;
+  color: inherit;
+}
+
+/* Attachments, summary, quote folds */
+:root[data-odx-theme="jarvis"] :is(.email-reader-atts-wrap, .email-reader-atts) { border-bottom-color: var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] .email-reader-atts-header {
+  font-family: var(--jv-mono);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--tr-dim);
+  opacity: 1 !important;
+}
+:root[data-odx-theme="jarvis"] .email-reader-atts-header:hover { color: var(--tr-cyan-hi); }
+:root[data-odx-theme="jarvis"] :is(.email-attachment-chip, .email-compose-chip) {
+  border-radius: 1px !important;
+  background: color-mix(in srgb, #000 35%, var(--tr-fill-solid)) !important;
+  border-color: var(--tr-ln-dim) !important;
+  border-left: 2px solid var(--tr-cyan) !important;
+  color: var(--tr-ink) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.email-attachment-chip, .email-compose-chip):hover { border-color: var(--tr-ln) !important; border-left-color: var(--tr-cyan-hi) !important; background: color-mix(in srgb, var(--tr-cyan) 10%, var(--tr-fill-solid)) !important; }
+:root[data-odx-theme="jarvis"] .email-attachment-chip .att-size { font-family: var(--jv-mono); color: var(--tr-dim); opacity: 1; }
+:root[data-odx-theme="jarvis"] .email-summary-panel {
+  border-radius: 0 !important;
+  background: color-mix(in srgb, var(--tr-cyan) 6%, color-mix(in srgb, #000 35%, var(--tr-fill-solid))) !important;
+  border: 1px solid var(--tr-ln-dim) !important;
+  border-left: 2px solid var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .email-summary-header { font-family: var(--jv-mono); font-weight: 500; letter-spacing: 0.14em; color: var(--tr-cyan-hi) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] .email-summary-content { font-family: var(--jv-ui); font-size: 13px; line-height: 1.6; color: var(--tr-ink) !important; }
+:root[data-odx-theme="jarvis"] :is(.email-quote-fold, .email-sig-fold) { border-top-color: var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] :is(.email-quote-fold, .email-sig-fold) .email-fold-summary {
+  font-family: var(--jv-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--tr-dim) !important;
+  opacity: 1 !important;
+}
+:root[data-odx-theme="jarvis"] :is(.email-quote-fold, .email-sig-fold) .email-fold-summary:hover { color: var(--tr-cyan-hi) !important; }
+
+/* Body: Inter briefing copy, lit links, cyan quote bar. The base rule's
+   `font-variant-emoji: emoji` asks for emoji presentation of 0-9 / # / *,
+   so digits were drawn from the colour-emoji font (dim, spaced: "case 1 4").
+   `normal` keeps real emoji as emoji and digits as text. */
+:root[data-odx-theme="jarvis"] .email-reader-body {
+  font-family: var(--jv-ui), "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla" !important;
+  font-variant-emoji: normal;
+  font-size: 13.5px;
+  line-height: 1.62;
+  color: var(--tr-ink);
+}
+:root[data-odx-theme="jarvis"] .email-reader-body a:not([href^="tel:"]):not([href^="sms:"]) { color: var(--tr-cyan-hi); text-decoration-color: color-mix(in srgb, var(--tr-cyan) 45%, transparent); text-underline-offset: 2px; }
+:root[data-odx-theme="jarvis"] :is(.email-reader-body, .email-bubble-body) blockquote {
+  border-left: 2px solid var(--tr-cyan) !important;
+  border-radius: 0 !important;
+  background: color-mix(in srgb, var(--tr-cyan) 4%, transparent);
+}
+:root[data-odx-theme="jarvis"] .email-reader-body mark { background: color-mix(in srgb, var(--jv-amber) 30%, transparent); color: inherit; }
+
+/* Thread bubbles: your mail in orange light, theirs in cyan (chat parity) */
+:root[data-odx-theme="jarvis"] .email-bubble { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .email-bubble-theirs .email-bubble {
+  background: color-mix(in srgb, var(--tr-cyan) 5%, var(--tr-fill-solid)) !important;
+  border-color: var(--tr-ln-dim) !important;
+  border-left: 2px solid var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .email-bubble-mine .email-bubble {
+  background: color-mix(in srgb, var(--tr-orange) 7%, var(--tr-fill-solid)) !important;
+  border-color: color-mix(in srgb, var(--tr-orange) 28%, transparent) !important;
+  border-right: 2px solid var(--tr-orange) !important;
+}
+:root[data-odx-theme="jarvis"] .email-bubble-head { font-family: var(--jv-mono); font-size: 10px; letter-spacing: 0.04em; opacity: 1 !important; color: var(--tr-dim); }
+:root[data-odx-theme="jarvis"] .email-bubble-theirs .email-bubble-author { color: var(--tr-cyan-hi); }
+:root[data-odx-theme="jarvis"] .email-bubble-mine .email-bubble-author { color: var(--tr-orange-hi); }
+:root[data-odx-theme="jarvis"] .email-bubble-avatar { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .email-bubble-body { font-family: var(--jv-ui), "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
+
+/* Tags: squared mono chips; keep the semantic hues, urgent burns amber */
+:root[data-odx-theme="jarvis"] .email-tag {
+  border-radius: 1px !important;
+  font-family: var(--jv-mono);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+}
+:root[data-odx-theme="jarvis"] :is(.email-tag-urgent, .email-tag-reply-soon) { color: var(--jv-amber) !important; background: color-mix(in srgb, var(--jv-amber) 14%, transparent) !important; }
+
+/* Mobile "New" FAB: chamfered cyan slab */
+:root[data-odx-theme="jarvis"] .email-lib-fab {
+  border-radius: 0 !important;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  background: linear-gradient(180deg, var(--tr-cyan-hi), var(--tr-cyan)) !important;
+  color: #021018 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 0 calc(12px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--tr-cyan) 45%, transparent));
+}
+:root[data-odx-theme="jarvis"] .email-lib-fab-label { font-family: var(--jv-mono); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+
+/* Compose (doc pane email mode): mono field labels, lit input slots */
+:root[data-odx-theme="jarvis"] .email-field label {
+  font-family: var(--jv-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tr-dim) !important;
+  opacity: 1 !important;
+}
+:root[data-odx-theme="jarvis"] .email-field input {
+  background: color-mix(in srgb, #000 35%, var(--tr-fill-solid)) !important;
+  border-color: var(--tr-ln-dim) !important;
+  color: var(--tr-ink) !important;
+}
+:root[data-odx-theme="jarvis"] .email-field input:focus { box-shadow: inset 2px 0 0 var(--tr-cyan), 0 0 14px -6px var(--tr-cyan) !important; border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] .email-field .email-cc-toggle { font-family: var(--jv-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tr-dim) !important; border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .email-field .email-cc-toggle:hover { color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] :is(.email-discard-btn) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] .email-discard-btn:hover { color: var(--jv-danger) !important; border-color: var(--jv-danger) !important; }
+
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .email-reader-actions .memory-toolbar-btn.reader-icon-btn {
+    width: 48px !important;
+    min-width: 0;
+    padding: 4px 2px !important;
+  }
+  :root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .reader-btn-label { font-size: 8px !important; letter-spacing: 0.02em !important; }
+  :root[data-odx-theme="jarvis"] #email-lib-modal .doclib-card .memory-item-meta { font-family: var(--jv-ui); letter-spacing: 0; }
+}
+@media (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] #email-lib-accounts .gallery-chip { min-height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] .email-card-unread-dot { animation: none !important; opacity: 1; }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] :is(#email-lib-modal, .email-reader-tab-modal, .email-window-modal) .doclib-card { --ln: var(--tr-cyan); }
+  :root[data-odx-theme="jarvis"] :is(.email-card-unread-dot, .email-lib-unread-badge, .email-lib-fab) { box-shadow: none !important; filter: none !important; }
+  :root[data-odx-theme="jarvis"] .email-card-done { opacity: 1; }
+}
