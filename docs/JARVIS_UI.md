@@ -55,7 +55,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 8. ✅ Documents / editor (+ library documents tab)
 9. ✅ Email (inbox library, reader + pop-out readers, compose fields)
 10. ✅ Cookbook / ✅ research / compare
-11. ✅ Login (`auth-tron.css`) + landing (`static/landing.html`, not yet)
+11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. `/cases` Intel Board (`static/cases.html`)
 13. Mobile pass
 
@@ -284,3 +284,58 @@ recipe; this pass draws what lives inside them.
 
 **Next:** landing (`static/landing.html`), then `/cases` → mobile pass.
 Settings (area 6) only got the run-3 sweep — worth a dedicated pass later.
+
+### Run 8 — 2026-10-31 · Landing (`static/landing.html`)
+The landing is a standalone page (own inline tokens, no theme.js), so it gets
+its own sheet: `static/css/landing-jarvis.css`, linked after the inline
+`<style>`, every rule under `:root[data-odx-theme="jarvis"]`, which the page
+now sets on `<html>`. Removing the attribute renders the original page
+pixel-identical (verified). Fonts use private family names (`JV Inter`,
+`JV Fira Code`, relative `../fonts/` URLs) so the un-themed page never picks
+them up.
+- **One canvas:** the slate/black alternating slabs are gone — near-black
+  void, one overhead cyan light, the 48px holo grid + scanline veil (fixed,
+  radially masked). Pages are divided by a seam of light; even pages get a
+  faint top-light for rhythm. Hero ends on a glowing horizon line.
+- **Re-pointed the page tokens** (`--accent` coral → cyan, `--gold` → amber,
+  `--muted` → 9.6:1 dim text…) so inline styles in the markup follow.
+- **Frame recipe, landing edition:** fill clipped to a 45° chamfer, light line
+  + drawn diagonals + bright ticks in `::after` on top (so preview videos are
+  framed too). The base rule sits in `:where()` so per-surface knobs
+  (`--c`, `--tick`, `--fill`) win. Used on buttons, feature cards,
+  testimonial card, terminal, preview panels, get-started card (big ticks =
+  the one key surface), hamburger menu, arrows.
+- **Hero:** tracked uppercase wordmark in cyan-hi beside the logo in a
+  reactor ring (the page's one "core"); mono slogan; Inter 600 headline with a
+  cyan→cyan-hi lit phrase. Primary CTA is a chamfered cyan slab (dark ink,
+  11.8:1), secondary a drawn outline; both mono uppercase, 44px tall.
+- Nav: dark glass + neon bottom edge brightest at centre; mono uppercase
+  links with a growing underline; 44px hamburger.
+- Testimonials: drawn card, amber stars, mono role; Polyphemus burns
+  danger-red (line + quote). Dots are bars (active = longer, cyan) with a
+  23px hit area.
+- Features: lit icon slots (cyan inset bar), hover brightens the line.
+  Terminal: mono uppercase title bar, cyan prompt, squared window keys
+  (close = danger).
+- Get started: codeblock as a lit slot that wraps on phones, pills as mono
+  chips with a diamond. Footer mono on a seam.
+- **Layout fixes (jarvis-scoped):** `.wrap` inside the flex-column pages
+  shrink-wrapped to its content, so the preview strip was ~440px wide on
+  desktop and **0px wide on phones** (three hairlines). `.wrap` now takes the
+  full measure and stacked previews stretch. On phones the carousel arrows
+  moved under the card (they covered the quote) and the avatar sits above
+  the name.
+- A11y: chamfered controls light a 2px frame on focus (clip-path would cut an
+  outline); reduced-motion / reduced-transparency / more-contrast /
+  forced-colors gates as in the app.
+- Verified headless (1440×900, 390×844): full page, hero, feature hover,
+  mobile menu, Polyphemus card, minimised terminal, keyboard focus; no
+  horizontal overflow, no console errors (external testimonial images were
+  blocked in the harness).
+- Not done: `docs/index.html` is the GitHub Pages copy of the landing and has
+  drifted (dot grid, extra sections). It does not load this sheet; port it
+  when the two are reconciled.
+
+**Next:** `/cases` Intel Board (`static/cases.html`), then the mobile pass;
+settings (area 6) still deserves a dedicated pass.
+
