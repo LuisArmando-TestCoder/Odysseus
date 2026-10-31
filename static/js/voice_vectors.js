@@ -280,6 +280,7 @@ export function addVector(type, label, opts = {}) {
     color: opts.color || meta.color,
     significance, tokens: opts.tokens,
   };
+  if (opts.full) v.full = String(opts.full);   // untruncated text, for Copy log only (not persisted)
   _vectors.push(v);
   if (_vectors.length > _MAX_MEMORY) _vectors.splice(0, _vectors.length - _MAX_MEMORY);
   _addQueue.push(v);
@@ -468,7 +469,16 @@ function _syncLog() {
 }
 let _logDirty = false;
 
+// The WHOLE event log as plain text (every vector, not just the 50 shown),
+// oldest first: "HH:MM:SS<TAB>Type<TAB>Label". Used by the HUD's Copy log.
+export function logText() {
+  if (!_vectors.length) return 'No conversation events yet.';
+  return _vectors.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0))
+    .map(v => `${_fmtTime(v.ts)}\t${_meta(v.type).label}\t${String(v.full || v.label || '').replace(/\s+/g, ' ').trim()}`)
+    .join('\n');
+}
+
 export default {
   initVectors, setSession, setTimeSource, seedVectors, addVector, clearVectors,
-  showVectors, hideVectors, toggleLog, layoutVectors,
+  showVectors, hideVectors, toggleLog, layoutVectors, logText,
 };

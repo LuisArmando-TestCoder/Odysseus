@@ -2982,6 +2982,19 @@ async def stream_agent_loop(
                 })
                 _repeat_counts[_sig] = _n + 1  # notify only once per turn
 
+        # Live notes — the user added information while this turn was running
+        # (usually from voice). Hand it to the very next round instead of
+        # letting the run finish blind and contradict the user.
+        try:
+            from src import live_notes as _ln
+            _notes = _ln.drain(session_id) if session_id else []
+            _note_msg = _ln.as_message(_notes)
+            if _note_msg:
+                messages.append(_note_msg)
+                yield 'data: ' + json.dumps({"delta": "\n\n_Took in new information from you mid-run._\n\n"}) + '\n\n'
+        except Exception as _lne:
+            logger.debug(f"live notes skipped: {_lne}")
+
         # TCC stop-guard — after 2 macOS privacy denials this turn, STOP trying
         # direct paths under the protected folders and go through the user.
         if _tcc_failures >= 2 and not _tcc_notified:

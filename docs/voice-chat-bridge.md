@@ -103,3 +103,32 @@ From the 2026-10-30 peritaje session (Prado A340F). Tests:
 - **Middleman removed.** `src/llm_middleman.py` (a reducer LLM that rewrote
   answers into "obedient" ones) is gone; `llm_call*` and `stream_llm` return
   the model's answer unmodified.
+
+## V3.1 — floor control, grounded answers, live notes (2026-10-31, second session)
+
+From the "Nogui Acosta" research session. Tests: bottom of `tests/test_voice_minimal_flow.py`.
+
+- **Floor control.** Nothing queued for ALFRED is spoken while the user talks or
+  within 2.5 s after (VAD events + transcript deltas). Obvious stop words
+  ("shut up", "cállate", "hold on"…) mute the playing reply at once, before the
+  JEV stop decision comes back. After a stop ALFRED is in a **quiet hold**: no
+  status lines at all; a finished result waits for an 8 s pause. The hold ends
+  when the user makes a request or asks a question.
+- **No progress narration by default.** Interim chat output is no longer read
+  aloud (it read search-result titles); one "still working" line per run at most,
+  after 45 s. The finished answer is always spoken. Opt back in with
+  `localStorage['odysseus-voice-narrate'] = '1'`.
+- **Grounded context answers.** The extractor must return a verbatim quote that
+  is in the context; an added "likely…" is dropped; for a NEW request the quote
+  must share content words with the question (no more restaurant answer to an
+  award question) and the decider must be ≥ 0.85 sure.
+- **Live notes** (`src/live_notes.py`, `POST /api/realtime/live-note`). While a
+  voice request is running, the next forged message goes INTO the run — the
+  agent loop adds it to the conversation at its next round — instead of waiting
+  for the run to end.
+- **Offers flagged.** "Want me to look deeper into…?" counts as a permission
+  question; the contract tells ALFRED not to offer work or revert topics, and to
+  treat a fact the user states with its source as the working fact.
+- **Auto-reconnect** (up to 3 per 10 min) when GPT-Live closes the session.
+- **Copy buttons.** "Copy log" copies the whole event log (every event, full
+  text, oldest first); "copy" in the errors pane copies every error.

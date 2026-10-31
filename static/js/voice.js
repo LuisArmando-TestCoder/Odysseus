@@ -70,7 +70,25 @@ let _pipeTimer = 0, _pipeBusy = false, _pipeRerun = false, _pipeAbort = null;
 let _queue = [];              // {id, title, message, intent, urgency, status}
 const _voiceInjectedTexts = new Set();   // user-bubble texts dispatched by voice (not "direct")
 let _awaiting = null;         // {id, sid, sawBusy, since}
-let _opts = { review: false, speak: true };
+let _opts = {
+  review: false, speak: true,
+  // Speak the chat agent's interim output while it works? Off by default: in
+  // practice it read out search-result titles ("an article about Schäuble…")
+  // and talked over the user. The finished answer is always spoken.
+  narrate: (() => { try { return localStorage.getItem('odysseus-voice-narrate') === '1'; } catch (e) { return false; } })(),
+};
+
+// ── Floor control ───────────────────────────────────────────────────────────
+// The user owns the floor while speaking and right after. Nothing we inject
+// may make ALFRED talk then; after "cállate / shut up" ALFRED stays quiet
+// (no status lines at all) until the user speaks to it again.
+let _userSpeaking = false;    // GPT-Live VAD says the user is talking
+let _lastUserVoiceAt = 0;     // last moment the user was heard
+let _quiet = false;           // hold after a stop request
+const _FLOOR_GAP_MS = 2500;   // silence needed after the user before we speak
+// Obvious stop words get an instant local mute (the JEV stop decision takes a
+// second or two to come back, during which ALFRED kept talking).
+const _STOP_RE = /\b(sh+ut up|shut the|stop talking|be quiet|quiet|silence|hold on|hold up|wait|c[aá]llate|c[aá]llense|silencio|para ya|espera|un momento|no sigas|no hables)\b/i;
 let _errors = [];             // {at, text} — every error surfaced in the HUD
 
 // ── Chat mirror state ───────────────────────────────────────────────────────
@@ -639,7 +657,7 @@ function _buildHUD() {
       </button>
       <button class="vx-icon-btn" data-act="close" title="Close (Esc)" aria-label="Close voice mode">${ICON.close}</button>
       <div class="vx-err-pane" id="vx-err-pane" hidden>
-        <div class="vx-err-pane-h"><span>Errors</span><button class="vx-err-clear" data-act="clear-errors" title="Clear all">clear</button></div>
+        <div class="vx-err-pane-h"><span>Errors</span><span class="vx-err-acts"><button class="vx-err-clear" data-act="copy-errors" title="Copy every error">copy</button><button class="vx-err-clear" data-act="clear-errors" title="Clear all">clear</button></span></div>
         <div class="vx-err-list" id="vx-err-list"></div>
       </div>
     </div>
@@ -681,7 +699,7 @@ function _buildHUD() {
       </div>
       <div class="vx-caption" id="vx-caption" aria-live="polite"></div>
       <div class="vx-vec-legend" id="vx-vec-legend"></div>
-      <button class="vx-vec-log-btn" id="vx-vec-log-btn" type="button">Event log</button>
+      <div class="vx-vec-log-bar"><button class="vx-vec-log-btn" id="vx-vec-log-btn" type="button">Event log</button><button class="vx-vec-log-btn" data-act="copy-log" type="button" title="Copy the whole event log">Copy log</button></div>
       <div class="vx-vec-log-panel" id="vx-vec-log-panel"></div>
     </section>
 
@@ -879,6 +897,29 @@ function _toggleErrors(force) {
   if (show) _renderErrors();
 }
 
+// Plain-text exports for the copy buttons: every entry, oldest first, full text.
+function _errorsText() {
+  if (!_errors.length) return 'No errors.';
+  return _errors.map(e => `${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}\t${e.text}`).join('\n');
+}
+
+async function _copyText(text, btn) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+    try {   // older Safari / insecure context fallback
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove();
+    } catch (e2) { ok = false; }
+  }
+  if (btn) {
+    const label = btn.dataset.label || btn.textContent;
+    btn.dataset.label = label;
+    btn.textContent = ok ? 'copied ✓' : 'copy failed';
+    setTimeout(() => { btn.textContent = label; }, 1600);
+  }
+}
+
 function _clearErrors() {
   _errors = [];
   _renderErrors();
@@ -982,6 +1023,8 @@ function _userDelta(chunk) {
   _transcriptSeen = true;
   if (!_userTurnOpen) { _userTurnOpen = true; _userText = ''; _userBase = 0; _relayArmed = false; }
   _userText = _merge(_userText, chunk);
+  _lastUserVoiceAt = Date.now();
+  if (_STOP_RE.test(chunk) && (_gptSpeaking() || _sayQueue.length)) _stopTalking();
   // Continuation segments start mid-sentence — drop leading space/punctuation.
   const seg = _userText.slice(_userBase).replace(/^[\s.,;:!?…-]+/, '');
   if (!_userLine && seg) _userLine = _newLine('user');
@@ -1022,7 +1065,7 @@ function _userFinal(full) {
   _pending.push({ speaker: 'You', text });   // the pipeline always gets the whole turn
   _userLine = null;
   _lastUserFinalAt = Date.now();
-  _vector('question', text.slice(0, 90), { tokens: _estTokens(text) });
+  _vector('question', text.slice(0, 90), { tokens: _estTokens(text), full: text });
   _schedulePipeline(1100);
 }
 
@@ -1105,7 +1148,24 @@ function _renderDecision(d) {
 // The decider (JEV) inferred the user wants the voice assistant to be quiet
 // now. Inject a stop instruction into GPT-Live's context — no regex, no
 // hardcoded phrase list; the agent itself decided the user wants silence.
+function _hushNow() {
+  // Silence what is playing right now; unmuted when this response ends.
+  if (_audioEl && !_audioEl.muted) { _audioEl.muted = true; _hushed = true; }
+}
+let _hushed = false;
+let _reconnects = [];
+function _enterQuiet() {
+  _quiet = true;
+  _sayQueue = _sayQueue.filter(item => item.startsWith('[Chat agent — FINISHED'));
+  _hushNow();
+}
+let _lastStopAt = 0;
 function _stopTalking() {
+  const now = Date.now();
+  // Local fast path and the JEV decision both land here: one stop per burst.
+  if (_quiet && now - _lastStopAt < 15000) { _enterQuiet(); return; }
+  _lastStopAt = now;
+  _enterQuiet();
   if (!_active || !_injectOK) return;
   _brief('[Instruction — the user just signalled they want you to stop speaking now. '
     + 'Stop immediately, mid-sentence if needed, and stay silent until the user speaks to you again. '
@@ -1247,7 +1307,15 @@ function _onPipeEvent(ev) {
     }
     case 'stage': _stage(ev.stage, ev.status, ev); break;
     case 'guard': _renderGuard(ev.guard || {}); break;
-    case 'decision': _renderDecision(ev.decision || {}); break;
+    case 'decision': {
+      const d = ev.decision || {};
+      _renderDecision(d);
+      // The user is talking TO us again (a request or a question, not another
+      // "shut up"): the quiet hold ends.
+      if (_quiet && (d.stop_talking || 0) < 0.5 &&
+          ((d.should_send || 0) >= 0.5 || (d.about_conversation || 0) >= 0.7 || (d.answerable || 0) >= 0.7)) _quiet = false;
+      break;
+    }
     case 'stop_talking': _stopTalking(); break;
     case 'interrupt': _interruptTask(); break;
     case 'memory': _renderMemory(ev.memory); break;
@@ -1342,6 +1410,7 @@ function _enqueue(ev) {
     id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     title: (ev.source === 'commitment' ? '↻ ' : '') + (ev.title || 'Request'),
     message: ev.message,
+    source: ev.source || '',
     intent: ev.intent || 'task',
     urgency: ev.urgency,
     status: _opts.review ? 'review' : 'queued',
@@ -1384,7 +1453,7 @@ function _vector(type, label, opts = {}) {
     significance = Math.min(1, Math.sqrt(len / 600));
   }
   try {
-    vectors.addVector(type, label, { ts: opts.ts, significance, tokens: opts.tokens });
+    vectors.addVector(type, label, { ts: opts.ts, significance, tokens: opts.tokens, full: opts.full });
   } catch (e) { /* ignore */ }
 }
 
@@ -1399,7 +1468,7 @@ function _detectChatVectors(el, isAi, text) {
   if (!isAi) {
     // Direct chat message (sent by the user in the chat, not voiced to Alfred).
     if (_voiceInjectedTexts.has(text.trim())) return;
-    _vector('direct_message', text.slice(0, 90), { tokens });
+    _vector('direct_message', text.slice(0, 90), { tokens, full: text });
     return;
   }
   if (hasThinking) _vector('thinking', 'Thought through a reasoning step', { tokens });
@@ -1768,6 +1837,24 @@ function _dispatchTick(manual = false) {
   // A task being edited halts the queue right here: it (and everything after
   // it) waits until the user finishes editing, then auto-sends.
   if (next.editing) return;
+  if (_chatBusy() && _awaiting && _awaiting.sid === _currentSid() && next.source !== 'commitment' && !next.noteSent) {
+    // A voice request is running: hand this to the run itself (it reads it at
+    // its next round) instead of waiting — possibly 15 minutes — for it to end.
+    next.noteSent = true;
+    _setItem(next, 'sending', 'Giving it to the running chat…');
+    fetch(_api('/api/realtime/live-note'), {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_session_id: _awaiting.sid, text: next.message }),
+    }).then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (_awaiting) { _awaiting.ids = (_awaiting.ids || [_awaiting.id]).concat(next.id); }
+      _voiceInjectedTexts.add(next.message.trim());
+      _setItem(next, 'running', 'Added to the running chat');
+      _systemLine(`Added to the running chat → “${_excerpt(next.message)}”`, 'forge');
+      _vector('voice_inject', 'Live note: ' + next.title, { tokens: _estTokens(next.message), full: 'Live note: ' + next.message });
+    }).catch(() => { _setItem(next, 'queued', 'Waiting — the chat is still answering. Sends as soon as it finishes.'); });
+    return;
+  }
   if (_chatBusy()) {
     const ahead = '';
     if (next.note !== 'Waiting — the chat is still answering. Sends as soon as it finishes.') {
@@ -1795,7 +1882,7 @@ function _dispatchTick(manual = false) {
     batch.forEach(q => _setItem(q, 'sent'));
     _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
     _voiceInjectedTexts.add(text.trim());
-    _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`), { tokens: _estTokens(text) });
+    _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`), { tokens: _estTokens(text), full: text });
     _systemLine(batch.length === 1 ? `Sent to chat → “${_excerpt(batch[0].message)}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
     // Tell GPT-Live (quietly) that real work just started, so it can reassure
     // the user with accurate status instead of guessing while the chat runs.
@@ -2268,7 +2355,8 @@ function _resetNarration() {
 
 // Said at most once per pause in new findings; re-armed when text grows again.
 function _maybeSayStall(now) {
-  if (_stallSpoken || _sayQueue.length || now - _narrateStallAt < 15000 || now - _lastNarrateAt < 12000) return;
+  // One status line per run at most, and only after 45 s of nothing new.
+  if (_quiet || _stallSpoken || _sayQueue.length || now - _narrateStallAt < 45000 || now - _lastNarrateAt < 12000) return;
   _stallSpoken = true;
   _lastNarrateAt = now;
   _sayQueue.push('[Status — the chat agent is still researching; nothing new yet] Say one short line such as ' +
@@ -2359,6 +2447,14 @@ function _queueSpeak(text, final, viaLedger = true) {
 function _drainSay() {
   if (!_sayQueue.length || !_active || !_injectOK) return;
   const now = Date.now();
+  // The user has the floor (a missed speech_stopped can't block us for more than 8 s).
+  if ((_userSpeaking && now - _lastUserVoiceAt < 8000) || now - _lastUserVoiceAt < _FLOOR_GAP_MS) return;
+  if (_quiet) {
+    // Told to be quiet: no status lines ever; a finished result waits for a
+    // real pause (8 s) before it is offered.
+    _sayQueue = _sayQueue.filter(item => item.startsWith('[Chat agent — FINISHED'));
+    if (!_sayQueue.length || now - _lastUserVoiceAt < 8000) return;
+  }
   if (_gptSpeaking() || _lvl > 0.11) return;        // never talk over GPT-Live or the user
   if (now - _lastAudioAt < 900) return;             // let the previous part finish cleanly
   if (now - _lastSayAt < 3500) return;              // give the last part time to start playing
@@ -2399,9 +2495,10 @@ function _narrateStream(busy) {
     const text = _speakable(_msgText(el, 12000));
     const fresh = _deliver.peek(text, 'speak', false);
     if (fresh.length !== _narratedLen) {
-      if (fresh.length > _narratedLen) { _narrateStallAt = now; _stallSpoken = false; }
+      if (fresh.length > _narratedLen) _narrateStallAt = now;   // (no re-arm: one stall line per run)
       _narratedLen = fresh.length;     // now: chars of not-yet-said complete sentences
     }
+    if (!_opts.narrate || _quiet) { _maybeSayStall(now); return; }   // finished answer only
     const enough = fresh.length >= 350;
     const settled = fresh.length >= 80 && now - _lastNarrateAt >= 8000;
     if (enough || settled) {
@@ -2562,7 +2659,10 @@ function _handleEvent(evt) {
   // GPT-Live bills per response; its usage block arrives on response.done.
   if (t === 'response.done' && evt.response && evt.response.usage) _reportRealtimeUsage(evt.response.usage);
   if (t === 'response.created') { _respActive = true; _respSince = Date.now(); }
-  if (t === 'response.done' || t === 'response.cancelled') { _respActive = false; setTimeout(_flushBriefs, 300); }
+  if (t === 'response.done' || t === 'response.cancelled') {
+    _respActive = false; setTimeout(_flushBriefs, 300);
+    if (_hushed && _audioEl) { _audioEl.muted = false; _hushed = false; }   // the hushed reply is over
+  }
 
   if (t === 'session.started' || t === 'session.created') {
     _setSub('Linked — speak naturally');
@@ -2575,7 +2675,18 @@ function _handleEvent(evt) {
     return;
   }
   if (t === 'session.closed') {
-    if (_active) { _systemLine('Session closed by the server.', 'warn'); stopVoice(); }
+    if (_active) {
+      const now = Date.now();
+      _reconnects = _reconnects.filter(t => now - t < 600000);
+      if (_reconnects.length < 3) {
+        _reconnects.push(now);
+        _systemLine('Session closed by the server — reconnecting…', 'info');
+        stopVoice().then(() => setTimeout(() => startVoice(), 800));
+      } else {
+        _systemLine('Session closed by the server.', 'warn');
+        stopVoice();
+      }
+    }
     return;
   }
   if (t === 'error' || t.endsWith('.error') || t.endsWith('.failed')) {
@@ -2598,6 +2709,13 @@ function _handleEvent(evt) {
   // Barge-in: lock in what the assistant said so far.
   if (/speech_started|speech\.started|input[^.]*\.started|user[^.]*\.(started|speaking)/.test(t)) {
     if (_aiLine) _aiFinalize();
+    _userSpeaking = true; _lastUserVoiceAt = Date.now();
+    // The user took the floor: anything queued as progress chatter is stale.
+    _sayQueue = _sayQueue.filter(item => item.startsWith('[Chat agent — FINISHED'));
+    return;
+  }
+  if (/speech_stopped|speech\.stopped|input[^.]*\.(stopped|committed)|user[^.]*\.(stopped|done)/.test(t)) {
+    _userSpeaking = false; _lastUserVoiceAt = Date.now();
     return;
   }
   // Delegated backend work (Responses events nested in the session).
@@ -3124,6 +3242,8 @@ function _bind() {
     else if (act === 'reset-mem') _resetMemory();
     else if (act === 'errors') _toggleErrors();
     else if (act === 'clear-errors') _clearErrors();
+    else if (act === 'copy-errors') _copyText(_errorsText(), e.target.closest('[data-act]'));
+    else if (act === 'copy-log') _copyText(vectors.logText(), e.target.closest('[data-act]'));
     if (_audioEl && _audioEl.paused) _audioEl.play().catch(() => {});
   });
   $('#vx-queue').addEventListener('click', _onQueueClick);

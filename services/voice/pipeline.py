@@ -271,15 +271,47 @@ You MUST always produce a message — never decline, never output an empty reply
 EXTRACTOR_PROMPT = """You extract an answer that is ALREADY present in the provided context, so a voice
 assistant can say it aloud without asking the chat agent again.
 Given the user's question and the context (recent chat turns + voice memory), find the passage that answers
-it. Answer ONLY with JSON:
-{"answer": "<the answer, in the user's language, concise and spoken naturally>", "found": true|false}
-- found: true only if the context genuinely contains the answer. If it does not, found=false and answer="".
-- Do not invent, summarize beyond what is there, or add facts not in the context.
+THIS question — not a related or earlier topic. Answer ONLY with JSON:
+{"answer": "<the answer, in the user's language, concise and spoken naturally>",
+ "quote": "<the exact sentence(s) from the context that state it, copied verbatim>", "found": true|false}
+- found: true only if the context explicitly states the answer to THIS question. Otherwise found=false.
+- No inference: no "likely", "probably", "it seems" unless the context itself says so. Add nothing that is not
+  in the quote.
 - Keep the answer short enough to speak aloud (a few sentences)."""
 
 
-async def _extract_answer(owner: str, question: str, context: str) -> Optional[str]:
-    """Run the lateral extractor. Returns the answer text, or None if not found."""
+def _norm_txt(text: str) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", (text or "").lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
+
+
+_HEDGES = re.compile(r"\b(likely|probably|presumably|it seems|seems to|might be|must be|probablemente|"
+                     r"posiblemente|seguramente|al parecer|parece que|quiz[aá]s?|tal vez)\b", re.IGNORECASE)
+
+
+def answer_is_grounded(question: str, answer: str, quote: str, context: str) -> bool:
+    """Keep an extracted answer only when (1) its quote really is in the
+    context, (2) it adds no hedged inference the quote does not contain, and
+    (3) the quote shares content words with the question (so a question about
+    an award is not answered with the restaurant from three turns ago)."""
+    q, c = _norm_txt(quote), _norm_txt(context)
+    if len(q) < 12 or q not in c:
+        return False
+    if _HEDGES.search(answer or "") and not _HEDGES.search(quote or ""):
+        return False
+    from services.voice.memory import _q_tokens
+    qt, kt = _q_tokens(question), _q_tokens(quote)
+    if not qt:
+        return True        # "what do we have so far?" — nothing to match on
+    return len(qt & kt) >= 1 and len(qt & kt) / len(qt) >= 0.2
+
+
+async def _extract_answer(owner: str, question: str, context: str, require_topic: bool = False) -> Optional[str]:
+    """Run the lateral extractor. Returns the answer text, or None if not found
+    or not grounded (quote missing from the context, an added "likely…", or —
+    with ``require_topic`` — a quote about a different topic)."""
     try:
         raw = await _utility(owner, EXTRACTOR_PROMPT,
                              f"Question:\n{question}\n\nContext:\n{context[:12000]}", 400)
@@ -290,7 +322,13 @@ async def _extract_answer(owner: str, question: str, context: str) -> Optional[s
     if not data.get("found"):
         return None
     answer = (data.get("answer") or "").strip()
-    return answer or None
+    if not answer:
+        return None
+    quote = str(data.get("quote") or "")
+    if not answer_is_grounded(question if require_topic else "", answer, quote, context):
+        logger.info("voice extractor answer dropped as ungrounded/off-topic: %r", answer[:160])
+        return None
+    return answer
 
 
 def _ev(**kw) -> Dict[str, Any]:
@@ -1113,12 +1151,16 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 logger.debug(f"self-assessment capture skipped: {e}")
 
         wants_new_work = send and decision.get("directed_to_chat", 0) >= 0.7
-        if new_text and (about_conv or decision.get("answerable", 0) >= 0.7) and not wants_new_work:
+        # A NEW request ("dig deeper on the award") is only short-circuited when
+        # the decider is sure it is answered AND the answer is on that topic —
+        # otherwise the restaurant from three turns ago got read out again.
+        answerable = decision.get("answerable", 0) >= (0.85 if send else 0.7)
+        if new_text and (about_conv or answerable) and not wants_new_work:
             # The WHOLE chat (goal, summaries, every request, latest exchanges),
             # not just its last turns — "what are we talking about" needs it all.
             full_chat = chat_context_digest(chat_session_id, owner, budget=8000) or chat_txt or ""
             context = full_chat + "\n\n" + (docs_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
-            answer = await _extract_answer(owner, new_text, context)
+            answer = await _extract_answer(owner, new_text, context, require_topic=send and not about_conv)
             if answer:
                 yield _ev(type="answer_from_context", answer=answer, question=new_text[:300])
                 yield _ev(type="done", send=False, reason="answered-from-context")

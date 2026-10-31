@@ -48,11 +48,13 @@ _Q_STOP = {
     "el", "la", "los", "las", "un", "una", "de", "del", "que", "y", "o", "a", "en", "se", "le", "lo", "me",
     "te", "su", "sus", "es", "si", "por", "para", "con", "al", "usted", "quiere", "quieres", "desea",
 }
-# Asking PERMISSION to consult the chat ("¿quiere que le pida al chat…?") — the
-# relay to the chat is automatic, so this kind of question is never needed.
+# Asking PERMISSION to consult the chat ("¿quiere que le pida al chat…?") or
+# OFFERING more work ("Want me to look deeper into…?") — the relay is automatic
+# and the user drives the topic, so this kind of question is never needed.
 PERMISSION_Q = re.compile(
     r"(quier[ea]s?|desea|le parece|me autoriza|autoriza|prefiere|do you want me to|want me to|should i|shall i|"
-    r"would you like me to)\b.{0,60}\b(chat|pid[ao]|pida|pregunt|consult|env[ií]|mand|ask|send|forward|check)",
+    r"would you like me to)\b.{0,60}\b(chat|pid[ao]|pida|pregunt|consult|env[ií]|mand|ask|send|forward|check|"
+    r"look|dig|research|investig|search|find|busc|indag|profundic|revis)",
     re.IGNORECASE)
 
 

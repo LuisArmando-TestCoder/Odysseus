@@ -41,7 +41,8 @@ def pipe(monkeypatch, tmp_path):
 
     async def _utility(owner, system, user, max_tokens=400):
         if "extract" in system.lower():
-            return '{"found": true, "answer": "The chat found Transition Towns, SEWA and Mondragon."}'
+            return ('{"found": true, "answer": "The chat found Transition Towns, SEWA and Mondragon.", '
+                    '"quote": "Transition Towns, SEWA, Mondragon"}')
         return MSG
 
     monkeypatch.setattr(P, "_decide", _decide)

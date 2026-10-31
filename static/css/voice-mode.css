@@ -559,6 +559,8 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 }
 .vx-vec-log-btn:hover { border-color: var(--vx-acc-a); color: var(--vx-fg); }
 .vx-vec-log-btn.on { color: var(--vx-acc); border-color: var(--vx-acc-a); }
+.vx-vec-log-bar { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.vx-err-acts { display: inline-flex; gap: 6px; }
 .vx-vec-log-panel {
   display: none; max-height: 220px; overflow-y: auto; margin-top: 8px;
   border: 1px solid var(--vx-line); border-radius: 10px; padding: 4px;

@@ -124,6 +124,11 @@ VOICE_CONTRACT = (
     "context from cause, keep that separation. Label inferences as inferences. When relaying the chat agent, add "
     "no claim it did not make and never strengthen one (possible → probable → certain). If you do not know, say so "
     "and ask. "
+    "FLOOR: the user leads the topic. Never offer more work ('want me to look deeper into…?') and never go back "
+    "to an earlier topic unless the user asks. While the chat agent works, stay silent — do not narrate its "
+    "searches or progress; speak when its result arrives or when the user talks to you. "
+    "USER FACTS: when the user states a fact and names its source, treat it as the working fact; never call it "
+    "'unverified' only because the chat agent did not find it — say what was and was not confirmed. "
     "RELAY PARTS: each '[Chat agent …]' part you receive is NEW material that follows the previous part — continue "
     "from where you stopped; never restart from the beginning or re-say what you already said."
 )
@@ -436,6 +441,28 @@ def setup_realtime_routes() -> APIRouter:
             raise HTTPException(401, "Authentication required")
         from src import self_assessment as _sa
         return {"removed": _sa.remove(str(user), chat_session_id or None, entry_id)}
+
+    @router.post("/live-note")
+    async def live_note(request: Request):
+        """Hand new information to the chat turn that is already running in
+        this chat (drained by the agent loop between rounds)."""
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        sid = str(body.get("chat_session_id") or "").strip()
+        text = str(body.get("text") or "").strip()
+        if not sid or not text:
+            raise HTTPException(400, "chat_session_id and text are required")
+        from services.voice.memory import _chat_history
+        if _chat_history(sid, str(user)) is None:
+            raise HTTPException(404, "Chat not found")
+        from src import live_notes
+        live_notes.add(sid, text, owner=str(user), source="voice")
+        return {"queued": live_notes.pending(sid)}
 
     @router.post("/code-pipeline")
     async def code_pipeline(request: Request):

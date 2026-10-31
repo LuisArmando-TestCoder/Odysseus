@@ -23,6 +23,7 @@ What went wrong in that session, and the test that pins each fix:
   8. Streamed batches were re-spoken from the beginning
      → sentence ledger (voice-delta.js) only ever adds new sentences.
   9. The Middleman rewrote answers into "obedient" ones → removed.
+ (A second session, 2026-10-31, is replayed at the bottom of this file.)
  10. A user turn that grew by merging a later fragment came back WHOLE, so
      speech already sent was forged into the next message again
      → only the never-evaluated part of a turn is new speech.
@@ -89,7 +90,8 @@ def pipe(monkeypatch, tmp_path, sa):
         if "self-assessment note" in system:
             return st["lesson"] or "{}"
         if "extract" in system.lower():
-            return '{"found": true, "answer": "Hablamos del peritaje de la caja A340F del Prado 2003."}'
+            return st.get("extract") or ('{"found": true, "answer": "Hablamos del peritaje de la caja A340F.", '
+                                         '"quote": "caso Prado A340F, silicón RTV, lodos"}')
         return st["forge"]
 
     monkeypatch.setattr(P, "_decide", _decide)
@@ -382,3 +384,113 @@ def test_voice_js_uses_the_ledger_and_no_longer_asks_or_replays():
     assert "`${who}: " not in seed and "_deliver.markKnown" in seed      # no replay of chat turns
     narr = js[js.index("function _narrateStream(busy)"):js.index("// ── Live context streaming", js.index("function _narrateStream(busy)"))]
     assert ".slice(_narratedLen)" not in narr and "_deliver.take" in narr
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Second session (2026-10-31, English, "Nogui Acosta" research). What broke:
+#   a. "dig deeper on the award" was "answered from context" with the
+#      restaurant from three turns earlier; "his name likely comes from…"
+#      was an inference the chat never made
+#   b. ALFRED kept talking over "shut up", and narrated search-result titles
+#      ("an article about Schäuble…") and "still checking" every minute
+#   c. the user found the answer (The Banker, FT Group) mid-run; it waited in
+#      the queue ~15 min and the run ended saying no magazine could be found
+#   d. "Want me to look deeper into…?" offers
+#   e. event log / errors could only be copied by hand
+# ════════════════════════════════════════════════════════════════════════════
+
+RESTAURANT_CTX = ("CHAT_AI: The restaurant's founder is named Nogui Acosta and it was opened in 1974 in Tamarindo. "
+                  "It is the family bar-restaurant flagged for debts in the 2019 controversy.")
+
+
+def test_new_request_is_not_answered_with_an_earlier_topic(pipe, monkeypatch):
+    import services.voice.pipeline as P
+    monkeypatch.setattr(P, "chat_context_digest", lambda *a, **k: RESTAURANT_CTX)
+    pipe["decision"] = {"should_send": 0.9, "answerable": 0.9, "intent": "research"}
+    pipe["extract"] = json.dumps({"found": True, "answer": "On the restaurant itself, it was founded in 1974.",
+                                  "quote": "it was opened in 1974 in Tamarindo"})
+    evs = pipe["run"]("I want to dig deeper on the recognition a British organism gave him as a great minister",
+                      voice="nb1")
+    assert not _types(evs, "answer_from_context")
+    assert _types(evs, "forged")                                  # the new request goes to the chat
+
+
+def test_answer_grounding_rules():
+    from services.voice.pipeline import answer_is_grounded
+    q = "Which British magazine named him finance minister of the year?"
+    ctx = "CHAT_AI: The Banker, an FT Group magazine, named Nogui Acosta Finance Minister of the Year 2024."
+    good = "The Banker, an FT Group magazine, named Nogui Acosta Finance Minister of the Year 2024"
+    assert answer_is_grounded(q, "The Banker, from the FT Group.", good, ctx)
+    assert not answer_is_grounded(q, "The Banker.", "a quote that is not in the context at all", ctx)
+    assert not answer_is_grounded(q, "Probably The Banker.", good, ctx)                 # added hedge
+    assert not answer_is_grounded("Who founded the restaurant in Tamarindo?", "The Banker.", good, ctx)  # off-topic
+    assert answer_is_grounded("", "The chat has the award.", good, ctx)                 # "what do we have?"
+
+
+def test_ungrounded_extraction_is_not_spoken(pipe):
+    pipe["decision"] = {"about_conversation": 0.95}
+    pipe["extract"] = json.dumps({"found": True, "answer": "His name likely comes from the family restaurant.",
+                                  "quote": "The restaurant's founder is named Nogui Acosta"})
+    evs = pipe["run"]("What do you find so far about what we are discussing", voice="nb2")
+    assert not _types(evs, "answer_from_context")
+    assert "about-conversation" in _reasons(evs)
+
+
+def test_offer_of_more_work_is_flagged(pipe):
+    evs = pipe["run"]("That's everything for now, sir. Want me to look deeper into the 2019 case?",
+                      speaker="AI", voice="nb3")
+    rq = _types(evs, "repeated_question")
+    assert rq and rq[0]["permission"]
+
+
+def test_live_notes_reach_the_running_turn():
+    from src import live_notes as L
+    L.clear("s-live")
+    L.add("s-live", "I found it: The Banker (FT Group) named him Finance Minister of the Year 2024.", owner="o")
+    L.add("s-live", "   ", owner="o")
+    assert L.pending("s-live") == 1
+    msg = L.as_message(L.drain("s-live"))
+    assert msg["role"] == "user" and "The Banker" in msg["content"]
+    assert "do not report them as unfound" in msg["content"]
+    assert L.drain("s-live") == [] and L.as_message([]) is None
+    loop = (_REPO / "src" / "agent_loop.py").read_text()
+    assert "_ln.drain(session_id)" in loop and "messages.append(_note_msg)" in loop
+
+
+def test_live_note_route_exists():
+    try:
+        from routes.realtime_routes import setup_realtime_routes
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"realtime_routes unavailable: {e}")
+    paths = {r.path for r in setup_realtime_routes().routes}
+    assert "/api/realtime/live-note" in paths and "/api/realtime/lessons" in paths
+
+
+def test_voice_js_floor_control_and_quiet_hold():
+    js = (_REPO / "static" / "js" / "voice.js").read_text()
+    drain = js[js.index("function _drainSay()"):js.index("function _narrateStream(")]
+    assert "_lastUserVoiceAt < _FLOOR_GAP_MS" in drain             # never over the user
+    assert "if (_quiet)" in drain and "FINISHED" in drain           # quiet: results only
+    stall = js[js.index("function _maybeSayStall("):js.index("function _maybeSayStall(") + 400]
+    assert "_quiet" in stall and "45000" in stall
+    assert "_STOP_RE.test(chunk)" in js and "_audioEl.muted = true" in js   # instant local hush
+    assert "if (!_opts.narrate || _quiet)" in js                    # no interim narration by default
+    assert "/api/realtime/live-note" in js                          # mid-run info goes into the run
+    assert "reconnecting…" in js
+
+
+def test_copy_buttons_for_event_log_and_errors():
+    js = (_REPO / "static" / "js" / "voice.js").read_text()
+    assert 'data-act="copy-log"' in js and 'data-act="copy-errors"' in js
+    assert "_copyText(vectors.logText()" in js and "_copyText(_errorsText()" in js
+    vv = (_REPO / "static" / "js" / "voice_vectors.js").read_text()
+    assert "export function logText()" in vv and "v.full || v.label" in vv
+
+
+@pytest.mark.skipif(not _NODE, reason="node not on PATH")
+def test_log_text_exports():
+    out = _node(r"""
+import vectors, { logText } from './static/js/voice_vectors.js';
+console.log(JSON.stringify([logText(), typeof vectors.logText]));
+""")
+    assert out == ["No conversation events yet.", "function"]
