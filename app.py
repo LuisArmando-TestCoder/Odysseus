@@ -166,6 +166,9 @@ if AUTH_ENABLED:
         "/api/auth/integrations/presets",
         "/api/health",
         "/api/version",
+        # Supervisor probe; the handler itself only answers loopback callers.
+        "/api/update/idle",
+        "/api/update/shutdown",
         "/login",
     }
     AUTH_EXEMPT_PREFIXES = ["/static"]
@@ -703,6 +706,10 @@ app.include_router(setup_backup_routes(memory_manager, preset_manager, skills_ma
 
 from routes.font_routes import setup_font_routes
 app.include_router(setup_font_routes())
+
+# Auto-update (status for the UI, admin actions, supervisor idle probe)
+from routes.update_routes import setup_update_routes
+app.include_router(setup_update_routes(research_handler))
 
 
 # MCP (Model Context Protocol)

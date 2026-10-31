@@ -519,3 +519,12 @@
   .frame, .hdr.is-condensed { backdrop-filter: none; background: var(--panel); }
   .atmos { display: none; }
 }
+
+// Grid cells default to min-width:auto, so the long one-line install command
+// would stretch the console past its column; let them shrink (the command
+// scrolls inside its box instead).
+.install__grid > * { min-width: 0; }
+
+// Decorative layers (grid floor, reactor, noise) extend past the viewport on
+// narrow screens; clip them so the page never scrolls sideways.
+html, body { overflow-x: clip; }

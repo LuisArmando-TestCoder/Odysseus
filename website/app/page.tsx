@@ -38,30 +38,39 @@ const CTA_LABEL = "Descargar Odysseus";
 
 type OsKey = "macos" | "windows" | "linux";
 
+// The one-line commands fetch the installer from the tip of main, so they
+// always run the newest version. On macOS/Linux they're the most reliable
+// path: a downloaded .sh opens in a text editor and Gatekeeper blocks
+// unsigned downloads, while a script fetched by curl runs as-is.
+const RAW = "https://raw.githubusercontent.com/LuisArmando-TestCoder/Odysseus/main/installer/bootstrap";
+
 const OS: Record<
   OsKey,
-  { label: string; icon: LucideIcon; file: string; run: string; needs: string }
+  { label: string; icon: LucideIcon; file: string; run: string; alt: string; needs: string }
 > = {
   macos: {
     label: "macOS",
     icon: Apple,
     file: "/install-macos.sh",
-    run: "bash ~/Downloads/install-macos.sh",
-    needs: "macOS 12+ · instala Xcode CLT y Python 3.11 si faltan",
+    run: `/bin/bash -c "$(curl -fsSL ${RAW}/install-macos.sh)"`,
+    alt: "¿Descargaste el archivo? bash ~/Downloads/install-macos.sh",
+    needs: "macOS 12+ · instala Xcode CLT y Python 3.12 si faltan",
   },
   windows: {
     label: "Windows",
     icon: Laptop,
-    file: "/install-windows.ps1",
-    run: "powershell -ExecutionPolicy Bypass -File $HOME\\Downloads\\install-windows.ps1",
-    needs: "Windows 10/11 · instala Git y Python 3.11 con winget",
+    file: "/install-windows.cmd",
+    run: `irm ${RAW}/install-windows.ps1 | iex`,
+    alt: "O doble clic en install-windows.cmd (SmartScreen: Más información → Ejecutar de todas formas)",
+    needs: "Windows 10/11 · instala Git y Python 3.12 con winget",
   },
   linux: {
     label: "Linux",
     icon: Monitor,
     file: "/install-linux.sh",
-    run: "bash ~/Downloads/install-linux.sh",
-    needs: "Debian, Ubuntu, Fedora, Arch · usa tu gestor de paquetes",
+    run: `bash -c "$(curl -fsSL ${RAW}/install-linux.sh)"`,
+    alt: "¿Descargaste el archivo? bash ~/Downloads/install-linux.sh",
+    needs: "Debian, Ubuntu, Fedora, Arch, openSUSE · usa tu gestor de paquetes",
   },
 };
 const OS_ORDER: OsKey[] = ["macos", "windows", "linux"];
@@ -108,8 +117,8 @@ const STEPS = [
 const PROTOCOL: { icon: LucideIcon; title: string; body: string }[] = [
   { icon: Terminal, title: "Un paso", body: "Clona, configura y arranca desde un solo archivo." },
   { icon: KeyRound, title: "Llaves guiadas", body: "Cada variable enlaza a su documentación oficial." },
-  { icon: RefreshCw, title: "Autoactualización", body: "Una tarea diaria ejecuta git pull por ti." },
-  { icon: Link2, title: "Acceso directo", body: "Ícono en tu escritorio en los tres sistemas." },
+  { icon: RefreshCw, title: "Se actualiza solo", body: "Revisa main cada hora, reinicia en un momento tranquilo y vuelve atrás si algo falla." },
+  { icon: Link2, title: "Una app", body: "Abrir y detener en los tres sistemas; repara su entorno y se reinicia si se cae." },
   { icon: ShieldCheck, title: "Secretos 0600", body: "Tu .env nunca se imprime en pantalla." },
   { icon: FileText, title: "Transparente", body: "Modelo de amenazas y hoja de ruta incluidos." },
 ];
@@ -499,6 +508,7 @@ export default function HomePage() {
                       <span>{copied ? "Copiado" : "Copiar"}</span>
                     </button>
                   </div>
+                  <p className="console__needs">{OS[tab].alt}</p>
                   <p className="console__needs">{OS[tab].needs}</p>
                   <p className="sr-only" aria-live="polite">{copied ? "Comando copiado" : ""}</p>
                 </div>

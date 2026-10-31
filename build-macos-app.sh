@@ -120,6 +120,24 @@ open_ui() {
 
 mkdir -p "$INSTALL_DIR/logs"
 
+# Preferred path: the supervisor (installer/launch.py via run.sh) — it repairs
+# the venv, installs updates from main, restarts into them at a quiet moment,
+# rolls back a version that won't start, and opens the UI when ready.
+if [ -f "$INSTALL_DIR/installer/run.sh" ] && [ -f "$INSTALL_DIR/installer/launch.py" ]; then
+  if /usr/bin/curl -s -o /dev/null --max-time 2 "$URL"; then
+    open_ui
+    exit 0
+  fi
+  notify "Starting…"
+  ODYSSEUS_PORT="$PORT" nohup /bin/bash "$INSTALL_DIR/installer/run.sh" --background --no-browser >/dev/null 2>&1 &
+  for i in $(seq 1 180); do
+    /usr/bin/curl -s -o /dev/null --max-time 2 "$URL" && { open_ui; exit 0; }
+    sleep 1
+  done
+  notify "Odysseus is taking a while — open $URL once it finishes starting."
+  exit 0
+fi
+
 # Already running? Just open the UI.
 if /usr/bin/curl -s -o /dev/null --max-time 2 "$URL"; then
   open_ui

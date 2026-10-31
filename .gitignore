@@ -97,3 +97,7 @@ silbido_fft.py
 pure_tone.py
 open_grimes_accelerando.sh
 home.html
+
+# Installer / updater local state
+installer/.install-state.json
+venv.broken-*/

@@ -1,0 +1,75 @@
+name: CI
+
+# The "update-gate" job is what installed copies of Odysseus check before they
+# auto-update to a commit on main (installer/updater.py, CI_GATE_JOB). If it
+# fails, installs stay on the version they have and wait for the next commit.
+# Keep the job name stable.
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update-gate:
+    name: update-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies (same as a fresh install)
+        run: |
+          python -m venv venv
+          venv/bin/python -m pip install --upgrade pip
+          venv/bin/python -m pip install -r requirements.txt
+
+      - name: Byte-compile everything
+        run: venv/bin/python -m compileall -q -x '(^|/)(venv|node_modules|website|\.git)/' .
+
+      - name: First-run setup (like the installer)
+        env:
+          ODYSSEUS_SKIP_RUN_HINT: "1"
+        run: |
+          mkdir -p data logs
+          venv/bin/python setup.py
+
+      - name: Server boots and answers /api/health
+        run: |
+          venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 7860 > logs/ci-server.log 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -fs http://127.0.0.1:7860/api/health >/dev/null; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become healthy"; tail -n 80 logs/ci-server.log; exit 1
+
+      - name: Installer, updater and supervisor tests
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          venv/bin/python -m pytest -q -p no:cacheprovider \
+            tests/test_updater.py \
+            tests/test_launcher_supervisor.py \
+            tests/test_installer_bootstrap.py \
+            tests/test_update_routes.py \
+            tests/test_windows_update_script.py
+
+      - name: Server log on failure
+        if: failure()
+        run: tail -n 200 logs/ci-server.log || true

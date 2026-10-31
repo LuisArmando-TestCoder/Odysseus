@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "sync-installers": "node scripts/sync-installers.js",
+    "prebuild": "node scripts/sync-installers.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

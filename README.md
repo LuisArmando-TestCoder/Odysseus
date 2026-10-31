@@ -56,6 +56,25 @@ Use that for the first login, then change it in **Settings**.
 Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and
 pull request guidelines.
 
+### One-step installer (updates itself)
+
+Installs git + Python if needed, sets everything up, adds shortcuts, and keeps
+Odysseus on the latest `main` on its own: hourly checks, restart at a quiet
+moment, automatic rollback if a new version doesn't start.
+
+```bash
+# macOS
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/LuisArmando-TestCoder/Odysseus/main/installer/bootstrap/install-macos.sh)"
+# Linux
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/LuisArmando-TestCoder/Odysseus/main/installer/bootstrap/install-linux.sh)"
+```
+
+Windows: download and double-click
+[`install-windows.cmd`](installer/bootstrap/install-windows.cmd), or in
+PowerShell `irm https://raw.githubusercontent.com/LuisArmando-TestCoder/Odysseus/main/installer/bootstrap/install-windows.ps1 | iex`.
+
+Details, settings and commands: [docs/auto-update.md](docs/auto-update.md).
+
 ### Docker (recommended)
 ```bash
 git clone https://github.com/pewdiepie-archdaemon/odysseus.git

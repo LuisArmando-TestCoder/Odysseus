@@ -8,8 +8,11 @@ Single entry point that:
   4. runs an interactive credential wizard over installer/credentials.py
   5. writes .env idempotently (0600)
   6. sets up the environment (delegating to existing project scripts)
-  7. registers a daily self-update task (launchd / cron / schtasks)
-  8. starts the server + opens the browser
+  7. marks the copy as a managed install and registers the hourly
+     self-update (launchd / cron / schtasks) — see docs/auto-update.md
+  8. creates shortcuts (and, if wanted, start-at-login)
+  9. starts Odysseus in the background under the supervisor and opens the
+     browser once it answers
 
 Usage:
   python3 install.py                       # interactive
@@ -18,6 +21,8 @@ Usage:
   python3 install.py --no-pyenv            # skip venv/dependency setup
   python3 install.py --no-schedule         # skip daily task registration
   python3 install.py --no-start            # skip server launch
+  python3 install.py --autostart           # start Odysseus at login (asked when interactive)
+  python3 install.py --channel main        # branch to follow (default: origin's default branch)
 """
 
 import argparse
@@ -38,6 +43,7 @@ from credentials import CREDENTIALS, GROUPS, REPO_URL  # noqa: E402
 from env_writer import read_env, write_env  # noqa: E402
 import schedulers  # noqa: E402
 import shortcuts  # noqa: E402
+import updater  # noqa: E402
 
 
 # ── Tiny console helpers (ANSI, disabled on Windows legacy consoles) ────────
@@ -180,38 +186,28 @@ def run_wizard(env_path: Path) -> Dict[str, str]:
 
 # ── Repository bootstrap ────────────────────────────────────────────────────
 
-def _pull_or_clone(repo_dir: Path, repo_url: str) -> bool:
+def _pull_or_clone(repo_dir: Path, repo_url: str, channel: str = "") -> bool:
     heading(f"Repositorio en {repo_dir}")
     if (repo_dir / ".git").exists():
-        _print("  Repositorio existente — actualizando…")
-        r = subprocess.run(
-            ["git", "-C", str(repo_dir), "pull", "--ff-only"],
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode == 0:
-            ok("Repositorio actualizado")
+        _print("  Repositorio existente — actualizando a la última versión…")
+        if updater.install_mode() != "dev":
+            updater.mark_install("managed", **({"channel": channel} if channel else {}))
+        os.environ["ODYSSEUS_UPDATE_QUIET"] = "1"
+        os.environ["ODYSSEUS_SKIP_SCHEDULE"] = "1"   # the schedule is registered below
+        rc = updater.run_update(force=updater.install_mode() != "dev")
+        os.environ.pop("ODYSSEUS_UPDATE_QUIET", None)
+        os.environ.pop("ODYSSEUS_SKIP_SCHEDULE", None)
+        st = updater.load_state()
+        if rc == 0 or st.get("last_result") in ("up_to_date", "updated"):
+            ok(f"Repositorio al día ({updater.head_sha()[:9]}, rama {st.get('branch', '?')})")
             return True
-        warn(f"git pull --ff-only falló: {r.stderr.strip()}")
-        # Safe fallback: stash and retry.
-        subprocess.run(["git", "-C", str(repo_dir), "stash", "push", "-m", "installer"], capture_output=True)
-        r2 = subprocess.run(
-            ["git", "-C", str(repo_dir), "pull", "--ff-only"],
-            capture_output=True,
-            text=True,
-        )
-        if r2.returncode == 0:
-            ok("Repositorio actualizado (cambios locales guardados en stash)")
-            return True
-        fail(f"No se pudo actualizar: {r2.stderr.strip()}")
-        return False
+        warn(f"No se pudo actualizar ({st.get('last_result')}: {st.get('error') or ''}). "
+             "Se continúa con la versión actual.")
+        return True
 
     _print(f"  Clonando {repo_url} …")
-    r = subprocess.run(
-        ["git", "clone", repo_url, str(repo_dir)],
-        capture_output=True,
-        text=True,
-    )
+    args = ["git", "clone"] + (["--branch", channel] if channel else []) + [repo_url, str(repo_dir)]
+    r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode == 0:
         ok("Repositorio clonado")
         return True
@@ -275,13 +271,14 @@ def _setup_environment(repo_dir: Path) -> bool:
 
     pip = venv_dir / ("Scripts/pip.exe" if platform.system() == "Windows" else "bin/pip")
     heading("Instalando dependencias de Python (puede tardar unos minutos)…")
+    subprocess.run([str(venv_py), "-m", "pip", "install", "-q", "--upgrade", "pip"], capture_output=True)
+    # Stream pip's progress so a long first install doesn't look frozen.
     r = subprocess.run(
-        [str(pip), "install", "-r", str(repo_dir / "requirements.txt")],
-        capture_output=True,
-        text=True,
+        [str(venv_py), "-m", "pip", "install", "--disable-pip-version-check",
+         "--progress-bar", "on", "-r", str(repo_dir / "requirements.txt")],
     )
     if r.returncode != 0:
-        fail(f"Fallo al instalar dependencias: {r.stderr.strip()[-500:]}")
+        fail("Fallo al instalar dependencias (ver el error de pip arriba).")
         return False
     ok("Dependencias instaladas")
 
@@ -303,21 +300,56 @@ def _setup_environment(repo_dir: Path) -> bool:
 
 
 def _start_server(repo_dir: Path) -> None:
+    """Start Odysseus under the supervisor, detached from this terminal."""
+    import time as _time
+    import urllib.request as _ur
+
     heading("Arrancando Odysseus…")
-    venv_py = repo_dir / ("Scripts/python.exe" if platform.system() == "Windows" else "bin/python3")
-    port = read_env(repo_dir / ".env").get("APP_PORT", "7860")
-    host = read_env(repo_dir / ".env").get("APP_BIND", "127.0.0.1")
+    env_vals = read_env(repo_dir / ".env")
+    port = env_vals.get("APP_PORT", "7860")
+    host = env_vals.get("APP_BIND", "127.0.0.1")
     url_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     url = f"http://{url_host}:{port}"
 
-    _print(f"{C['bold']}  Abre en tu navegador: {url}{C['reset']}")
-    _print(f"  (pulsa Ctrl+C para detener el servidor)\n")
+    venv_py = updater.venv_python()
+    launcher = repo_dir / "installer" / "launch.py"
+    kwargs = {"cwd": str(repo_dir), "stdin": subprocess.DEVNULL,
+              "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if platform.system() == "Windows":
+        pyw = venv_py.with_name("pythonw.exe")
+        exe = str(pyw if pyw.exists() else venv_py)
+        kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | NEW_PROCESS_GROUP
+    else:
+        exe = str(venv_py)
+        kwargs["start_new_session"] = True
+    subprocess.Popen([exe, str(launcher), "--background"], **kwargs)
 
-    # Launch uvicorn in the foreground so Ctrl+C stops it cleanly.
+    _print("  Esperando a que el servidor responda (la primera vez puede tardar ~1-2 min)…")
+    for _ in range(240):
+        try:
+            with _ur.urlopen(url + "/api/health", timeout=2) as resp:
+                if resp.status == 200:
+                    ok(f"Odysseus está corriendo en {url}")
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        _time.sleep(1)
+    else:
+        warn(f"Aún arrancando. Ábrelo en {url} en un momento (registro: logs/launcher.log).")
+    _print(f"\n{C['bold']}  Listo. Puedes cerrar esta terminal.{C['reset']}")
+    _print("  Abre Odysseus desde su acceso directo; se actualiza solo desde la rama principal.")
+    _print(f"  {C['dim']}Detener: {launcher} --stop   ·   Desinstalar: python installer/uninstall.py{C['reset']}\n")
+
+
+def _ask_yes(question: str, default: bool = True) -> bool:
+    suffix = " [S/n] " if default else " [s/N] "
     try:
-        subprocess.run([str(venv_py), "-m", "uvicorn", "app:app", "--host", host, "--port", port])
-    except KeyboardInterrupt:
-        _print(f"\n{C['yellow']}Servidor detenido.{C['reset']}")
+        ans = input(f"  {question}{suffix}").strip().lower()
+    except EOFError:
+        return default
+    if not ans:
+        return default
+    return ans[0] in ("s", "y")
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -330,6 +362,11 @@ def main() -> int:
     parser.add_argument("--no-schedule", action="store_true", help="skip daily task registration")
     parser.add_argument("--no-start", action="store_true", help="skip server launch")
     parser.add_argument("--no-shortcut", action="store_true", help="skip desktop shortcut creation")
+    parser.add_argument("--autostart", dest="autostart", action="store_true", default=None,
+                        help="start Odysseus at login")
+    parser.add_argument("--no-autostart", dest="autostart", action="store_false",
+                        help="don't start Odysseus at login")
+    parser.add_argument("--channel", default="", help="branch to follow (default: origin's default)")
     args = parser.parse_args()
 
     repo_url = args.repo_url or REPO_URL
@@ -365,7 +402,7 @@ def main() -> int:
             return 1
 
     # 1. Repo.
-    if not _pull_or_clone(repo_dir, repo_url):
+    if not _pull_or_clone(repo_dir, repo_url, args.channel):
         return 1
 
     # 2. Credentials wizard (unless --non-interactive or answers already saved).
@@ -393,20 +430,26 @@ def main() -> int:
         if not _setup_environment(repo_dir):
             return 1
 
-    # 5. Daily self-update task.
+    # 5. Managed install + hourly self-update task.
+    if updater.install_mode() != "dev":
+        updater.mark_install("managed", **({"channel": args.channel} if args.channel else {}))
+    if platform.system() != "Windows":
+        for script in ("self_update.sh", "run.sh"):
+            p = repo_dir / "installer" / script
+            if p.exists():
+                p.chmod(0o755)
     if not args.no_schedule:
-        heading("Registrando auto-actualización diaria")
+        heading("Registrando la auto-actualización (cada hora, desde la rama principal)")
         success, detail = schedulers.register_daily_update(repo_dir)
         if success:
             ok(detail)
+            updater.mark_install(updater.install_mode() if updater.install_mode() != "legacy" else "managed",
+                                 schedule_version=updater.SCHEDULE_VERSION)
         else:
             warn(detail)
-        # Ensure scripts are executable on POSIX.
-        if platform.system() != "Windows":
-            for script in ("self_update.sh",):
-                p = repo_dir / "installer" / script
-                if p.exists():
-                    p.chmod(0o755)
+            warn("Odysseus igual se actualizará al abrirse y cada hora mientras esté abierto.")
+    else:
+        updater.mark_install(updater.install_mode(), schedule="none")
 
     # 6. Desktop shortcut (unless disabled).
     if not args.no_shortcut:
@@ -416,6 +459,17 @@ def main() -> int:
             ok(detail)
         else:
             warn(detail)
+
+    # 6b. Start at login (asked when interactive).
+    want_autostart = args.autostart
+    if want_autostart is None:
+        want_autostart = (not args.non_interactive) and _ask_yes(
+            "¿Arrancar Odysseus en segundo plano al iniciar sesión? (recomendado: así sus tareas "
+            "autónomas y actualizaciones corren solas)", default=True)
+    if want_autostart:
+        ok_auto, detail = schedulers.register_autostart(repo_dir)
+        (ok if ok_auto else warn)(detail)
+        updater.mark_install(updater.install_mode(), autostart=bool(ok_auto))
 
     # 7. First launch.
     if not args.no_start:
