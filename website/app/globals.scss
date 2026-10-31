@@ -1,62 +1,124 @@
-// ─── Odysseus download page — design tokens & global styles ───────────────
-// SCSS only. No Tailwind (per project policy).
+// ─── Odysseus install page — JARVIS / Tron tokens ───────────────────────────
+// SCSS only (no Tailwind, per project policy). Mirrors static/css/jarvis.css
+// so the download page and the app share one light source: arc-reactor cyan
+// on near-black blue, amber reserved for attention.
+
+@font-face { font-family: "JV Inter"; font-weight: 400; font-display: swap; src: url("/fonts/Inter-Regular.woff2") format("woff2"); }
+@font-face { font-family: "JV Inter"; font-weight: 500; font-display: swap; src: url("/fonts/Inter-Medium.woff2") format("woff2"); }
+@font-face { font-family: "JV Inter"; font-weight: 600; font-display: swap; src: url("/fonts/Inter-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "JV Fira Code"; font-weight: 400; font-display: swap; src: url("/fonts/FiraCode-Regular.woff2") format("woff2"); }
+@font-face { font-family: "JV Fira Code"; font-weight: 600; font-display: swap; src: url("/fonts/FiraCode-SemiBold.woff2") format("woff2"); }
+// Metric-matched fallback so the swap doesn't shift the giant wordmark.
+@font-face { font-family: "JV Fallback"; src: local("Arial"); size-adjust: 107%; ascent-override: 90%; descent-override: 22%; }
 
 :root {
-  // Palette
-  --bg: #0e0e10;
-  --panel: #16161a;
-  --panel-2: #1c1c21;
-  --border: #2a2a31;
-  --border-strong: #3a3a44;
-  --fg: #e8e8ea;
-  --fg-dim: #9a9aa3;
-  --accent: #e06c75;
-  --accent-strong: #ff8a92;
-  --brand: #e06c75;
+  color-scheme: dark;
 
-  // Radius + shadow
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 22px;
-  --shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-  --shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.35);
+  // Light sources
+  --cyan: #4fd8ff;
+  --cyan-hi: #b8f3ff;
+  --amber: #ffb347;
+  --ok: #5ef2b3;
+
+  // Surfaces
+  --void: #060b14;
+  --void-2: #03070d;
+  --panel: #0a1424;
+
+  // Text (all ≥ 4.5:1 on --void)
+  --text: #d3e9f5;
+  --heading: #eaf8ff;
+  --dim: #9fb9c9;
+  --faint: #7d98aa;
+
+  // Hairlines + glow budget
+  --ln: color-mix(in srgb, var(--cyan) 42%, transparent);
+  --ln-dim: color-mix(in srgb, var(--cyan) 18%, transparent);
+  --glow: color-mix(in srgb, var(--cyan) 40%, transparent);
+  --glow-soft: color-mix(in srgb, var(--cyan) 12%, transparent);
+
+  // Type
+  --ui: "JV Inter", "Inter", "JV Fallback", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JV Fira Code", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+  --step-hero: clamp(3.4rem, 15vw, 13.5rem);
+  --step-h2: clamp(2rem, 5.4vw, 4.4rem);
+
+  // Motion
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --fast: 160ms;
+  --base: 280ms;
 
   // Layout
-  --max-w: 1080px;
+  --max-w: 1180px;
+  --gutter: clamp(16px, 4vw, 48px);
+  --hdr-h: 68px;
 }
 
-* {
-  box-sizing: border-box;
+@media (prefers-reduced-motion: reduce) {
+  :root { --fast: 0ms; --base: 0ms; }
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
 }
 
-html,
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: var(--hdr-h); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+html, body { margin: 0; padding: 0; }
+
 body {
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 17px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  min-height: 100vh;
   overflow-x: hidden;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+a { color: inherit; text-decoration: none; }
+h1, h2, h3 { color: var(--heading); margin: 0; }
+
+::selection { background: var(--cyan); color: var(--void); }
+
+:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--void), 0 0 0 4px var(--cyan); border-radius: 2px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-// Radial glow backdrop
-.bg-glow {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(60% 50% at 50% 0%, rgba(224, 108, 117, 0.16), transparent 70%),
-    radial-gradient(40% 40% at 80% 100%, rgba(224, 108, 117, 0.08), transparent 70%);
+.skip {
+  position: fixed; top: 10px; left: 10px; z-index: 100;
+  padding: 10px 16px; background: var(--cyan); color: var(--void);
+  font: 600 14px var(--ui); transform: translateY(-160%);
+  transition: transform var(--fast) var(--ease);
+  &:focus { transform: none; }
 }
+
+// Uppercase technical micro-label — the HUD's voice.
+.label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0;
+}
+
+.pulse {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent);
+  animation: pulse 2.4s var(--ease) infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: var(--void-2); }
+::-webkit-scrollbar-thumb { background: var(--ln-dim); border: 3px solid var(--void-2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ln); }
