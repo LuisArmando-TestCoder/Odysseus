@@ -54,7 +54,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 7. ✅ Notes / tasks / calendar
 8. ✅ Documents / editor (+ library documents tab)
 9. ✅ Email (inbox library, reader + pop-out readers, compose fields)
-10. Cookbook / ✅ research / compare
+10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + landing (`static/landing.html`, not yet)
 12. `/cases` Intel Board (`static/cases.html`)
 13. Mobile pass
@@ -245,3 +245,42 @@ and the doc pane's compose fields).
   can pop over the canvas.
 
 **Next:** cookbook (then landing → `/cases` → mobile pass).
+
+### Run 7 — 2026-10-31 · Cookbook
+New section 15 in `static/css/tron.css` (all under `#cookbook-modal`, jarvis
+scope). The window and its `.admin-card` sections already had the frame
+recipe; this pass draws what lives inside them.
+- **Tabs** are mono micro-labels on a hairline; active = cyan-hi text, a rising
+  wash and a glowing bottom bar (Inter fallback spacing on ≤640px).
+- **Section headings** lose the shrink-wrapped underline: mono label led by a
+  lit diamond.
+- **Scan table = data grid:** solid header on a cyan rule, mono tabular
+  numbers, hairline rows, hover/active row = cyan bar + wash, score in
+  cyan-hi. FIT and SPEED columns widened in jarvis (mono is wider — "TOO
+  TIGHT" ran into the logo and "62.0 t/s" into the score).
+- **Fit is a signal scale:** perfect `--jv-ok` → good dim-ok → marginal amber →
+  too tight `--jv-danger`. `_fitColors` paints too_tight with `--red` (cyan in
+  jarvis), so it read as the best option. Rows now carry a `data-fit`
+  attribute (`cookbook-hwfit.js`, no base styles) for the jarvis override.
+- Toolbar keys (RAM/GPU/RESCAN/EDIT/SELECT) are squared mono keys; active =
+  lit outline instead of a solid slab. Detected-hardware chips are a mono
+  readout with a cyan tick. CTX readout tabular cyan-hi.
+- **Model cards** (trending + cached) use the library chamfer; names read as
+  ink (family hue stays on the logo + filter chips), meta mono tabular,
+  "download stalled" is amber. HF links + serve-dir pill are lit mono slots.
+- **Dependencies:** rows on a hairline with a left bar (green-ok when
+  installed); tags mono outlined; Install = chamfered cyan outline;
+  Installed = ok; a **missing system binary is amber** (attention).
+- **Settings:** server entries as lit slots; status LEDs are diamonds — ok
+  green, testing amber, **fail now danger-red** (was `--red` = cyan, so a dead
+  server glowed like a healthy accent). "+ Add" squared cyan outline.
+- Sidebar: the cookbook notification dot is amber, its error variant danger.
+- Touch: 40px tabs/rows, 32px filter chips on coarse pointers; mobile chips
+  fall back to Inter so they stay on one row. More-contrast: solid lines,
+  no glows, full-strength dim text. Reduced motion: LEDs stop pulsing.
+- Verified headless (1440×900, 390×844) — download/scan, expanded model row,
+  serve, dependencies, settings — in jarvis and light; light renders match
+  the pre-change ones apart from ambient animation (voice orb, LED pulse).
+
+**Next:** landing (`static/landing.html`), then `/cases` → mobile pass.
+Settings (area 6) only got the run-3 sweep — worth a dedicated pass later.

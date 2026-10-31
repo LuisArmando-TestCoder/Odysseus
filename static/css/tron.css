@@ -1169,3 +1169,270 @@
   :root[data-odx-theme="jarvis"] :is(.email-card-unread-dot, .email-lib-unread-badge, .email-lib-fab) { box-shadow: none !important; filter: none !important; }
   :root[data-odx-theme="jarvis"] .email-card-done { opacity: 1; }
 }
+
+/* ── 15 · Cookbook: scan / download, serve, dependencies, settings (run 7)
+   Scope: #cookbook-modal. The window and its .admin-card sections already
+   carry the frame recipe (sections 1 + 5); this pass draws what lives inside
+   them and fixes the semantics that broke because jarvis' --red is cyan
+   (a failing server, "too tight" and the error dot all read as primary).
+   ────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #cookbook-modal {
+  --cb-slot: color-mix(in srgb, #000 32%, var(--tr-fill-solid));
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .modal-content { background: transparent !important; }
+
+/* Tabs: mono micro-labels on a hairline, active = cyan + glowing bar */
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tabs { border-bottom: 1px solid var(--tr-ln-dim) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab {
+  font-family: var(--jv-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--tr-dim); border-radius: 0 !important; border-bottom: 0 !important;
+  box-shadow: none; transition: color var(--jv-fast, 120ms) var(--jv-ease, ease-out), box-shadow var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab:hover { color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab.active {
+  color: var(--tr-cyan-hi);
+  background: linear-gradient(0deg, color-mix(in srgb, var(--tr-cyan) 12%, transparent), transparent 80%) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan), 0 6px 12px -8px var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab-error-dot { --notif-glow: var(--jv-danger); background: var(--jv-danger) !important; border-radius: 0 !important; transform: rotate(45deg); }
+
+/* Section headings: a mono label led by a diamond, the rule runs full width */
+:root[data-odx-theme="jarvis"] #cookbook-modal .admin-card h2 {
+  font-size: 11px; letter-spacing: 0.16em; color: var(--tr-cyan-hi);
+  border-bottom: 0 !important; padding-bottom: 0; display: inline-flex; align-items: center; gap: 8px;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .admin-card h2::before {
+  content: ""; width: 6px; height: 6px; flex: none; transform: rotate(45deg);
+  background: var(--tr-cyan); box-shadow: 0 0 calc(8px * var(--jv-glow-k, 1)) var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal #cookbook-download-card-toggle { padding-bottom: 2px !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal #cookbook-download-card-arrow { color: var(--tr-cyan); font-size: 11px !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.memory-desc, .doclib-desc, .cookbook-dep-section-note) { color: var(--tr-dim) !important; opacity: 1 !important; }
+
+/* Squared everywhere inside the window (range thumbs and status LEDs excepted) */
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(button, select, input:not([type="range"]), .hwfit-hw-chip, .cookbook-dep-tag, .memory-cat-chip,
+  .cookbook-modeldir-tag, .cookbook-serve-dir-pill, .hwfit-ctx-control, .hwfit-badge, .hwfit-row, .doclib-card, .cookbook-dep-row,
+  .cookbook-server-entry, .hwfit-action-panel, .cookbook-cmd-preview, .cookbook-output-pre, .cookbook-output-wrap, .cookbook-gpu-popup, .hwfit-manual-panel) {
+  border-radius: 0 !important;
+}
+
+/* Toolbar keys (RAM / GPU / RESCAN / EDIT / SELECT): squared, active = lit outline, not a slab */
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.hwfit-gpu-btn, .memory-toolbar-btn, .hwfit-hw-manual-btn) {
+  font-family: var(--jv-mono); letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px;
+  color: var(--tr-dim) !important; border-color: var(--tr-ln-dim) !important; background: var(--cb-slot) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.hwfit-gpu-btn, .memory-toolbar-btn, .hwfit-hw-manual-btn):hover {
+  color: var(--tr-cyan-hi) !important; border-color: var(--tr-cyan) !important; box-shadow: inset 0 -2px 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.hwfit-gpu-btn.active, #hwfit-cache-select.active) {
+  color: var(--tr-cyan-hi) !important; border-color: var(--tr-cyan) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 16%, var(--cb-slot)) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan), 0 0 calc(12px * var(--jv-glow-k, 1)) -6px var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-ctx-control { background: var(--cb-slot) !important; border-color: var(--tr-ln-dim) !important; font-family: var(--jv-mono); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-ctx-control output { color: var(--tr-cyan-hi); font-variant-numeric: tabular-nums; }
+:root[data-odx-theme="jarvis"] #cookbook-modal input[type="range"] { accent-color: var(--tr-cyan); }
+
+/* Detected hardware: a readout strip of mono chips with a cyan tick */
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-hw-chip {
+  font-family: var(--jv-mono); font-size: 10px; letter-spacing: 0.02em; opacity: 1;
+  color: var(--tr-ink); background: color-mix(in srgb, var(--tr-cyan) 6%, transparent) !important;
+  box-shadow: inset 2px 0 0 var(--tr-ln); height: 20px;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-hw-chip.hwfit-hw-chip-off { color: var(--tr-dim); box-shadow: inset 2px 0 0 var(--tr-ln-dim); opacity: .6; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-hw-chip-x { color: var(--tr-dim) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-hw-chip-x:hover { color: var(--jv-danger) !important; }
+
+/* Scan table: a data grid in hairlines, mono tabular numbers */
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-header {
+  background: var(--tr-fill-solid) !important; border-bottom: 1px solid var(--tr-ln) !important;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--tr-cyan) 12%, transparent);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-header .hwfit-col { font-family: var(--jv-mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--tr-dim); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-header .hwfit-sort-active { color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) {
+  border-bottom: 1px solid color-mix(in srgb, var(--tr-cyan) 8%, transparent);
+  transition: background var(--jv-fast, 120ms) var(--jv-ease, ease-out), box-shadow var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header):hover,
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row.hwfit-row-active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 12%, transparent), transparent 70%) !important;
+  box-shadow: inset 2px 0 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) .hwfit-col:not(.hwfit-name):not(.hwfit-fit) {
+  font-family: var(--jv-mono); font-variant-numeric: tabular-nums; font-size: 10px; color: var(--tr-dim);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) .hwfit-c-score { color: var(--tr-cyan-hi); font-size: 11px; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) .hwfit-name { color: var(--tr-ink); font-family: var(--jv-ui); font-size: 12px; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) .hwfit-fit { font-family: var(--jv-mono); font-size: 9.5px; letter-spacing: 0.08em; }
+/* mono is wider than the base Inter columns: give FIT / SPEED room so labels never touch */
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row .hwfit-fit { width: 64px; overflow: hidden; text-overflow: ellipsis; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row .hwfit-c-speed { width: 54px; }
+/* Fit is a signal scale, not decoration: ok → dim ok → amber → danger.
+   (_fitColors paints too_tight with --red, which is cyan in jarvis.) */
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row[data-fit="perfect"] .hwfit-fit { color: var(--jv-ok) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row[data-fit="good"] .hwfit-fit { color: color-mix(in srgb, var(--jv-ok) 62%, var(--tr-ink)) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row[data-fit="marginal"] .hwfit-fit { color: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:is([data-fit="too_tight"], [data-fit="no_fit"]) .hwfit-fit { color: var(--jv-danger) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-badge { font-family: var(--jv-mono); letter-spacing: 0.06em; border: 1px solid var(--tr-ln); background: color-mix(in srgb, var(--tr-cyan) 10%, transparent) !important; color: var(--tr-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-dl-dot { color: var(--jv-ok) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-action-panel {
+  border: 1px solid var(--tr-ln-dim) !important; border-left: 2px solid var(--tr-cyan) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 7%, var(--cb-slot)), var(--cb-slot) 60%) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-cmd-preview, .cookbook-output-pre) {
+  background: var(--cb-slot) !important; border: 1px solid var(--tr-ln-dim) !important; box-shadow: inset 2px 0 0 var(--tr-cyan);
+  font-family: var(--jv-mono);
+}
+
+/* Cards (trending models, cached models): drawn with the library chamfer */
+:root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card {
+  --c: 8px; --ln: var(--tr-ln-dim); --hi: var(--tr-ln); --fill: color-mix(in srgb, var(--tr-cyan) 3%, var(--tr-fill-solid));
+  --fill-top: color-mix(in srgb, var(--tr-cyan) 7%, var(--fill));
+  position: relative; isolation: isolate;
+  background: transparent !important; border-color: transparent !important; box-shadow: none !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border: 1px solid transparent;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  background:
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(180deg, var(--fill-top), var(--fill) 60%) padding-box,
+    linear-gradient(var(--ln), var(--ln)) border-box;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card:hover { --ln: var(--tr-ln); --hi: var(--tr-cyan-hi); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card:is(.selected, :has(.serve-select-cb.selected)) { --ln: var(--tr-cyan); }
+/* Family hue lives on the logo; the name reads as plain ink */
+:root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card .memory-item-title { color: var(--tr-ink) !important; font-family: var(--jv-ui); font-size: 12.5px; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card .memory-item-meta { font-family: var(--jv-mono); font-size: 10px !important; letter-spacing: 0.02em; color: var(--tr-dim); opacity: 1 !important; font-variant-numeric: tabular-nums; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dl-status { color: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-hf-link {
+  font-family: var(--jv-mono); letter-spacing: 0.06em; color: var(--tr-dim) !important;
+  border: 1px solid var(--tr-ln-dim) !important; background: transparent !important; border-radius: 0 !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-hf-link:hover { color: var(--tr-cyan-hi) !important; border-color: var(--tr-cyan) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .serve-select-cb { border-radius: 0 !important; transform: rotate(45deg) scale(.85); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .serve-select-cb.selected { background: var(--tr-cyan) !important; }
+
+/* Filter chips (serve tags): mono, active = lit underline */
+:root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip {
+  font-family: var(--jv-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--tr-dim) !important; border-color: var(--tr-ln-dim) !important; background: transparent !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip:hover { color: var(--tr-ink) !important; border-color: var(--tr-ln) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip.active {
+  color: var(--tr-cyan-hi) !important; border-color: var(--tr-cyan) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important; box-shadow: inset 0 -2px 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-serve-dir-pill, .cookbook-modeldir-tag) {
+  font-family: var(--jv-mono); color: var(--tr-ink); background: var(--cb-slot) !important;
+  border: 1px solid var(--tr-ln-dim) !important; box-shadow: inset 2px 0 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-serve-dir-edit { opacity: 1 !important; color: var(--tr-dim) !important; font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.08em; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-serve-dir-edit:hover { color: var(--tr-cyan-hi) !important; }
+
+/* Dependencies: rows on a hairline, status keys speak in signal colours */
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-section-title {
+  font-family: var(--jv-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tr-cyan-hi);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-row {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tr-cyan) 4%, var(--cb-slot)), var(--cb-slot)) !important;
+  border: 1px solid var(--tr-ln-dim) !important; box-shadow: inset 2px 0 0 var(--tr-ln-dim);
+  transition: box-shadow var(--jv-fast, 120ms) var(--jv-ease, ease-out), border-color var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-row:hover { border-color: var(--tr-ln) !important; box-shadow: inset 2px 0 0 var(--tr-cyan); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-row:has(.cookbook-dep-installed) { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--jv-ok) 70%, transparent); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-row .memory-item-title { font-family: var(--jv-mono); font-size: 12px; color: var(--tr-ink); letter-spacing: 0.02em; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-row .memory-item-meta { color: var(--tr-dim); opacity: 1 !important; font-size: 11px !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-tag { font-family: var(--jv-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-dep-cat, .cookbook-dep-target) {
+  background: transparent !important; color: var(--tr-dim) !important; border: 1px solid var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-install {
+  color: var(--tr-cyan-hi) !important; border: 1px solid var(--tr-cyan) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 14%, transparent) !important;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: background var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-install:hover { opacity: 1; background: color-mix(in srgb, var(--tr-cyan) 26%, transparent) !important; color: #fff !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-dep-installed, .cookbook-dep-installed-btn) {
+  color: var(--jv-ok) !important; background: color-mix(in srgb, var(--jv-ok) 9%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--jv-ok) 45%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-installed-btn .cookbook-dep-caret { border-left-color: color-mix(in srgb, var(--jv-ok) 40%, transparent) !important; }
+/* Missing system binary = attention */
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-dep-na {
+  color: var(--jv-amber) !important; background: color-mix(in srgb, var(--jv-amber) 8%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--jv-amber) 45%, transparent) !important;
+}
+
+/* Settings: server entries are lit slots; LEDs are diamonds in signal colours */
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-server-entry {
+  background: var(--cb-slot) !important; border: 1px solid var(--tr-ln-dim) !important; border-left: 2px solid var(--tr-ln) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-server-title { font-family: var(--jv-mono); letter-spacing: 0.06em; color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-modeldirs > span:first-child { font-family: var(--jv-mono); font-size: 10.5px !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-modeldirs > span:first-child > span { font-family: var(--jv-ui); text-transform: none; letter-spacing: 0; color: var(--tr-dim); opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-panel-model { font-family: var(--jv-mono); color: var(--tr-cyan-hi); letter-spacing: 0.02em; }
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.hwfit-panel-badge, .hwfit-panel-hf-link) {
+  border-radius: 0 !important; font-family: var(--jv-mono); letter-spacing: 0.06em;
+  background: transparent !important; color: var(--tr-cyan-hi) !important; border: 1px solid var(--tr-ln) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-panel-note { color: var(--jv-amber) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-status { border-radius: 0 !important; transform: rotate(45deg); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-status:hover { transform: rotate(45deg) scale(1.3); }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-status.ok {
+  background: var(--jv-ok) !important;
+  box-shadow: 0 0 calc(10px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--jv-ok) 60%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-status.testing { background: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-status.fail {
+  background: var(--jv-danger) !important;
+  box-shadow: 0 0 calc(10px * var(--jv-glow-k, 1)) color-mix(in srgb, var(--jv-danger) 60%, transparent) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-default { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px; }
+:root[data-odx-theme="jarvis"] #cookbook-modal button.cal-add-btn.cal-add-btn-text {
+  color: var(--tr-cyan-hi) !important; border: 1px solid var(--tr-cyan) !important;
+  background: color-mix(in srgb, var(--tr-cyan) 14%, transparent) !important;
+  box-shadow: inset 0 -2px 0 var(--tr-cyan);
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cal-add-label { font-family: var(--jv-mono); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; }
+:root[data-odx-theme="jarvis"] #cookbook-modal button.cal-add-btn.cal-add-btn-text:hover { background: color-mix(in srgb, var(--tr-cyan) 26%, transparent) !important; color: #fff !important; }
+:root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-btn, .cookbook-dl-btn) { font-family: var(--jv-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-run-btn {
+  background: color-mix(in srgb, var(--tr-cyan) 16%, transparent) !important; color: var(--tr-cyan-hi) !important; border: 1px solid var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-stop-btn { color: var(--jv-danger) !important; border-color: color-mix(in srgb, var(--jv-danger) 50%, transparent) !important; }
+
+/* Sidebar entry: notification dot is attention (amber), an error is danger */
+:root[data-odx-theme="jarvis"] .cookbook-notif-dot { --notif-glow: var(--jv-amber); background: var(--jv-amber) !important; }
+:root[data-odx-theme="jarvis"] .cookbook-notif-dot.cookbook-notif-error { --notif-glow: var(--jv-danger); background: var(--jv-danger) !important; }
+
+@media (max-width: 640px) {
+  /* Mono is wider than Inter — keep the tab strip on one row */
+  :root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab { letter-spacing: 0.06em; padding-inline: 10px; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) .hwfit-name { font-size: 11.5px; }
+  /* narrow table: tighter FIT / PARAM so the model name keeps its room */
+  :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row .hwfit-fit { width: 52px; letter-spacing: 0 !important; font-size: 9px !important; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row .hwfit-c-params { width: 34px; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-header .hwfit-col { letter-spacing: 0.03em; }
+  /* filter chips fall back to Inter (mono overflowed the row, as in run 4) */
+  :root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip { font-family: var(--jv-ui); text-transform: none; letter-spacing: 0; padding: 0 7px; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row .hwfit-c-vram { width: 36px; }
+}
+@media (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab { min-height: 40px; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip { min-height: 32px; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) { min-height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-srv-status { animation: none !important; }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] #cookbook-modal .doclib-card { --ln: var(--tr-cyan); }
+  :root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-dep-row, .cookbook-server-entry, .hwfit-hw-chip) { border-color: var(--tr-cyan) !important; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-tab.active, .hwfit-gpu-btn.active, .cookbook-srv-status, .admin-card h2::before) { box-shadow: none !important; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-tab, .memory-desc, .doclib-desc, .doclib-card .memory-item-meta) { color: var(--tr-ink) !important; }
+}
