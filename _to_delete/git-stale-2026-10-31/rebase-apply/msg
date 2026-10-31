@@ -1,0 +1,8 @@
+New static/css/landing-jarvis.css scoped to data-odx-theme="jarvis" (set on
+landing.html's <html>; without it the page renders exactly as before).
+Re-points the page tokens to the Jarvis palette, draws buttons/cards/terminal/
+previews with the chamfered light frame, and fixes the shrink-wrapped .wrap
+that collapsed the preview strip to 0px on phones.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015k7oH8e4S4wj6VZFBJcBAC
