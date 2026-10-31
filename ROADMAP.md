@@ -81,8 +81,12 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   the graph with jump-to-case buttons and a "Shared with other cases" row;
   recording a selector another case already holds adds a `Cross-case:` note
   to the agent's tool result.
-- Next: one-click "Drive with goal" from a cold-case notification; surface
-  new cross-case hits in the daily brief.
+- **New cross-case links in the daily brief** (`CaseStore.recent_overlaps`,
+  `format_recent_overlaps`): selectors that became shared between your cases
+  in the last 24h are listed as `value — Case A ↔ Case B` (closed-only links
+  and old links re-mentioned are skipped).
+- Next: one-click "Drive with goal" from a cold-case notification; count new
+  cross-case links in the Intel Board badge.
 
 ## Jarvis UI (in progress)
 

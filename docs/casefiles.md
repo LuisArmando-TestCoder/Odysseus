@@ -47,6 +47,13 @@ the other cases by how many selectors they share. The agent sees the same
 signal: `add_entity` / `add_finding` append a `Cross-case:` note when a newly
 recorded selector already exists elsewhere, and `op=overlap` lists it all.
 
+New links are also pushed to you: `CaseStore.recent_overlaps(owner, since)`
+finds selectors that *became* shared since a time (a link forms when the
+second case records the selector, so re-mentioning an old shared selector is
+not news; links where every case is closed are skipped), and the daily brief
+lists the last 24h under **New cross-case links** (`value — Case A ↔ Case B`,
+values and titles flattened and capped).
+
 ### Drive a case with a goal (`src/case_goal.py`)
 
 A case can be **bound to the owner's goal** so the goal works it on its own:
@@ -92,7 +99,8 @@ minutes) re-checks due watches and delivers changes as notifications. It is a
 silent no-op when nothing is watched or nothing changed.
 
 The **Daily brief** now includes open cases, one suggested next move per case,
-watchlist health, and **cases going cold**.
+watchlist health, **cases going cold**, and **new cross-case links** from
+the last 24 hours.
 
 ### Cold-case nudges
 

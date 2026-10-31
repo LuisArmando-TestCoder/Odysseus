@@ -1320,6 +1320,14 @@ def _intel_brief_lines(owner: str) -> list:
     except Exception:
         logger.debug("daily_brief: stale case nudges failed", exc_info=True)
     try:
+        from src.casefiles import format_recent_overlaps, get_case_store
+        links = format_recent_overlaps(
+            get_case_store().recent_overlaps(owner, since=time.time() - 86400, limit=5))
+        if links:
+            lines += ["", links]
+    except Exception:
+        logger.debug("daily_brief: cross-case links failed", exc_info=True)
+    try:
         from src.watchlist import get_watch_store
         watches = get_watch_store().list(owner)
         if watches:

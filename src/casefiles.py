@@ -737,6 +737,55 @@ class CaseStore:
         return {"case_id": case["id"], "entities": per_entity,
                 "cases": ranked[:max(1, int(limit or 20))], "shared_entities": len(per_entity)}
 
+    def recent_overlaps(self, owner, since: float, limit: int = 8) -> List[Dict[str, Any]]:
+        """Cross-case links that *formed* since ``since`` (epoch seconds).
+
+        A selector shared by several of the owner's cases became a link when
+        the second case recorded it, so the link time is the second-earliest
+        ``first_seen`` across those cases. Links where every case is closed are
+        skipped — nobody is working them. Feeds the daily brief so a new
+        "this selector also appears in case X" hit is surfaced without
+        opening each case.
+
+        Returns ``[{"value", "type", "formed_at", "cases": [{case_id, title,
+        status}]}]``, newest first.
+        """
+        groups: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
+        for meta in self.list_cases(owner, status=None):
+            try:
+                case = self._read(owner, meta["id"])
+            except (KeyError, OSError, ValueError):
+                continue
+            for e in (case.get("entities") or {}).values():
+                seen_at = float(e.get("first_seen") or 0.0)
+                for k in self._entity_keys(e):
+                    per_case = groups.setdefault(k, {})
+                    prev = per_case.get(case["id"])
+                    if prev is None or seen_at < prev["seen_at"]:
+                        per_case[case["id"]] = {
+                            "case_id": case["id"], "title": case.get("title", ""),
+                            "status": case.get("status", "open"),
+                            "value": e.get("value", ""), "seen_at": seen_at}
+        hits: List[Dict[str, Any]] = []
+        claimed: set = set()  # one row per (case set, value) even with alias keys
+        for (etype, _key), per_case in groups.items():
+            if len(per_case) < 2:
+                continue
+            refs = sorted(per_case.values(), key=lambda r: r["seen_at"])
+            formed = refs[1]["seen_at"]
+            if formed < since or not any(r["status"] == "open" for r in refs):
+                continue
+            ident = (tuple(sorted(r["case_id"] for r in refs)), refs[0]["value"].lower())
+            if ident in claimed:
+                continue
+            claimed.add(ident)
+            hits.append({"value": refs[-1]["value"] or refs[0]["value"], "type": etype,
+                         "formed_at": formed,
+                         "cases": [{"case_id": r["case_id"], "title": r["title"],
+                                    "status": r["status"]} for r in refs]})
+        hits.sort(key=lambda h: -h["formed_at"])
+        return hits[:max(1, int(limit or 8))]
+
     def cases_with_entity(self, owner, value: str, etype: Optional[str] = None,
                           exclude_case: Optional[str] = None) -> List[Dict[str, Any]]:
         """Other cases that already hold ``value`` (canonicalized like dedupe)."""
@@ -845,6 +894,30 @@ class CaseStore:
             out.append(f"- {c['title']} ({c['entities']} entities, {c['findings']} findings, "
                        f"{c['open_steps']} open steps)")
         return "\n".join(out)
+
+
+def _brief_clean(text: Any, limit: int = 80) -> str:
+    s = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(text or "")).split())
+    return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
+def format_recent_overlaps(hits: List[Dict[str, Any]],
+                           header: str = "New cross-case links (24h):") -> str:
+    """Brief/notification text for :meth:`CaseStore.recent_overlaps`.
+
+    Values and titles are user/web data, so they are flattened to one line
+    and capped before they reach a notification.
+    """
+    if not hits:
+        return ""
+    out = [header]
+    for h in hits:
+        titles = [_brief_clean(c["title"], 60) + ("" if c["status"] == "open" else " (closed)")
+                  for c in h["cases"][:4]]
+        more = len(h["cases"]) - 4
+        out.append(f"  · {_brief_clean(h['value'])} — " + " ↔ ".join(titles)
+                   + (f" +{more} more" if more > 0 else ""))
+    return "\n".join(out)
 
 
 _stores: Dict[str, CaseStore] = {}
