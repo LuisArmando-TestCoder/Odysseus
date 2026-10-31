@@ -41,6 +41,12 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
 - Goal rounds and autopilot turns stream visibly: self-messages, live thinking,
   commands and their output; `run_javascript` works inside them. See
   `docs/long-horizon.md`.
+- **Goal Check-in** (`src/goal_watch.py`, scheduled task `check_goals`,
+  hourly): notifies when your goal blocked (with the reason and how to
+  unblock it), finished, stalled with no round for 6h, or sat paused for 2+
+  days — once per spell. The daily brief shows the goal's state too.
+- Next: one-tap Resume from the notification; surface the goal state in the
+  Intel Board badge.
 
 ## Intel Board (shipped)
 

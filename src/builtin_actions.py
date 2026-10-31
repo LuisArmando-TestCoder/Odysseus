@@ -1283,6 +1283,15 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
         else:
             plain.append("Todos: none active.")
 
+        # ----- Goal: what the running/blocked goal needs -----
+        try:
+            from src.goal_watch import goal_status_line
+            gl = goal_status_line(owner)
+            if gl:
+                plain += ["", gl]
+        except Exception:
+            logger.debug("daily_brief: goal status failed", exc_info=True)
+
         # ----- Intel: open cases + watchlist health -----
         plain.extend(_intel_brief_lines(owner))
 
@@ -1386,6 +1395,22 @@ async def action_check_stale_cases(owner: str, **kwargs) -> Tuple[str, bool]:
     if not due:
         raise TaskNoop("no cases going cold")
     return format_nudges(due, header=f"{len(due)} open case(s) going cold:"), True
+
+
+async def action_check_goals(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Notify when the owner's goal needs them: it blocked (with why and how
+    to unblock), finished, stalled (armed but no round for hours) or sat
+    paused for days. Each state is reported once per spell; nothing new →
+    TaskNoop (silent)."""
+    try:
+        from src.goal_watch import due_goal_alerts, format_goal_alerts
+        due = await asyncio.to_thread(due_goal_alerts, owner)
+    except Exception as e:
+        logger.exception("check_goals action failed")
+        return str(e), False
+    if not due:
+        raise TaskNoop("goal needs nothing")
+    return format_goal_alerts(due), True
 
 
 async def action_test_skills(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -2308,6 +2333,7 @@ BUILTIN_ACTIONS = {
     "check_email_urgency": action_check_email_urgency,
     "check_watchlist": action_check_watchlist,
     "check_stale_cases": action_check_stale_cases,
+    "check_goals": action_check_goals,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -2330,5 +2356,6 @@ BUILTIN_ACTION_INFO = {
     "audit_skills": "Audit unaudited skills after enough new skills are added: test, narrow metadata, self-edit/retry, optional teacher rewrite, tag duplicates/trivial skills, and publish/draft using the auto-approve threshold.",
     "check_watchlist": "Re-check watched pages (Intel Watchlist) for changes; file changes into the linked case and notify. Keyword watches only alert when a keyword appears in new text.",
     "check_stale_cases": "Daily: point out open Case Files with no activity for 3+ days and no goal driving them, with one concrete next move each (drive with a goal, or a suggested pivot). Each case is nudged once per quiet spell.",
+    "check_goals": "Hourly: tell you when your goal needs you — it blocked (with the reason and how to unblock it), finished, stalled with no round for 6h, or sat paused for 2+ days. Each state is reported once.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
 }

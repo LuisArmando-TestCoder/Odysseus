@@ -47,4 +47,23 @@ idle. Stop pauses the goal; finish_goal ends it.
 - **Steering:** each round sees the chat's latest user messages and the tail
   of its previous visible output, not just the checkpoint.
 
-Tests: `tests/test_long_horizon.py`.
+## When you're away: Goal Check-in
+
+A goal that stops on its own used to be visible only on the sidebar card.
+The built-in scheduled task **Goal Check-in** (`check_goals`, hourly at :17,
+`src/goal_watch.py`) notifies you when your goal needs you:
+
+| State | When | Suggested next move |
+|---|---|---|
+| blocked | the goal stopped itself | round cap → raise the limit / narrow it; 3 failed rounds → check the provider; model blocker → answer it in the chat; then Resume |
+| complete | the goal finished | the result is in its chat |
+| stalled | active + armed, nothing running, no round for 6h | the chat may be gone or the model failing — Resume or pause |
+| paused | paused for 2+ days | resume it or mark it done |
+
+Each state is reported once per spell (a goal that is resumed and blocks
+again is reported again); state lives in `data/goals/.<owner>.goal_alerts.json`.
+The daily brief carries the same line (or `Goal: "<objective>" — active,
+4/20 rounds.` while it runs). Objective and reason text are cleaned and
+capped before they reach a notification.
+
+Tests: `tests/test_long_horizon.py`, `tests/test_goal_watch.py`.
