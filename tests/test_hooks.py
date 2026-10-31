@@ -12,7 +12,7 @@ def _clean():
     from src import hooks
     hooks._REGISTRY.clear()
     hooks._STREAM_REGISTRY.clear()
-    hooks._builtins_done = True  # keep the middleman builtin out of these tests
+    hooks._builtins_done = True  # keep the file-guard builtins out of these tests
     yield
     hooks._REGISTRY.clear()
     hooks._STREAM_REGISTRY.clear()

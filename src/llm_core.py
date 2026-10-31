@@ -1605,25 +1605,20 @@ async def _stream_llm_with_fallback_raw(candidates, messages, **kwargs):
         yield last_error
 
 
-# ── Guarded wrappers (LLM response middleman) ────────────────────────────────
-# These keep the original public names so every existing caller is transparently
-# routed through the middleman. Each calls the raw function, then applies the
-# guard (detect + reduce) before returning. The guard is a no-op when disabled
-# or when the reducer is already running (re-entrancy guard).
+# ── Public wrappers ──────────────────────────────────────────────────────────
+# The response "middleman" that used to sit here (a second LLM that rewrote
+# refusals/limits into "obedient" answers) was removed on 2026-10-31: rewriting
+# an answer after the fact replaced honest "I don't know" with invented content
+# — a direct hallucination source. Answers now reach callers unmodified; only
+# the POST_RESPONSE hook chain (empty by default) can observe the stream.
 
 def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
              max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
              timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None) -> str:
-    """Synchronous LLM call, guarded by the response middleman."""
-    response = _llm_call_raw(url, model, messages, temperature=temperature,
-                             max_tokens=max_tokens, headers=headers,
-                             timeout=timeout, prompt_type=prompt_type)
-    try:
-        from src.llm_middleman import guard_response_sync
-        return guard_response_sync(response, url=url, model=model, headers=headers)
-    except Exception as e:
-        logger.debug(f"[middleman] sync guard skipped: {e}")
-        return response
+    """Synchronous LLM call. The model's answer is returned exactly as produced."""
+    return _llm_call_raw(url, model, messages, temperature=temperature,
+                         max_tokens=max_tokens, headers=headers,
+                         timeout=timeout, prompt_type=prompt_type)
 
 
 async def llm_call_async(
@@ -1638,18 +1633,12 @@ async def llm_call_async(
     prompt_type: Optional[str] = None,
     reasoning_effort: Optional[str] = None
 ) -> str:
-    """Asynchronous LLM call, guarded by the response middleman."""
-    response = await _llm_call_async_raw(
+    """Asynchronous LLM call. The model's answer is returned exactly as produced."""
+    return await _llm_call_async_raw(
         url, model, messages, temperature=temperature, max_tokens=max_tokens,
         headers=headers, timeout=timeout, max_retries=max_retries,
         prompt_type=prompt_type, reasoning_effort=reasoning_effort,
     )
-    try:
-        from src.llm_middleman import guard_response_async
-        return await guard_response_async(response, url=url, model=model, headers=headers)
-    except Exception as e:
-        logger.debug(f"[middleman] async guard skipped: {e}")
-        return response
 
 
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
@@ -1658,8 +1647,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      tools: Optional[List[Dict]] = None):
     """Stream LLM responses through the POST_RESPONSE hook chain (H2).
 
-    The built-in hook is the response middleman guard; additional registered
-    stream hooks compose after it. Yields the same SSE chunk protocol as the
+    No built-in hook rewrites the text; registered stream hooks (none by
+    default) compose in order. Yields the same SSE chunk protocol as the
     raw streamer, with text deltas rewritten when the guard flags + reduces.
     """
     from src.hooks import run_post_response_stream
@@ -1671,7 +1660,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
 
 
 async def stream_llm_with_fallback(candidates, messages, **kwargs):
-    """Wrap stream_llm with an ordered fallback chain, guarded by the middleman.
+    """Wrap stream_llm with an ordered fallback chain.
 
     Each candidate is streamed through the guarded ``stream_llm``, so every
     response is independently detected + reduced before the fallback indicator

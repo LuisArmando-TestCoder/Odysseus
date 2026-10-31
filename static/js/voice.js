@@ -21,6 +21,11 @@
 import * as vectors from './voice_vectors.js';
 import streamRouter from './streamRouter.js';
 import wakeLock from './wakeLock.js';
+import { createLedger } from './voice-delta.js';
+
+// Every sentence delivered to GPT-Live, spoken or silent (see voice-delta.js):
+// later batches only add what was never delivered.
+const _deliver = createLedger();
 
 const BANDS = 64;
 const STATE_COLORS = {
@@ -82,7 +87,7 @@ let _lastAudioAt = 0;        // last frame GPT-Live audio was audible (speech-qu
 // speak each new chunk aloud (commentary) so the voice never waits for the
 // whole run to finish. Each batch tells GPT-Live whether we're still mid-run
 // or finished, so it can keep narrating discoveries or give the final summary.
-let _narratedLen = 0;        // watermark: chars of the streaming AI message already narrated
+let _narratedLen = 0;        // chars of complete, not-yet-said sentences in the streaming bubble
 let _lastNarrateAt = 0;      // last commentary timestamp (throttle)
 let _narrateActive = false;  // we are narrating a run in progress
 let _narrateStallAt = 0;     // when the text last grew (stall detection)
@@ -1256,14 +1261,33 @@ function _onPipeEvent(ev) {
       }
       break;
     case 'needs_clarification':
-      // The guard couldn't tell whether the message was directed at the chat.
-      // Ask the user instead of silently dropping the request.
-      // One line, one question. A plain "yes" next sends exactly this message.
-      _systemLine(`Send this to the chat? Say yes to confirm — “${_excerpt(ev.message, 140)}”`, 'warn');
-      if (ev.message && _active && _injectOK) {
-        _sayQueue.push('[Confirmation needed] Ask the user, in one short sentence and in their language, whether '
-          + 'you should send this request to the chat. Summarise it in a few words — do not read it out in full: '
-          + _excerpt(ev.message, 400));
+      // Retired (2026-10-31): requests are sent without a "shall I send it?"
+      // round-trip. Older servers may still emit it — never ask the user.
+      break;
+    case 'verbatim':
+      _systemLine(ev.reason && ev.reason.startsWith('added-')
+        ? 'Sent your own words — the rewrite added something you did not ask for.'
+        : 'Sent your own words — the rewrite was not faithful enough.', 'info');
+      break;
+    case 'repeated_question':
+      // ALFRED asked this before (or asked permission to use the chat): stop it.
+      if (_active && _injectOK) {
+        _brief(ev.permission
+          ? '[Correction] Never ask the user for permission to consult the chat — requests reach the chat ' +
+            'automatically. Do not ask that again; continue with the substance.'
+          : `[Correction] You already asked: "${_excerpt(ev.q, 200)}" (${ev.times}×). Do not ask it again. ` +
+            (ev.answers ? `The user's words since then: "${_excerpt(ev.answers, 500)}". Use them. ` : '') +
+            'If the user asked for your conclusion, give it now with what you have.', false);
+      }
+      if (!ev.permission) _systemLine(`Repeated question caught (${ev.times}×) — told ${_assistantName} not to ask again.`, 'warn');
+      break;
+    case 'lesson':
+      if (ev.note && ev.note.text) {
+        _systemLine(`Lesson saved — “${_excerpt(ev.note.text, 140)}”`, 'done');
+        if (_active && _injectOK) {
+          _brief('[Self-assessment note — apply it from now on, on its own; do not link it causally to other ' +
+            'notes or findings] ' + ev.note.text, false);
+        }
       }
       break;
     case 'done':
@@ -1277,7 +1301,6 @@ function _onPipeEvent(ev) {
       // A duplicate follow-through of ALFRED's own chatter is expected noise — stay quiet.
       else if (ev.reason === 'duplicate' && ev.duplicate_of && ev.source !== 'commitment') _systemLine(`Already sent a moment ago — “${_excerpt(ev.duplicate_of)}”`, 'info');
       else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 }); }
-      else if (ev.reason === 'guard-paused') { _systemLine('Voice→chat paused — the guard rejected the last messages as unfaithful. Rephrase what you want, or continue in the chat directly.', 'warn'); }
       else if (ev.reason === 'not-directed-to-chat') { _systemLine('That didn’t look like it was meant for the chat — say it again if you want it sent.', 'info'); }
       else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide', { criticality: 0.8 }); }
       break;
@@ -1874,22 +1897,13 @@ function _seedChatContext() {
     const summary = _lastTasksSummary;
     if (summary) _brief('[Context — tasks that were in progress when the session was interrupted]\n' + summary.slice(0, 1200), false);
   });
-  // Newest turns, within a budget, back in chronological order.
-  const lines = [];
-  let budget = 3200;
-  for (const el of _chatMsgs().slice(-12).reverse()) {
-    if (el.querySelector('.stopped-indicator')) continue;
-    const who = el.classList.contains('msg-ai') ? 'Chat agent' : 'User';
-    const t = _speakable(_msgText(el, 4000)).replace(/\s+/g, ' ').trim();
-    if (!t) continue;
-    const line = `${who}: ${t.length > 500 ? t.slice(0, 500) + '…' : t}`;
-    if (line.length > budget) break;
-    budget -= line.length;
-    lines.unshift(line);
-  }
-  if (lines.length) {
-    const parts = _chunks(lines.join('\n'));
-    parts.forEach((p, i) => _brief(`${HEAD}${parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : ''}\n${p}`, false));
+  // The chat thread itself is NOT replayed here: the server already put the
+  // whole thread (goal, summaries, every request, latest exchanges) into this
+  // session's instructions. Replaying it as briefs fed GPT-Live the same turns
+  // twice. Mark what is on screen as known so later briefs skip it.
+  _deliver.resetKnown();
+  for (const el of _chatMsgs()) {
+    if (!el.querySelector('.stopped-indicator')) _deliver.markKnown(_msgText(el, 12000));
   }
   // Re-seed anything the user typed/pasted earlier (survives reconnects).
   for (const n of _notes.slice(-3)) _briefNote(n);
@@ -2082,6 +2096,7 @@ function _chatTick() {
     _bindVoiceToSession(sid);
     _resetNarration();
     _sayQueue = [];
+    _deliver.reset();          // another chat: nothing of it was said or known yet
     _markAllSeen();
     _chatWasBusy = _chatBusy();
     _refreshMemory();   // load this chat's persisted transcript + memory strata
@@ -2161,8 +2176,9 @@ async function _ingestChat(busy) {
   if (_active) {
     for (const t of turns) {
       if (t.speaker !== 'chat_user' || _voiceInjectedTexts.has(t.text.trim())) continue;
-      _brief('[Context — the user typed this in the chat; do not read it out or reply to it now]\n' +
-        t.text.slice(0, _BRIEF_MAX - 120), false);
+      const fresh = _deliver.take(t.text, 'know', true);
+      if (fresh) _brief('[Context — the user typed this in the chat; do not read it out or reply to it now]\n' +
+        fresh.slice(0, _BRIEF_MAX - 120), false);
     }
   }
   // Every chat answer reaches the voice: spoken aloud (unless narration or the
@@ -2187,7 +2203,8 @@ async function _ingestChat(busy) {
 }
 
 function _injectContext(text) {
-  _brief('Chat agent answer (context for you; do not speak it now):\n' + text.slice(0, 1200), false);
+  const fresh = _deliver.take(text, 'know', true);     // only what GPT-Live does not have yet
+  if (fresh) _brief('Chat agent answer (context for you; do not speak it now):\n' + fresh.slice(0, 1200), false);
 }
 
 let _chatFeedSig = '';
@@ -2317,8 +2334,10 @@ function _chunks(text) {
   return out.filter(c => c.trim());
 }
 
-function _queueSpeak(text, final) {
+function _queueSpeak(text, final, viaLedger = true) {
   text = _speakable(text);
+  // Callers that already took their text from the ledger pass viaLedger=false.
+  if (viaLedger) text = _deliver.take(text, 'speak', true);
   if (!text) return;
   let parts = _chunks(text);
   const more = parts.length > _SAY_MAX_PARTS;
@@ -2327,12 +2346,13 @@ function _queueSpeak(text, final) {
   parts.forEach((p, i) => {
     const tag = final
       ? `[Chat agent — FINISHED${n > 1 ? `, part ${i + 1} of ${n}` : ''}]`
-      : '[Chat agent — still working; more will follow]';
+      : '[Chat agent — still working; NEW material that follows what you already said — do not restart or repeat it]';
     const lead = i > 0 ? ' Continue straight on from the previous part; do not repeat it or re-introduce it.' : '';
     const tail = final && i === n - 1 && more ? ' Then mention briefly that the remainder is in the chat.' : '';
     _sayQueue.push(`${tag}${lead}\n${p}\n\nSay this to the user now, in their language — all of it, naturally ` +
       '(names, numbers, dates; not a robotic table read). ' +
-      (final ? 'Do NOT just say it is in the chat.' : 'Do not ask questions and do not claim the work is finished.') + tail);
+      (final ? 'Do NOT just say it is in the chat.' : 'Do not ask questions and do not claim the work is finished.') +
+      ' Say only what this part says: add no claim, cause or certainty of your own.' + tail);
   });
 }
 
@@ -2364,39 +2384,35 @@ function _narrateStream(busy) {
       _narrateStallAt = now;
     }
     // Agent runs open a new bubble per tool round: flush whatever of the
-    // previous round was not spoken yet, then restart the watermark.
+    // previous round was never said (the sentence ledger drops anything the
+    // new round merely restates).
     if (el !== _narrateEl) {
       if (_narrateEl) {
-        const rest = _speakable(_msgText(_narrateEl, 12000)).slice(_narratedLen);
-        if (rest.trim()) _queueSpeak(rest, false);
+        const rest = _deliver.take(_speakable(_msgText(_narrateEl, 12000)), 'speak', true);
+        if (rest) _queueSpeak(rest, false, false);
         _spokenEls.add(_narrateEl);
       }
       _narrateEl = el;
       _narratedLen = 0;
     }
+    // NEW sentences only — never an offset into the whole growing text.
     const text = _speakable(_msgText(el, 12000));
-    const delta = text.slice(_narratedLen);
-    if (delta.length > 0) { _narrateStallAt = now; _stallSpoken = false; }
-    // Batch: a substantial chunk, or a smaller one once it has settled a while.
-    const enough = delta.length >= 350;
-    const settled = delta.length >= 80 && now - _lastNarrateAt >= 8000;
+    const fresh = _deliver.peek(text, 'speak', false);
+    if (fresh.length !== _narratedLen) {
+      if (fresh.length > _narratedLen) { _narrateStallAt = now; _stallSpoken = false; }
+      _narratedLen = fresh.length;     // now: chars of not-yet-said complete sentences
+    }
+    const enough = fresh.length >= 350;
+    const settled = fresh.length >= 80 && now - _lastNarrateAt >= 8000;
     if (enough || settled) {
-      // Cut on a line / sentence boundary — the last line may still be streaming.
-      let cut = delta.lastIndexOf('\n');
-      if (cut < 40) {
-        const s = delta.lastIndexOf('. ');
-        cut = s >= 40 ? s + 1 : (settled ? delta.length : -1);
-      }
-      if (cut > 0) {
-        _narratedLen += cut;
-        _lastNarrateAt = now;
-        _queueSpeak(delta.slice(0, cut), false);
-      }
+      const out = _deliver.take(text, 'speak', false);
+      _narratedLen = 0;
+      if (out) { _lastNarrateAt = now; _queueSpeak(out, false, false); }
     } else {
       _maybeSayStall(now);
     }
   } else if (_narrateActive) {
-    // Run finished: speak everything not yet said, marked as final.
+    // Run finished: speak only what was never said, marked as final.
     const text = _speakable(_msgText(el, 12000));
     if (!text) return;
     if (el.querySelector('.stopped-indicator')) { _resetNarration(); return; }  // cancelled run
@@ -2405,9 +2421,9 @@ function _narrateStream(busy) {
     _lastNarrateAt = now;
     _spokenEls.add(el);
     _remember(_spokenKeys, _key('chat_ai', _msgText(el)));
-    const rest = el === _narrateEl ? text.slice(_narratedLen) : text;
-    if (rest.trim()) _queueSpeak(rest, true);
-    else _sayQueue.push('[Chat agent — FINISHED] Everything was already told. In one short line, tell the user it is done.');
+    const rest = _deliver.take(text, 'speak', true);
+    if (rest) _queueSpeak(rest, true, false);
+    else _sayQueue.push('[Chat agent — FINISHED] Everything was already told. In one short line, tell the user it is done. Do not repeat any of it.');
   }
 }
 
@@ -2421,30 +2437,27 @@ function _narrateStream(busy) {
 // the same current context instead of only after the run completes.
 // Labels raw chat output so GPT-Live knows it is the chat's material it can
 // answer from ("what does the chat say?"), not something the user said.
-const _CTX_TAG = '[Chat agent — live output so far; context for you, do not read it out unless asked]\n';
+const _CTX_TAG = '[Chat agent — live output, NEW since the last part; context for you, do not read it out unless asked]\n';
+function _ctxSend(text) {
+  if (text) _brief(_CTX_TAG + text.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
+}
 function _streamContext(busy) {
   if (!_active || !_injectOK) return;
   const now = Date.now();
   const el = _lastAIEl();
   if (!el) return;
 
-  // Finished run: flush the final tail of the last streaming bubble.
+  // Finished run: flush the final, never-delivered tail of the last bubble.
   if (!busy) {
-    if (_ctxEl) {
-      const rest = _msgText(_ctxEl, 12000).slice(_ctxLen);
-      if (rest.trim()) _brief(_CTX_TAG + rest.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
-    }
+    if (_ctxEl) _ctxSend(_deliver.take(_msgText(_ctxEl, 12000), 'know', true));
     _ctxEl = null; _ctxLen = 0; _ctxLastAt = 0;
     return;
   }
 
-  // A new streaming bubble (agent runs open one per tool round): push the
-  // previous round's tail, then start a fresh watermark for the new one.
+  // A new streaming bubble (agent runs open one per tool round): flush what
+  // the previous round added, then follow the new one.
   if (el !== _ctxEl) {
-    if (_ctxEl) {
-      const rest = _msgText(_ctxEl, 12000).slice(_ctxLen);
-      if (rest.trim()) _brief(_CTX_TAG + rest.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
-    }
+    if (_ctxEl) _ctxSend(_deliver.take(_msgText(_ctxEl, 12000), 'know', true));
     _ctxEl = el;
     _ctxLen = 0;
     _ctxLastAt = 0;
@@ -2453,26 +2466,16 @@ function _streamContext(busy) {
   // Only the bubble that is actually streaming carries live context.
   if (!el.classList.contains('streaming')) return;
 
+  // Each batch is ADDITIONAL context: only sentences GPT-Live does not have
+  // yet (spoken or silent), never the whole growing text again.
   const text = _msgText(el, 12000);   // raw text — never _speakable (that strips content)
-  let delta = text.slice(_ctxLen);
-  if (!delta.length) return;
-
-  // Throttle: push substantial batches, or smaller ones once settled a while.
-  const enough = delta.length >= 700;
-  const settled = delta.length >= 160 && now - _ctxLastAt >= 7000;
+  const fresh = _deliver.peek(text, 'know', false);
+  if (!fresh) return;
+  const enough = fresh.length >= 700;
+  const settled = fresh.length >= 160 && now - _ctxLastAt >= 7000;
   if (!enough && !settled) return;
-
-  // Cut on a line / sentence boundary so the voice context stays coherent.
-  let cut = delta.lastIndexOf('\n');
-  if (cut < 40) {
-    const s = delta.lastIndexOf('. ');
-    cut = s >= 40 ? s + 1 : (settled ? delta.length : -1);
-  }
-  if (cut <= 0) return;
-  const chunk = delta.slice(0, cut);
-  _ctxLen += cut;
   _ctxLastAt = now;
-  _brief(_CTX_TAG + chunk.slice(0, _BRIEF_MAX - 40 - _CTX_TAG.length), false);
+  _ctxSend(_deliver.take(text, 'know', false));
 }
 
 function _speakResult(item, el) {

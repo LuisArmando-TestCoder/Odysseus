@@ -36,6 +36,40 @@ _MAX_SENT_HISTORY = 30
 _MAX_LIVE_TURNS = 400  # safety valve if compression is failing
 _MAX_TRANSCRIPT_TURNS = 2000  # full raw voice transcript (user + assistant), never compressed
 _MAX_VECTORS = 5000  # conversation-vector cap in persistence (the HUD shows far fewer)
+_MAX_QUESTIONS = 80  # questions the assistant asked (kept to stop it re-asking them)
+
+# A question in the assistant's speech: a sentence ending in "?" (Spanish "¿…?"
+# included). Split on sentence ends so "Entiendo. ¿El ATF olía a vinagre?" keeps
+# only the question.
+_Q_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+_Q_STOP = {
+    "the", "a", "an", "to", "of", "and", "or", "please", "me", "my", "i", "for", "in", "on", "it", "that",
+    "this", "is", "be", "can", "you", "with", "at", "do", "does", "should", "would", "want",
+    "el", "la", "los", "las", "un", "una", "de", "del", "que", "y", "o", "a", "en", "se", "le", "lo", "me",
+    "te", "su", "sus", "es", "si", "por", "para", "con", "al", "usted", "quiere", "quieres", "desea",
+}
+# Asking PERMISSION to consult the chat ("¿quiere que le pida al chat…?") — the
+# relay to the chat is automatic, so this kind of question is never needed.
+PERMISSION_Q = re.compile(
+    r"(quier[ea]s?|desea|le parece|me autoriza|autoriza|prefiere|do you want me to|want me to|should i|shall i|"
+    r"would you like me to)\b.{0,60}\b(chat|pid[ao]|pida|pregunt|consult|env[ií]|mand|ask|send|forward|check)",
+    re.IGNORECASE)
+
+
+def _q_tokens(text: str) -> set:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", (text or "").lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return {w for w in re.findall(r"[a-z0-9]+", t) if len(w) > 2 and w not in _Q_STOP}
+
+
+def extract_questions(text: str) -> List[str]:
+    out = []
+    for sent in _Q_SPLIT.split(re.sub(r"\s+", " ", text or "").strip()):
+        sent = sent.strip()
+        if sent.endswith("?") and len(sent) >= 8:
+            out.append(sent[:300])
+    return out
 
 
 def _memory_dir() -> str:
@@ -70,7 +104,7 @@ def _voice_settings() -> Dict[str, int]:
 class _VectorPersistenceWorker:
     """Serialized background writer for conversation-vector appends.
 
-    ``add_vector()`` is called from the hot path (middleman guard, chat vector
+    ``add_vector()`` is called from the hot path (chat vector
     detection, error reporting) where a disk write must never block the event
     loop or a request thread. The naive fix — ``run_in_executor`` — is unsafe
     here because ``VoiceMemory`` instances are shared and ``atomic_write_json``
@@ -162,6 +196,7 @@ class VoiceMemory:
         self.transcript: List[Dict[str, Any]] = []    # full raw voice turns (user + assistant), never compressed
         self.tasks: List[Dict[str, Any]] = []         # tasks dispatched to the chat (in-progress + queued), for restore
         self.vectors: List[Dict[str, Any]] = []       # conversation vectors (radar dots) for density viz
+        self.questions: List[Dict[str, Any]] = []     # questions the assistant asked the user (no re-asking)
         self.turns_total = 0
         self.compactions = 0
         self.seq = 0            # monotonically increasing turn sequence number
@@ -193,6 +228,7 @@ class VoiceMemory:
         self.transcript = d.get("transcript") or []
         self.tasks = d.get("tasks") or []
         self.vectors = d.get("vectors") or []
+        self.questions = d.get("questions") or []
         self.turns_total = int(d.get("turns_total") or 0)
         self.compactions = int(d.get("compactions") or 0)
         self.seq = int(d.get("seq") or 0)
@@ -213,6 +249,7 @@ class VoiceMemory:
                 "transcript": self.transcript,
                 "tasks": self.tasks[-_MAX_SENT_HISTORY:],
                 "vectors": self.vectors[-_MAX_VECTORS:],
+                "questions": self.questions[-_MAX_QUESTIONS:],
                 "turns_total": self.turns_total,
                 "compactions": self.compactions,
                 "seq": self.seq,
@@ -226,6 +263,7 @@ class VoiceMemory:
 
     def reset(self):
         self.live, self.levels, self.sent, self.transcript, self.tasks, self.vectors = [], {}, [], [], [], []
+        self.questions = []
         self.turns_total = self.compactions = 0
         self.seq = self.forge_seq = self.commit_seq = 0
         self.updated_at = time.time()
@@ -303,8 +341,18 @@ class VoiceMemory:
     # ── Consumption + duplicate guard (deterministic, model-independent) ──
 
     def new_user_turns(self) -> List[Dict[str, Any]]:
-        """User speech not yet evaluated by the decider."""
-        return [t for t in self.live if t["speaker"] == "user" and t.get("seq", 0) > self.forge_seq]
+        """User speech not yet evaluated by the decider — only the part of each
+        turn that was never evaluated. A turn that grew by merging a later
+        fragment used to come back WHOLE, so speech already sent to the chat
+        was forged into the next message again."""
+        out = []
+        for t in self.live:
+            if t["speaker"] != "user" or t.get("seq", 0) <= self.forge_seq:
+                continue
+            rest = t["text"][int(t.get("consumed") or 0):].strip()
+            if rest:
+                out.append(dict(t, text=rest))
+        return out
 
     def new_assistant_turns(self) -> List[Dict[str, Any]]:
         """Assistant speech not yet checked for a concrete promise."""
@@ -343,6 +391,9 @@ class VoiceMemory:
         """Mark everything heard so far as evaluated — the same speech can
         never be forged into the chat twice."""
         self.forge_seq = self.seq
+        for t in self.live:
+            if t.get("speaker") == "user":
+                t["consumed"] = len(t["text"])
         self._save()
 
     @staticmethod
@@ -385,6 +436,58 @@ class VoiceMemory:
         self._save()
 
     # ── Task tracking (in-progress + queued tasks survive a restart) ──
+
+    # ── Questions the assistant asked (no re-asking) ──
+
+    def record_questions(self, assistant_text: str, threshold: float = 0.5) -> List[Dict[str, Any]]:
+        """Log every question in the assistant's speech. Returns one entry per
+        question that REPEATS an earlier one (``times`` > 1) or asks permission
+        to consult the chat (``permission`` True), so the caller can stop it."""
+        flagged: List[Dict[str, Any]] = []
+        now = time.time()
+        for q in extract_questions(assistant_text):
+            toks = _q_tokens(q)
+            permission = bool(PERMISSION_Q.search(q))
+            prior = None
+            if toks:
+                for e in reversed(self.questions):
+                    old = set(e.get("tokens") or [])
+                    if old and len(toks & old) / len(toks | old) >= threshold:
+                        prior = e
+                        break
+            if prior:
+                prior["times"] = int(prior.get("times", 1)) + 1
+                prior["last_ts"] = now
+                entry = prior
+            else:
+                entry = {"q": q, "tokens": sorted(toks), "times": 1, "ts": now, "last_ts": now,
+                         "permission": permission}
+                self.questions.append(entry)
+            if entry["times"] > 1 or permission:
+                flagged.append({"q": entry["q"], "times": entry["times"], "permission": permission,
+                                "answers": self.user_answers_since(entry.get("ts", now))})
+        if len(self.questions) > _MAX_QUESTIONS:
+            self.questions = self.questions[-_MAX_QUESTIONS:]
+        if flagged or extract_questions(assistant_text):
+            self._save()
+        return flagged
+
+    def user_answers_since(self, ts: float, max_chars: int = 600) -> str:
+        """What the user said after a question was first asked (their answer)."""
+        said = [t["text"] for t in self.transcript if t.get("speaker") == "user" and t.get("ts", 0) > ts]
+        text = " / ".join(said)
+        return text[-max_chars:]
+
+    def questions_text(self, n: int = 12) -> str:
+        """Questions already asked, for the voice instructions (newest last)."""
+        rows = []
+        for e in self.questions[-n:]:
+            if e.get("permission"):
+                continue
+            ans = self.user_answers_since(e.get("ts", 0), 200)
+            rows.append(f"- {e['q']}" + (f"  (asked {e['times']}×)" if e.get("times", 1) > 1 else "")
+                        + (f" → the user then said: {ans}" if ans else ""))
+        return "\n".join(rows)
 
     def record_task(self, task_id: str, title: str, message: str, status: str = "queued"):
         """Record a task dispatched to the chat. Status: queued | running |

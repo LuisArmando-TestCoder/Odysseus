@@ -16,7 +16,7 @@ each capability lives, the SSE event vocabulary, the new routes, and the tests.
 | Subagents & branching | `src/subagents.py`, `POST /api/session/{sid}/fork`, 6 agent tools | `chat.js` (clickable `subagent_started`), `sessions.js` fork rows |
 | Spill / no-truncation | `src/spill.py` (`data/spills/`), wired into bash/python/read_file | — (locator in tool output) |
 | Tool guardrails | `TOOL_TIMEOUTS` + pool deadlines, repeat-tool reminder, `llm_retry` retry policy (T1.x, `src/tool_result.py`) | `chat.js` (`tool_timeout`, `llm_retry` notes) |
-| Hook seam (middleman = `post_response`) | `src/hooks.py` | — |
+| Hook seam (`post_response`, no built-in rewriter since 2026-10-31) | `src/hooks.py` | — |
 | Deliverables | `present` event at turn end (agent_loop deliverable registry) | `chatRenderer.js` `buildDeliverableCard` |
 | Legal corpus | `src/legal/` (sinalevi, corteidh, corpus) | — (agent tools) |
 | Voice (preserved) | `services/voice/*`, `routes/realtime_routes.py` — untouched | `voice.js`, `voice_vectors.js` — untouched |

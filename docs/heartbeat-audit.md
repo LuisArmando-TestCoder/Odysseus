@@ -17,7 +17,6 @@ enforcement is `tests/test_stream_util.py` (helper behavior) plus
 
 | Site | Wait shape | Coverage |
 |---|---|---|
-| `src/llm_middleman.py` `_guard_both_with_heartbeats` | JEV detect + reducer | own heartbeat loop (pre-existing) |
 | `routes/chat_routes.py` research progress loop (`:757-776`) | 1 s poll | own `: heartbeat N` comments (pre-existing) |
 | `src/agent_loop.py` ask-user await (Q3) | human answer Future | `heartbeat_wait` (15 s) ✅ |
 | `src/agent_loop.py` subagent foreground await (B2) | child run Future | `heartbeat_wait` (15 s) ✅ |
@@ -32,4 +31,4 @@ enforcement is `tests/test_stream_util.py` (helper behavior) plus
 Any `await` inside a streaming generator that can exceed ~15 s without
 yielding a chunk MUST be wrapped in `heartbeat_wait`/`heartbeat_stream`.
 Reviewed paths: agent loop tool pool, goal driver, subagents, turn inbox,
-research loop, middleman guard.
+research loop.

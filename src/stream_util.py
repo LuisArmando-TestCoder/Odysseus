@@ -3,9 +3,7 @@
 
 Every long await inside the chat/agent/research paths must keep the SSE
 connection alive, or proxies and browsers drop the stream while the server
-is silently working (the same failure mode the middleman's
-``_guard_both_with_heartbeats`` and the research progress loop already
-guard against). These two helpers centralize that pattern so new wait sites
+is silently working (the same failure mode the research progress loop already guards against). These two helpers centralize that pattern so new wait sites
 (ask-user, subagent await, retry backoff, spill writes, goal-round setup)
 don't re-implement it.
 
@@ -14,8 +12,7 @@ Two shapes, because there are two wait shapes in the codebase:
 * ``heartbeat_wait(awaitable)`` — for awaiting ONE slow thing (a Future, a
   coroutine): yields ``: keep-alive`` comments while waiting and then yields
   the awaited RESULT as its final yielded value. Callers treat the last
-  yielded item as the result, exactly like the middleman's
-  ``_guard_both_with_heartbeats``.
+  yielded item as the result.
 
 * ``heartbeat_stream(agen)`` — for draining a long async generator (tool
   execution, streaming generation): passes items through verbatim and injects

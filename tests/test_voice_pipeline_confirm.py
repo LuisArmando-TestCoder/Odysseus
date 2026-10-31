@@ -1,7 +1,7 @@
 """Voice → chat pipeline regressions from the 2026-10-28 transcript.
 
-- an ambiguous request asks ONCE; a short "yes" then sends exactly that message
-- asking for the same thing again after the question counts as yes
+- (2026-10-31) an ambiguous request is sent at once — no "shall I send it?" question
+- asking for the same thing again is caught as a duplicate
 - the chat agent's narration read aloud (relay) is never forged into a request
 - no "follow-through" forge while the chat is already working
 - "what does the chat say?" is answered from the thread, not stalled
@@ -66,24 +66,22 @@ def _types(evs, t):
     return [e for e in evs if e["type"] == t]
 
 
-def test_short_yes_sends_the_pending_message(pipe):
+def test_ambiguous_request_is_sent_without_asking(pipe):
+    """2026-10-31: no "Send this to the chat? Say yes" round-trip. An ambiguous
+    direction score (0.5) sends at once; nothing waits for a yes."""
     pipe["decision"] = {"should_send": 0.9, "intent": "research"}
     evs = pipe["run"]("So I want to benchmark the countries that did this, so tell me", voice="v1")
-    assert len(_types(evs, "needs_clarification")) == 1
-    assert pipe["mem"]("v1").pending_confirm
-    pipe["decision"] = {"confirms_pending": 0.95}
-    evs = pipe["run"]("Yes, definitely", voice="v1")       # 2 words used to be dropped by the gate
+    assert not _types(evs, "needs_clarification")
     forged = _types(evs, "forged")
-    assert forged and forged[0]["message"] == MSG and forged[0]["source"] == "confirmed"
-    assert pipe["state"]["pending_confirmation"] == MSG
+    assert forged and forged[0]["message"] == MSG
     assert pipe["mem"]("v1").pending_confirm is None
 
 
-def test_repeating_the_request_counts_as_yes(pipe):
+def test_repeating_the_request_is_a_duplicate_not_a_second_send(pipe):
     pipe["decision"] = {"should_send": 0.9, "intent": "research"}
-    pipe["run"]("Okay so tell me about the grassroots benchmark across countries", voice="v2")
+    assert _types(pipe["run"]("Okay so tell me about the grassroots benchmark across countries", voice="v2"), "forged")
     evs = pipe["run"]("Yeah, benchmark the grassroots collaborations across the countries", voice="v2")
-    assert _types(evs, "forged") and not _types(evs, "needs_clarification")
+    assert not _types(evs, "forged") and not _types(evs, "needs_clarification")
 
 
 def test_relayed_narration_and_busy_chat_never_forge(pipe):
@@ -112,11 +110,9 @@ def test_duplicate_names_the_original(pipe):
     assert dup and dup[0]["duplicate_of"] == MSG
 
 
-def test_short_no_drops_the_pending_message(pipe):
+def test_plain_yes_after_a_send_sends_nothing(pipe):
     pipe["decision"] = {"should_send": 0.9, "intent": "research"}
     pipe["run"]("So I want to benchmark the countries that did this, so tell me", voice="v6")
-    assert pipe["mem"]("v6").pending_confirm
-    pipe["decision"] = {"confirms_pending": 0.05}
-    evs = pipe["run"]("No", voice="v6")
+    pipe["decision"] = {"confirms_pending": 0.95}
+    evs = pipe["run"]("Sí", voice="v6")
     assert not _types(evs, "forged")
-    assert pipe["mem"]("v6").pending_confirm is None     # a later unrelated "yes" can't send it

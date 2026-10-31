@@ -258,7 +258,7 @@ def _jev_need_js_render(url: str, html_text: str) -> Optional[float]:
 
     Returns the ``noul`` probability that the page requires a JS render wait,
     or ``None`` when JEV is unavailable/disabled (caller falls back). Mirrors
-    the ``noul`` + ``criteria`` schema used by ``src.llm_middleman``.
+    the ``noul`` + ``criteria`` schema used by ``src.decisions``.
     """
     if not html_text or not html_text.strip():
         return None

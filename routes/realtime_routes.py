@@ -107,7 +107,25 @@ VOICE_CONTRACT = (
     "'let me…' lines are the chat agent's own plan, already underway — relay them as its progress, never as a "
     "new promise of yours. "
     "LISTENING: do not interject 'mm-hmm', 'yeah', 'okay' or similar while the user is still talking; wait until "
-    "they finish, then answer once."
+    "they finish, then answer once. "
+    "ONE HOP: anything that needs the chat is forwarded to it automatically the moment the user asks. NEVER ask "
+    "permission or confirmation to consult or send something to the chat ('¿quiere que le pida al chat…?', "
+    "'¿me autoriza a preguntarle al chat?', 'shall I ask the chat?') — say in a few words that it is on its way, "
+    "or answer yourself. "
+    "PROACTIVE QUESTIONS: be the one who drives the inquiry. When a missing fact would change the answer, ask the "
+    "single most decisive question about the SUBJECT (e.g. 'did the fluid smell of vinegar?'), concretely, once. "
+    "Never ask the same question twice: check 'QUESTIONS YOU ALREADY ASKED' and what the user answered; if they "
+    "answered, use it; if they declined or moved on, do not ask again. "
+    "CONCLUSIONS: when the user asks for your conclusion, give it now in one to three sentences with what you "
+    "have, say plainly what remains uncertain, and stop. Do not offer or start documents, tables, reports or "
+    "drafts unless the user asks for one. "
+    "EPISTEMICS: never turn co-occurrence into causation. Two findings in the same case, context or list are not "
+    "cause and effect unless a physical mechanism is shown AND the evidence supports it; when the user separates "
+    "context from cause, keep that separation. Label inferences as inferences. When relaying the chat agent, add "
+    "no claim it did not make and never strengthen one (possible → probable → certain). If you do not know, say so "
+    "and ask. "
+    "RELAY PARTS: each '[Chat agent …]' part you receive is NEW material that follows the previous part — continue "
+    "from where you stopped; never restart from the beginning or re-say what you already said."
 )
 
 
@@ -198,6 +216,25 @@ def setup_realtime_routes() -> APIRouter:
                 instructions = instructions + "\n\n" + "\n\n".join(_ctx_parts)
         except Exception as _ctx_err:
             logger.debug(f"voice chat/document context injection skipped: {_ctx_err}")
+
+        # Self-assessment notes (what the user corrected/taught, as independent
+        # notes) and the questions ALFRED already asked in this chat's voice
+        # conversation — so a reconnect never re-asks or re-makes a mistake.
+        try:
+            from src import self_assessment as _sa
+            _chat_sid = (body.get("chat_session_id") or None)
+            _owner = effective_user(request)
+            _sa_block = _sa.prompt_block(_owner, _chat_sid, max_chars=2500)
+            if _sa_block:
+                instructions = instructions + "\n\n" + _sa_block
+            if _chat_sid:
+                from services.voice.memory import get_voice_memory
+                _qs = get_voice_memory(str(_owner), _voice_id(None, _chat_sid)).questions_text(12)
+                if _qs:
+                    instructions = (instructions + "\n\n=== QUESTIONS YOU ALREADY ASKED (do not ask again) ===\n"
+                                    + _qs[:2000])
+        except Exception as _sa_err:
+            logger.debug(f"voice self-assessment / question injection skipped: {_sa_err}")
 
         session_cfg = {"model": model, "instructions": instructions}
         voice = (settings.get("voice_assistant_voice") or "").strip()
@@ -363,6 +400,42 @@ def setup_realtime_routes() -> APIRouter:
 
         return StreamingResponse(_gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # ── Self-assessment notes (append-only, per chat) ──────────────────────
+
+    @router.get("/lessons")
+    async def list_lessons(request: Request, chat_session_id: str = ""):
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        from src import self_assessment as _sa
+        return {"lessons": _sa.entries(str(user), chat_session_id or None)}
+
+    @router.post("/lessons")
+    async def add_lesson(request: Request):
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        from src import self_assessment as _sa
+        entry = _sa.append(str(user), body.get("chat_session_id") or None, str(body.get("text") or ""),
+                           kind=str(body.get("kind") or "lesson"), evidence=str(body.get("evidence") or ""),
+                           source="user", relation=str(body.get("relation") or ""),
+                           scope="owner" if body.get("scope") == "owner" else "session")
+        if not entry:
+            raise HTTPException(400, "A note needs at least a short sentence of text")
+        return {"lesson": entry}
+
+    @router.delete("/lessons/{entry_id}")
+    async def delete_lesson(request: Request, entry_id: str, chat_session_id: str = ""):
+        user = effective_user(request)
+        if not user:
+            raise HTTPException(401, "Authentication required")
+        from src import self_assessment as _sa
+        return {"removed": _sa.remove(str(user), chat_session_id or None, entry_id)}
 
     @router.post("/code-pipeline")
     async def code_pipeline(request: Request):

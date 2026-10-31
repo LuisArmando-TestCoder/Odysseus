@@ -447,6 +447,17 @@ def voice_memory_stratum(user: str, session_id: str) -> str:
         _spine = _vm.spine_text(include_live=True) or ""
         _transcript = _vm.transcript_text(max_turns=200) or ""
         _parts = []
+        if _spine.strip() or _transcript.strip():
+            # Requests that arrive from voice are short relays of what was
+            # SPOKEN below. The transcript is longer than the relay by design —
+            # the message was not cut. (Without this the chat answered every
+            # relay with "your message was truncated, but I reconstruct…".)
+            _parts.append(
+                "[How to read this] Messages that came from the voice assistant are condensed relays of the "
+                "spoken conversation below. Nothing was cut or truncated — never say the message was cut. Use "
+                "the transcript for the user's full words, and do not repeat back what was already said or "
+                "answered there."
+            )
         if _spine.strip():
             _parts.append(_spine)
         if _transcript.strip():
@@ -583,6 +594,18 @@ async def build_chat_context(
             preface.append(untrusted_context_message(
                 "voice memory stratum (read-only)", _stratum,
             ))
+
+    # Self-assessment notes — what the user corrected or taught in this chat
+    # (voice or typed), as INDEPENDENT notes with an explicit rule against
+    # chaining them causally because they share this block.
+    if not incognito and not no_memory:
+        try:
+            from src import self_assessment as _sa
+            _sa_block = _sa.prompt_block(user, session_id, max_chars=3000)
+            if _sa_block:
+                preface.append({"role": "system", "content": _sa_block})
+        except Exception as _sae:
+            logger.debug(f"self-assessment injection skipped: {_sae}")
 
     # Normalize model ID. Prefer cached endpoint models so group chat does not
     # re-hit slow local /models endpoints on every participant turn.

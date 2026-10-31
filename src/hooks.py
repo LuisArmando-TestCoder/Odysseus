@@ -7,8 +7,9 @@ is logged and skipped — it can never break a response):
 * USER_PROMPT_SUBMIT — before context build; may rewrite the user message.
 * PRE_TOOL_USE      — before a tool executes; may rewrite the tool content.
 * POST_TOOL_USE     — after a tool executes; may rewrite the result dict.
-* POST_RESPONSE     — wraps every LLM stream. One built-in hook is registered:
-  the middleman guard (detect + reduce, fence-safe, fail-open).
+* POST_RESPONSE     — wraps every LLM stream. No built-in hook: the response
+  "middleman" rewriter was removed (2026-10-31) because rewriting answers
+  after the fact produced hallucinations.
 
 POST_RESPONSE stream hooks compose in registration order (async gen → async
 gen); the other points are async dict → dict transforms.
@@ -68,20 +69,13 @@ async def run_hooks(point: HookPoint, payload: Dict[str, Any]) -> Dict[str, Any]
 
 
 def register_builtins() -> None:
-    """Register the built-in POST_RESPONSE hook (the middleman guard) plus the
+    """Register the built-in hooks: the
     file-edit guardrails (read-before-write + edit diff, src/file_guard.py).
     Idempotent; called lazily by run_hooks / run_post_response_stream."""
     global _builtins_done
     if _builtins_done:
         return
     _builtins_done = True
-    from src.llm_middleman import guard_stream as _guard_stream
-
-    def _post_response(agen, *, url, model, headers):
-        return _guard_stream(agen, url=url, model=model, headers=headers)
-
-    register_stream_hook(HookPoint.POST_RESPONSE, _post_response)
-
     from src.file_guard import post_tool_use_hook, pre_tool_use_hook
     register_hook(HookPoint.PRE_TOOL_USE, pre_tool_use_hook)
     register_hook(HookPoint.POST_TOOL_USE, post_tool_use_hook)
@@ -90,9 +84,8 @@ def register_builtins() -> None:
 async def run_post_response_stream(agen, *, url, model, headers):
     """Apply the POST_RESPONSE stream-hook chain over a raw chunk generator.
 
-    The built-in middleman guard is always the first hook; additional hooks
-    compose after it in registration order. The middleman is a no-op when
-    disabled (llm_middleman_enabled=false) or re-entered."""
+    Registered stream hooks compose in registration order. With none
+    registered the model's stream passes through unchanged."""
     register_builtins()
     cur = agen
     for fn in list(_STREAM_REGISTRY.get(HookPoint.POST_RESPONSE, ())):

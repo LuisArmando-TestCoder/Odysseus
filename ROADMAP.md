@@ -22,7 +22,7 @@ Done and tested (architecture in `docs/harness-port.md`, plan in the repo histor
   (`data/spills/`), never silently cut.
 - **Tool guardrails**: per-call deadlines (`tool_timeout`), repeat-call
   reminders, `llm_retry` retry policy + model fallback chain.
-- **Response middleman preserved as the `post_response` hook**; hook points
+- **Hook points** (the response middleman was removed 2026-10-31 — it rewrote answers and caused hallucinations);
   `user_prompt_submit` / `pre_tool_use` / `post_tool_use` / `post_response`.
 - **Legal corpus** (SINALEVI + Corte IDH): query-first adapters + tools +
   opt-in bulk inventory (`docs/legal-corpus.md`).

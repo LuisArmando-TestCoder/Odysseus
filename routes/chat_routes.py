@@ -422,7 +422,7 @@ def setup_chat_routes(
             raise HTTPException(400, "Invalid request parameters")
 
         # H2 — USER_PROMPT_SUBMIT hooks may rewrite the message before context
-        # build (mirror of DSH's hook protocol; the middleman's transform seam).
+        # build (mirror of DSH's hook protocol).
         try:
             from src.hooks import run_hooks as _run_hooks, HookPoint as _HP
             _hres = await _run_hooks(_HP.USER_PROMPT_SUBMIT, {

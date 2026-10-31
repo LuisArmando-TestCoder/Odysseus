@@ -43,8 +43,6 @@ touching the functions below must update this doc.
 
 ## Auxiliary flows (also frozen)
 
-- Middleman `guard_rewrite` → voice-memory radar vectors
-  (`src/llm_middleman.py:224-280`).
 - Neural pipeline (push-to-talk) writes its own memory via
   `services/voice/memory.py`.
 - Voice events/status/memory endpoints: `routes/realtime_routes.py:280-501`.
@@ -63,3 +61,45 @@ touching the functions below must update this doc.
 
 Out of scope of the DSH port (V4): `/api/realtime/*`, `services/voice/*`,
 `services/stt`, `services/tts` — verified untouched (empty git diff).
+
+## V3 — minimal flow (2026-10-31)
+
+From the 2026-10-30 peritaje session (Prado A340F). Tests:
+`tests/test_voice_minimal_flow.py`.
+
+- **One hop.** A request the decider wants sent is sent. No "Send this to the
+  chat? Say yes" round-trip (`needs_clarification` is retired; directed 0.3–0.7
+  sends) and no "guard-paused" state. The voice contract forbids asking
+  permission to consult the chat; a permission question that slips through is
+  flagged (`repeated_question`, `permission: true`) and GPT-Live is corrected.
+- **Faithful relay.** The forger is a minimal transform. A forge that adds a
+  deliverable the user never asked for (document, report, table, file, draft…)
+  or that the guard finds unfaithful/incoherent is replaced by the user's OWN
+  words (`verbatim` event). A doubted or deliverable-inventing assistant
+  promise (commitment) is dropped. Only true duplicates and speech clearly not
+  meant for the chat (directed < 0.3) stop.
+- **New speech only.** A user turn that grew by merging a later fragment only
+  contributes its never-evaluated part (`consumed` offset per live turn).
+- **About the conversation.** `about_conversation` (decider) → answered from the
+  WHOLE chat digest (`chat_context_digest`), never forwarded.
+- **Self-assessment notes** (`src/self_assessment.py`). When the user corrects
+  or teaches (`teaches`), a small model turns it into one note; it is kept only
+  if its evidence is a real quote of the user. Notes are append-only, per chat
+  (+ owner-wide), injected into the voice instructions and the chat context
+  under a rule: notes are independent; sharing the block, a topic or a time is
+  never a causal link; `[context-only]` notes may never be presented as causes.
+  API: `GET/POST /api/realtime/lessons`, `DELETE /api/realtime/lessons/{id}`.
+- **Questions ledger.** Every question ALFRED asks is logged in the voice
+  memory; a repeat is flagged with the user's words since the first ask, and
+  the session instructions list the questions already asked.
+- **Delta-only streaming** (`static/js/voice-delta.js`). Narration, live
+  context, finished-answer ingest and typed-message briefs all go through one
+  sentence ledger (`speak` / `know`), so each batch adds only sentences GPT-Live
+  never got — re-rendered bubbles, new rounds that restate the last one and
+  repeated paths no longer restart from the beginning. The reconnect seed no
+  longer replays chat turns (the server instructions already hold the thread).
+- **Chat side.** The voice stratum tells the chat that voice relays are
+  condensed and nothing was cut (it used to answer "su mensaje se recortó").
+- **Middleman removed.** `src/llm_middleman.py` (a reducer LLM that rewrote
+  answers into "obedient" ones) is gone; `llm_call*` and `stream_llm` return
+  the model's answer unmodified.

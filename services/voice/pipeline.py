@@ -22,6 +22,13 @@
           ▼
     duplicate guard (token similarity vs. recently sent) → frontend queue
 
+One hop, no permission round-trips (2026-10-31): a request the decider wants
+sent IS sent — the user is never asked "shall I send this to the chat?", and a
+guard that doubts the forged wording sends the user's OWN words instead of
+blocking (the old "guard-paused" state silenced voice→chat entirely). A forge
+that invents a deliverable the user never asked for (a document, a report, a
+table) falls back to the user's words too.
+
 Duplicate-proofing is deterministic: every user turn carries a sequence
 number; once the decider has evaluated speech that the user finished
 (ready), it is *consumed* and can never trigger another forge. A per-memory
@@ -38,16 +45,14 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from src.decisions import DecisionsUnavailable, jev_available, jev_decide
 from src.endpoint_resolver import resolve_endpoint
 from src.llm_core import llm_call_async
-from services.voice.memory import chat_summary_spine, get_voice_memory, session_documents_spine
+from services.voice.memory import (chat_context_digest, chat_summary_spine, get_voice_memory,
+                                   session_documents_spine)
 
 logger = logging.getLogger(__name__)
 
-# Guard-rejection cap: per-voice-conversation counter of consecutive guard
-# rejections. After the limit the pipeline PAUSES (reason="guard-paused")
-# instead of spamming one rejection line per failed forge. Reset whenever a
-# message actually reaches the chat.
-_GUARD_REJECTS: Dict[str, int] = {}
-_GUARD_CONSECUTIVE_LIMIT = 2
+# (The guard-rejection "pause" was removed on 2026-10-31: after two rejections
+# it silenced voice→chat for the rest of the call. A doubted forge now sends the
+# user's own words instead.)
 
 INTENTS = {
     "task": "Do something: create, edit, send, schedule, run, change a file/email/calendar/code",
@@ -99,7 +104,7 @@ memory of a live voice conversation (highest summary layer, newest summary of ea
 the chat thread's own summary, and messages already sent to the chat.
 Judge ONLY new_user_speech; the rest is context.
 Answer ONLY with JSON:
-{"should_send": 0..1, "ready": 0..1, "already_sent": 0..1,
+{"should_send": 0..1, "ready": 0..1, "already_sent": 0..1, "about_conversation": 0..1, "teaches": 0..1,
  "intent": "task|question|research|remember|followup|none", "urgency": 0|1|2,
  "commitment": 0..1, "stop_talking": 0..1, "interrupt": 0..1,
  "negative_directive": 0..1, "directed_to_chat": 0..1, "answerable": 0..1, "confirms_pending": 0..1}
@@ -127,6 +132,12 @@ Answer ONLY with JSON:
   ALREADY said or found ("what does the chat say", "what do you have so far") is NOT directing new work: 0.
 - answerable: probability the answer to the user's question is ALREADY in chat_thread_summary (the chat agent's
   answers) — including "what does the chat say / what have you got so far".
+- about_conversation: probability the user is asking about THIS conversation itself — what we are talking
+  about, what was said or decided so far, a recap ("¿de qué estamos hablando?", "what were we discussing",
+  "resúmeme lo que llevamos"). That is answered from context, never sent as new work.
+- teaches: probability the user is CORRECTING or TEACHING the assistant — telling it what it got wrong, how to
+  reason, or a rule to follow from now on ("como parte de tu aprendizaje…", "eso no tiene nada que ver",
+  "that is context, not a cause", "never do X").
 - confirms_pending: if pending_confirmation is set, probability new_user_speech says YES, send it ("yes",
   "definitely", "sí", "go ahead", "that's it"). A no, a correction or a new topic is 0. If pending_confirmation
   is empty, 0.
@@ -144,6 +155,34 @@ Answer ONLY with JSON:
 # kept only for backward-compat parsing of legacy cached outputs; the prompt
 # no longer tells the model to emit it.)
 FORGE_DECLINE = "NO_MESSAGE"
+
+# Deliverables a forge must never add on its own. "Necesito un análisis técnico
+# detallado … el informe debe incluir 1) 2) 3) 4)" was forged from "give me your
+# conclusion"; the chat then wrote a document and the user had to shout it down.
+# Grouped by concept so either language counts as "the user asked for it".
+_DELIVERABLES = {
+    "document": r"documento|document\b|doc\b|anexo|annex",
+    "report": r"informe|reporte|report\b|dictamen",
+    "table": r"tabla|table\b|matriz|matrix|cuadro comparativo",
+    "file": r"archivo|fichero|file\b|pdf|docx|xlsx|hoja de c[aá]lculo|spreadsheet",
+    "slides": r"presentaci[oó]n|diapositivas|slides|deck",
+    "draft": r"borrador|draft|redacci[oó]n|texto (?:de|para) (?:fundamentaci[oó]n|insertar)",
+    "checklist": r"checklist|lista de verificaci[oó]n",
+}
+_DELIV_RE = {k: re.compile(v, re.IGNORECASE) for k, v in _DELIVERABLES.items()}
+
+
+def unrequested_deliverables(message: str, user_words: str) -> List[str]:
+    """Deliverable kinds the forged message asks for that the user's own words
+    never mention."""
+    return [k for k, rx in _DELIV_RE.items() if rx.search(message or "") and not rx.search(user_words or "")]
+
+
+def _clean_speech(text: str) -> str:
+    """The user's own words, tidied for the chat: collapse whitespace and
+    stray leading punctuation from transcript fragments (". Okay, entonces")."""
+    t = re.sub(r"\s+", " ", text or "").strip()
+    return re.sub(r"^[.,;:…\s]+", "", t)
 FORGE_FORMAT = (
     "OUTPUT FORMAT (plain text, NOT JSON, no code fences, no labels, no prefixes):\n"
     "Respond with ONLY the chat message itself — nothing else. Do NOT add a "
@@ -209,6 +248,11 @@ legitimate; a third-person phrasing makes it look like profiling a stranger and 
 IDENTIFIERS: carry EVERY username, handle, name, email, URL or number the user lists, verbatim, into the
 message — the chat agent cannot guess them and will otherwise stop and ask for exactly what you dropped.
 Never repeat what CHAT_USER already asked or CHAT_AI already did — if it's a follow-up, phrase it as a change.
+MINIMAL TRANSFORM (most important): stay as close to the user's own words as you can. Do NOT add a deliverable
+the user did not ask for (a document, report, table, draft, checklist, file) — "dame tu conclusión" asks for the
+conclusion in a few sentences, not an analysis document. Do NOT add hypotheses, causes, conclusions or numbered
+requirements of your own; the user's claims stay the user's claims ("the user states that…"), never upgraded to
+established facts. Do NOT turn something the user called CONTEXT into a CAUSE.
 """ + FORGE_FORMAT
 
 # The voice assistant promised the user to do something ("I'll run a quick check
@@ -516,6 +560,27 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                     "criteria": {"true": "The user explicitly names the chat as the target",
                                  "false": "The user is not naming the chat as the target"},
                 },
+                "about_conversation": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the user asking about THIS conversation itself — what we are talking about, what was "
+                        "said, found or decided so far, or a recap ('¿de qué estamos hablando?', 'what were we "
+                        "discussing', 'resúmeme lo que llevamos', 'what do we have so far')? Judge in ANY language."
+                    ),
+                    "criteria": {"true": "The user asks about the conversation so far (answer from context)",
+                                 "false": "The user asks for something else"},
+                },
+                "teaches": {
+                    "type": "noul",
+                    "instructions": (
+                        "Is the user CORRECTING or TEACHING the assistant — saying what it got wrong, how it must "
+                        "reason, or a rule for from now on ('como parte de tu aprendizaje…', 'eso no tiene nada que "
+                        "ver', 'that is context, not a cause', 'never invent', 'no me preguntes otra vez')? Judge "
+                        "in ANY language."
+                    ),
+                    "criteria": {"true": "The user corrects or teaches the assistant",
+                                 "false": "No correction or lesson"},
+                },
                 "confirms_pending": {
                     "type": "noul",
                     "instructions": (
@@ -547,6 +612,8 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
                 "negative_directive": _f(ans["negative_directive"]["value"]),
                 "directed_to_chat": _f(ans["directed_to_chat"]["value"]),
                 "confirms_pending": _f((ans.get("confirms_pending") or {}).get("value")),
+                "about_conversation": _f((ans.get("about_conversation") or {}).get("value")),
+                "teaches": _f((ans.get("teaches") or {}).get("value")),
                 "urgency": ans["urgency"]["value"],
             }
         except DecisionsUnavailable as e:
@@ -567,6 +634,8 @@ async def _decide(owner: str, state: Dict[str, Any], use_jev: bool) -> Dict[str,
         "negative_directive": _f(data.get("negative_directive")),
         "directed_to_chat": _f(data.get("directed_to_chat")),
         "confirms_pending": _f(data.get("confirms_pending")),
+        "about_conversation": _f(data.get("about_conversation")),
+        "teaches": _f(data.get("teaches")),
         "urgency": data.get("urgency", 0),
     }
 
@@ -727,17 +796,25 @@ async def _guard(owner: str, message: str, context: Dict[str, Any], use_jev: boo
 
 
 async def _forge_and_emit(
-    mem, owner, chat_session_id, prompt, forger_input, decision, fallback_text, source=None, use_jev=True
+    mem, owner, chat_session_id, prompt, forger_input, decision, fallback_text, source=None, use_jev=True,
+    user_words: str = "",
 ) -> AsyncIterator[Dict[str, Any]]:
-    """Run the forger LLM, guard the result, and emit the forged message.
+    """Run the forger LLM, check the result, and emit the message.
 
-    The forge is a TRANSFORM, not a decision: the decider already said "send",
-    so the forge's only job is to phrase the message. If it declines (empty /
-    NO_MESSAGE) or errors, fall back to ``fallback_text``. Then a GUARD agent
-    (JEV) reviews the message against the context and drops duplicates AND
-    anything that doesn't make sense at all before it reaches the chat.
+    The forge is a TRANSFORM, not a decision: the decider already said "send".
+    One hop, no permission round-trips:
+      - empty / failed forge → the user's own words;
+      - a forge that adds a deliverable the user never asked for → the user's
+        own words (a commitment that does so is dropped — it is the
+        assistant's idea, not the user's request);
+      - a guard that finds the forge unfaithful or incoherent → the user's own
+        words, never a block and never a "paused" state;
+      - only true duplicates and speech clearly not meant for the chat stop.
     """
     t0 = time.time()
+    is_commitment = source == "commitment"
+    is_forced = decision.get("engine") == "manual"
+    verbatim = _clean_speech(fallback_text)
     yield _ev(type="stage", stage="forge", status="running")
     try:
         from src.cost_ledger import cost_scope
@@ -750,18 +827,21 @@ async def _forge_and_emit(
     except Exception as e:
         logger.warning(f"voice forger failed: {e}")
         message, title = "", ""
+    fallback_reason = ""
     if not message:
-        # The forger is a TRANSFORM, not a decider — it must always produce a
-        # message. If it errored or returned empty, fall back to the raw speech
-        # (the decider already vetted that this should be sent).
-        message = fallback_text
-        title = _title_from_message(message)
-        logger.warning("voice forger returned empty; using raw speech as the message")
+        message, fallback_reason = verbatim, "forge-empty"
+    # What the USER said (for a commitment, the promise is the assistant's own
+    # words and does not count as the user asking for anything).
+    said = (user_words or "") + ("" if is_commitment else " " + fallback_text)
+    added = unrequested_deliverables(message, said) if message != verbatim else []
+    if added:
+        if is_commitment:
+            yield _ev(type="stage", stage="forge", status="idle", ms=int((time.time() - t0) * 1000))
+            yield _ev(type="done", send=False, reason="commitment-unrequested", added=added, source=source)
+            return
+        logger.info("voice forge added unrequested %s — sending the user's words instead", added)
+        message, fallback_reason = verbatim, "added-" + "+".join(added)
 
-    # ④b GUARD — a JEV agent reviews the forged message against the context and
-    # drops duplicates AND anything that doesn't make sense at all (garbled,
-    # invented, contradictory). The forge is a transform; the guard is the last
-    # sanity check before the message reaches the chat.
     yield _ev(type="stage", stage="guard", status="running")
     spine = mem.spine()
     chat_txt = chat_summary_spine(chat_session_id, owner)
@@ -777,78 +857,52 @@ async def _forge_and_emit(
         "chat_thread_summary": chat_txt[:2000],
         "session_documents": docs_txt[:2000],
     }
-    try:
-        from src.cost_ledger import cost_scope
-        with cost_scope(source="voice-guard"):
-            g = await _guard(owner, message, guard_ctx, use_jev)
-    except Exception as e:
-        logger.warning(f"voice guard failed: {e}")
-        g = {"engine": "error", "coherent": 1.0, "duplicate": 0.0, "faithful": 1.0, "directed": 1.0}
+    if message == verbatim and not is_commitment:
+        # The user's own words are faithful by definition — no guard call.
+        g = {"engine": "verbatim", "coherent": 1.0, "duplicate": 0.0, "faithful": 1.0, "directed": 1.0}
+    else:
+        try:
+            from src.cost_ledger import cost_scope
+            with cost_scope(source="voice-guard"):
+                g = await _guard(owner, message, guard_ctx, use_jev)
+        except Exception as e:
+            logger.warning(f"voice guard failed: {e}")
+            g = {"engine": "error", "coherent": 1.0, "duplicate": 0.0, "faithful": 1.0, "directed": 1.0}
     gms = int((time.time() - t0) * 1000)
     yield _ev(type="guard", guard=g, ms=gms)
 
-    # Deterministic duplicate guard (token similarity) still applies.
-    # JEV's duplicate score is only trusted when something was ACTUALLY sent —
-    # otherwise it can hallucinate a duplicate against the user's own live
-    # speech (including an earlier, denied attempt at the same request), which
-    # would damn every corrected re-phrasing to be "guarded" forever. Only
-    # messages that actually reached the chat may gate the next one.
+    # Duplicates: deterministic similarity always; JEV's duplicate score only
+    # when something actually reached the chat.
     has_sent = bool(spine["recently_sent"]) or any(
         t["speaker"] == "chat_user" for t in mem.recent_turns(8))
     dup = mem.is_duplicate(message)
     if dup or (has_sent and g.get("duplicate", 0) >= 0.7):
         yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-        # Name the message it duplicates — "similar" alone told the user nothing.
         dup_of = dup or _closest(message, spine["recently_sent"]) or message
         yield _ev(type="done", send=False, reason="duplicate", duplicate_of=dup_of[:160], source=source)
         return
     if g.get("coherent", 1.0) < 0.5 or g.get("faithful", 1.0) < 0.4:
-        # Guard-rejection cap: after consecutive rejections for the same voice
-        # conversation, PAUSE instead of spamming the HUD with rejections. The
-        # assistant is flailing; a pause signal tells the user to rephrase or
-        # continue in the chat directly.
-        _gkey = getattr(mem, "voice_id", None) or f"{owner}:{chat_session_id or ''}"
-        _GUARD_REJECTS[_gkey] = _GUARD_REJECTS.get(_gkey, 0) + 1
-        if _GUARD_REJECTS[_gkey] >= _GUARD_CONSECUTIVE_LIMIT:
-            _GUARD_REJECTS.pop(_gkey, None)
+        if is_commitment or len(verbatim.split()) < 4:
+            # The assistant's own promise, or nothing of the user's to fall back to.
             yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-            yield _ev(type="done", send=False, reason="guard-paused", guard=g)
+            yield _ev(type="done", send=False, reason="guard-rejected", guard=g, source=source)
             return
+        message, fallback_reason = verbatim, "guard-unfaithful"
+        title = ""
+    if not is_commitment and not is_forced and g.get("directed", 1.0) < 0.3:
         yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-        yield _ev(type="done", send=False, reason="guard-rejected", guard=g)
+        yield _ev(type="done", send=False, reason="not-directed-to-chat", guard=g)
         return
-    # The "directed" gate only applies to normal user-request forges. A
-    # commitment (the assistant promised work) and a manual force (the user
-    # pressed "send now") are by definition chat-directed — skip the gate.
-    is_commitment = source == "commitment"
-    is_forced = decision.get("engine") == "manual"
-    if not is_commitment and not is_forced:
-        directed = g.get("directed", 1.0)
-        if directed < 0.3:
-            yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-            yield _ev(type="done", send=False, reason="not-directed-to-chat", guard=g)
-            return
-        if directed < 0.7:
-            pend = _live_pending(mem)
-            if pend and _jaccard(pend["message"], message) >= 0.5:
-                # The user asked for the same thing again after we asked —
-                # repeating a request IS the confirmation. Never ask twice.
-                mem.pending_confirm = None
-            else:
-                # Ambiguous — ask the user, and remember what we asked so a
-                # plain "yes" sends it (instead of being dropped as filler).
-                mem.pending_confirm = {"message": message, "title": title, "ts": time.time()}
-                yield _ev(type="stage", stage="guard", status="idle", ms=gms)
-                yield _ev(type="needs_clarification", message=message, guard=g)
-                yield _ev(type="done", send=False, reason="needs-clarification", guard=g)
-                return
+    # Ambiguous direction (0.3–0.7) is SENT: asking "shall I send this to the
+    # chat?" is exactly the round-trip the user asked us to remove.
+    mem.pending_confirm = None
     yield _ev(type="stage", stage="guard", status="done", ms=gms)
-
-    # A message actually reached the chat — reset the guard-rejection counter.
-    _gkey = getattr(mem, "voice_id", None) or f"{owner}:{chat_session_id or ''}"
-    _GUARD_REJECTS.pop(_gkey, None)
-
     yield _ev(type="stage", stage="forge", status="done", ms=int((time.time() - t0) * 1000))
+    if fallback_reason:
+        source = source or "verbatim"
+        yield _ev(type="verbatim", reason=fallback_reason)
+    if not title:
+        title = _title_from_message(message)
     for ev in _emit_sent(mem, message, title, decision, source):
         yield ev
 
@@ -912,6 +966,12 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # A short reply ("yes", "sí, claro") is a real answer while we are
         # waiting on the user's confirmation — never drop it as filler.
         pending = _live_pending(mem)
+        # Questions ALFRED asked: a repeat ("me lo has preguntado ya 10 veces")
+        # or a permission question ("¿quiere que le pida al chat…?") is flagged
+        # so the frontend can tell GPT-Live to stop and use what it has.
+        if assistant_text:
+            for q in mem.record_questions(assistant_text):
+                yield _ev(type="repeated_question", **q)
         gate = force or words >= 3 or bool(assistant_text) or bool(pending and new_text)
         yield _ev(type="stage", stage="observe", status="done" if gate else "idle",
                   score=1.0 if gate else 0.0, words=words, ms=int((time.time() - t0) * 1000))
@@ -974,8 +1034,12 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # and an incomplete request ("...por ejemplo", "de Mm...") are judged by
         # JEV — no regex — so they work across every language.
         negative = decision.get("negative_directive", 0) >= 0.7
+        # "¿De qué estamos hablando?" is about THIS conversation: answered from
+        # the chat + voice context, never forwarded as new work.
+        about_conv = decision.get("about_conversation", 0) >= 0.7
         send = (
-            bool(new_text)
+            not about_conv
+            and bool(new_text)
             and decision.get("should_send", 0) >= thr
             and ready
             and not dup
@@ -1032,13 +1096,37 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
         # not the voice to answer from its own chatter.
         # Also runs when nothing is to be sent: "what does the chat say so far?"
         # must be answered from the thread, not stalled with "let me check".
+        # ③e SELF-ASSESSMENT — the user corrected or taught the assistant. Keep
+        # it as an independent note (evidence = the user's own words), shown to
+        # the voice and the chat from now on. Never blocks the rest of the run.
+        if new_text and decision.get("teaches", 0) >= 0.7:
+            try:
+                from src import self_assessment as _sa
+
+                async def _llm(system, user):
+                    return await _utility(owner, system, user, 300)
+                note = await _sa.extract_and_append(owner, chat_session_id, new_text,
+                                                    context=mem.transcript_text(12), llm=_llm, source="voice")
+                if note:
+                    yield _ev(type="lesson", note=note)
+            except Exception as e:
+                logger.debug(f"self-assessment capture skipped: {e}")
+
         wants_new_work = send and decision.get("directed_to_chat", 0) >= 0.7
-        if new_text and decision.get("answerable", 0) >= 0.7 and not wants_new_work:
-            context = (chat_txt or "") + "\n\n" + (docs_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
+        if new_text and (about_conv or decision.get("answerable", 0) >= 0.7) and not wants_new_work:
+            # The WHOLE chat (goal, summaries, every request, latest exchanges),
+            # not just its last turns — "what are we talking about" needs it all.
+            full_chat = chat_context_digest(chat_session_id, owner, budget=8000) or chat_txt or ""
+            context = full_chat + "\n\n" + (docs_txt or "") + "\n\n" + (mem.spine_text(include_live=False) or "")
             answer = await _extract_answer(owner, new_text, context)
             if answer:
                 yield _ev(type="answer_from_context", answer=answer, question=new_text[:300])
                 yield _ev(type="done", send=False, reason="answered-from-context")
+                return
+            if about_conv:
+                # Nothing extractable, but it is still about this conversation:
+                # the voice answers from the chat thread it was given at start.
+                yield _ev(type="done", send=False, reason="about-conversation")
                 return
 
         # ④ FORGER (user request) — the forge is a TRANSFORM, not a decision:
@@ -1054,8 +1142,10 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 f"=== Documents in this chat ===\n{docs_txt[:3000] or '(none)'}\n\n"
                 f"=== Already sent to chat ===\n" + ("\n".join(f"- {s}" for s in spine["recently_sent"]) or "(nothing)")
             )
+            user_words = " ".join(t["text"] for t in mem.transcript[-12:] if t.get("speaker") == "user")
             async for ev in _forge_and_emit(mem, owner, chat_session_id, FORGER_PROMPT,
-                                            forger_input, decision, new_text, use_jev=use_jev):
+                                            forger_input, decision, new_text, use_jev=use_jev,
+                                            user_words=user_words):
                 yield ev
             return
 
@@ -1077,8 +1167,10 @@ async def _run_locked(mem, owner, chat_session_id, force, use_jev, settle=False,
                 )
                 cdecision = {"engine": "commitment", "should_send": 1.0, "ready": 1.0, "already_sent": 0.0,
                              "intent": "research", "urgency": 1, "send": True}
+                user_words = " ".join(t["text"] for t in mem.transcript[-12:] if t.get("speaker") == "user")
                 async for ev in _forge_and_emit(mem, owner, chat_session_id, COMMITMENT_PROMPT,
-                                                cinput, cdecision, promise, source="commitment", use_jev=use_jev):
+                                                cinput, cdecision, promise, source="commitment", use_jev=use_jev,
+                                                user_words=user_words):
                     yield ev
                 return
 
