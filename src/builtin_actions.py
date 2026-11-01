@@ -1283,6 +1283,20 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
         else:
             plain.append("Todos: none active.")
 
+        # ----- Deadlines: overdue + due in the next 48h -----
+        try:
+            from src.deadline_watch import deadline_brief_lines
+            dl = deadline_brief_lines([
+                {"id": n.id, "title": n.title, "content": n.content, "items": n.items,
+                 "due_date": n.due_date, "archived": bool(n.archived),
+                 "repeat": n.repeat or "none"}
+                for n in notes if n.due_date
+            ])
+            if dl:
+                plain += [""] + dl
+        except Exception:
+            logger.debug("daily_brief: deadlines failed", exc_info=True)
+
         # ----- Goal: what the running/blocked goal needs -----
         try:
             from src.goal_watch import goal_status_line
@@ -1411,6 +1425,24 @@ async def action_check_goals(owner: str, **kwargs) -> Tuple[str, bool]:
     if not due:
         raise TaskNoop("goal needs nothing")
     return format_goal_alerts(due), True
+
+
+async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Follow up on notes with a due date: ones that went past due while
+    still open (the at-due-time ping may have been missed) and ones due in
+    the next 24h. Each note is reported once per state and due date; nothing
+    new → TaskNoop (silent)."""
+    try:
+        from src.deadline_watch import (due_deadline_alerts, format_deadline_alerts,
+                                        load_owner_notes)
+        notes = await asyncio.to_thread(load_owner_notes, owner)
+        due = await asyncio.to_thread(due_deadline_alerts, owner, notes)
+    except Exception as e:
+        logger.exception("check_deadlines action failed")
+        return str(e), False
+    if not due:
+        raise TaskNoop("no new deadlines")
+    return format_deadline_alerts(due), True
 
 
 async def action_test_skills(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -2334,6 +2366,7 @@ BUILTIN_ACTIONS = {
     "check_watchlist": action_check_watchlist,
     "check_stale_cases": action_check_stale_cases,
     "check_goals": action_check_goals,
+    "check_deadlines": action_check_deadlines,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -2347,7 +2380,7 @@ BUILTIN_ACTION_INFO = {
     "draft_email_replies": "Pre-draft AI reply suggestions for new inbox emails",
     "extract_email_events": "Scan emails for booking/meeting confirmations and auto-add to calendar",
     "classify_events": "Tag upcoming events with importance (low/normal/high/critical) and type (work/health/travel/etc.); colors them too",
-    "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos",
+    "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos, overdue/upcoming deadlines",
     "mark_email_boundaries": "LLM-detect signature & quoted-reply offsets in new emails; cached so future renders fold without further LLM calls",
     "learn_sender_signatures": "LLM learns each sender's signature from 3+ of their recent emails; cached per address so future renders fold sigs reliably without heuristics",
     "ssh_command": "Run a shell command on a local or remote host",
@@ -2357,5 +2390,6 @@ BUILTIN_ACTION_INFO = {
     "check_watchlist": "Re-check watched pages (Intel Watchlist) for changes; file changes into the linked case and notify. Keyword watches only alert when a keyword appears in new text.",
     "check_stale_cases": "Daily: point out open Case Files with no activity for 3+ days and no goal driving them, with one concrete next move each (drive with a goal, or a suggested pivot). Each case is nudged once per quiet spell.",
     "check_goals": "Hourly: tell you when your goal needs you — it blocked (with the reason and how to unblock it), finished, stalled with no round for 6h, or sat paused for 2+ days. Each state is reported once.",
+    "check_deadlines": "Twice a day: follow up on notes with a due date — ones that went past due while still open (in case the reminder was missed) and ones due in the next 24h. Each note is reported once per state and due date.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
 }

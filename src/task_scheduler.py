@@ -197,6 +197,7 @@ HOUSEKEEPING_DEFAULTS = {
     "check_watchlist":       {"name": "Intel Watchlist",          "schedule": "cron",  "scheduled_time": None,    "cron_expression": "*/30 * * * *", "legacy_names": []},
     "check_stale_cases":     {"name": "Intel Cold Cases",         "schedule": "cron",  "scheduled_time": None,    "cron_expression": "23 9 * * *", "legacy_names": []},
     "check_goals":           {"name": "Goal Check-in",            "schedule": "cron",  "scheduled_time": None,    "cron_expression": "17 * * * *", "legacy_names": []},
+    "check_deadlines":       {"name": "Deadline Watch",           "schedule": "cron",  "scheduled_time": None,    "cron_expression": "41 8,17 * * *", "legacy_names": []},
     "audit_skills":          {"name": "Skills Audit",             "trigger_type": "event", "trigger_event": "skill_added", "trigger_count": 5, "schedule": None, "scheduled_time": None, "cron_expression": None, "legacy_names": ["Audit Skills"]},
 }
 

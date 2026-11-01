@@ -45,8 +45,16 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   hourly): notifies when your goal blocked (with the reason and how to
   unblock it), finished, stalled with no round for 6h, or sat paused for 2+
   days — once per spell. The daily brief shows the goal's state too.
+- **Deadline Watch** (`src/deadline_watch.py`, scheduled task
+  `check_deadlines`, 08:41 + 17:41): follows up on notes with a due date —
+  ones that went past due while still open (the at-due-time ping may have
+  been missed; recurring notes excluded) and ones due in the next 24h, each
+  reported once per state and due date. The daily brief gets a "Deadlines"
+  section (overdue + next 48h; 30+ day backlog summarized). See
+  `docs/deadlines.md`.
 - Next: one-tap Resume from the notification; surface the goal state in the
-  Intel Board badge.
+  Intel Board badge; "snooze / mark done" actions on deadline notifications;
+  deadlines from calendar events and email ("reply by Friday").
 
 ## Intel Board (shipped)
 
