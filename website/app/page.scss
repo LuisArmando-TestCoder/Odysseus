@@ -528,3 +528,268 @@
 // Decorative layers (grid floor, reactor, noise) extend past the viewport on
 // narrow screens; clip them so the page never scrolls sideways.
 html, body { overflow-x: clip; }
+
+// ════════════════════════════════════════════════════════════════════════
+// Install-page upgrade (award-grade playbook pass)
+// Reveals are CSS scroll-driven (no JS, content visible without it), the
+// primary CTA adapts per OS, the console verifies itself, chapter 04 answers
+// the questions people ask before running a script from the internet.
+// ════════════════════════════════════════════════════════════════════════
+
+// ── Scroll-driven reveals: compositor-only, visible when unsupported ──────
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+    .modules > .reveal { animation-range: entry calc(var(--i, 0) * 6%) entry calc(55% + var(--i, 0) * 6%); }
+  }
+}
+@keyframes reveal-in { from { opacity: 0; translate: 0 28px; } }
+
+// Pause decorative loops while their section is off screen.
+.is-off {
+  .reactor *, .grid-floor__plane, .reactor__core { animation-play-state: paused !important; }
+}
+
+// ── Header: progress rail, chapter name, current link ──────────────────────
+.hdr {
+  &__progress {
+    position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+    background: linear-gradient(90deg, var(--cyan), var(--cyan-hi));
+    box-shadow: 0 0 10px var(--glow);
+    transform-origin: left; transform: scaleX(0);
+    display: none;
+  }
+  &__index b { font-weight: 600; color: var(--cyan-hi); }
+  &__chapter { color: var(--dim); }
+  &__nav a[aria-current] { color: var(--heading); &::after { transform: scaleX(1); } }
+}
+@supports (animation-timeline: scroll()) {
+  .hdr__progress { display: block; animation: progress linear both; animation-timeline: scroll(root); }
+}
+@keyframes progress { to { transform: scaleX(1); } }
+
+// ── Primary CTA: magnetic lean + success state ─────────────────────────────
+.cta {
+  border: 0; cursor: pointer;
+  translate: var(--mx, 0px) var(--my, 0px);
+  transition: transform var(--fast) var(--ease), filter var(--base) var(--ease),
+    translate 650ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  &.is-pulled { transition: transform var(--fast) var(--ease), filter var(--base) var(--ease), translate 160ms linear; }
+  &.is-done {
+    background: linear-gradient(180deg, #d9fff0, var(--ok) 70%);
+    .cta__glow { display: none; }
+  }
+}
+
+// ── Hero proof strip ───────────────────────────────────────────────────────
+.proof {
+  list-style: none; margin: 34px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  border: 1px solid var(--ln-dim);
+  background: color-mix(in srgb, var(--void) 55%, transparent);
+  backdrop-filter: blur(6px);
+  animation: fade-up 900ms var(--ease) 700ms both;
+  li {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 12px 20px; text-align: left;
+    & + li { border-left: 1px solid var(--ln-dim); }
+  }
+  b { font: 600 15px var(--mono); color: var(--heading); font-variant-numeric: tabular-nums; }
+  span { font-size: 13.5px; color: var(--dim); }
+}
+
+// ── Steps follow the selected OS ───────────────────────────────────────────
+.step {
+  animation: fade-up 520ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+  h3 { transition: color var(--base) var(--ease); }
+  &.is-next {
+    .step__n::before { border-color: var(--ok); box-shadow: 0 0 18px color-mix(in srgb, var(--ok) 45%, transparent); }
+    h3 { color: var(--ok); }
+  }
+}
+
+// ── Console additions ──────────────────────────────────────────────────────
+.console {
+  &__k { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  &__note { margin: 12px 0 0; font-size: 14px; line-height: 1.55; color: var(--dim); max-width: 60ch; }
+  &__body { animation: fade-up 360ms var(--ease) both; }
+}
+.badge {
+  display: inline-block; padding: 3px 7px; letter-spacing: 0.12em;
+  color: var(--void); background: var(--cyan-hi);
+}
+
+.cmd {
+  transition: border-color var(--base) var(--ease);
+  code:focus-visible { box-shadow: inset 0 0 0 2px var(--cyan); border-radius: 0; }
+  &__copy { white-space: nowrap; }
+  &.is-done {
+    border-color: color-mix(in srgb, var(--ok) 60%, transparent);
+    .cmd__copy { color: var(--ok); }
+  }
+}
+
+.alt {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: stretch;
+  &__file {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px;
+    font: 400 13px var(--mono); color: var(--cyan-hi);
+    border: 1px solid var(--ln-dim); background: color-mix(in srgb, var(--cyan) 5%, transparent);
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+    em { font-style: normal; color: var(--faint); }
+    &:hover { border-color: var(--ln); background: color-mix(in srgb, var(--cyan) 10%, transparent); }
+  }
+  .cmd { min-width: 0; }
+}
+
+// Verify block (native <details>, animated where supported)
+.verify {
+  margin-top: 26px; border: 1px solid var(--ln-dim);
+  background: color-mix(in srgb, var(--void-2) 70%, transparent);
+  interpolate-size: allow-keywords;
+  summary {
+    display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px;
+    cursor: pointer; list-style: none; font-size: 14.5px; color: var(--heading);
+    &::-webkit-details-marker { display: none; }
+    svg:first-child { color: var(--cyan); flex: none; }
+    em { margin-left: auto; font: 400 12px var(--mono); font-style: normal; color: var(--faint); }
+    &:hover { background: color-mix(in srgb, var(--cyan) 5%, transparent); }
+  }
+  &__plus { flex: none; color: var(--dim); transition: transform var(--base) var(--ease); }
+  &[open] .verify__plus { transform: rotate(45deg); }
+  &__body {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 4px 14px 16px;
+    .label { margin-top: 6px; }
+    code { font-size: 12.5px; }
+    .link-arrow { justify-self: start; margin-top: 4px; }
+  }
+}
+
+// ── After the grid: transcript + arrival ───────────────────────────────────
+.install__after {
+  display: grid; grid-template-columns: 7fr 5fr; gap: clamp(20px, 3vw, 36px);
+  margin-top: clamp(40px, 7vh, 72px);
+  > * { min-width: 0; }
+}
+
+.tx {
+  border: 1px solid var(--ln-dim); background: var(--void-2);
+  box-shadow: 0 30px 80px -50px var(--glow);
+  &__bar {
+    display: flex; align-items: center; gap: 14px; min-height: 46px; padding: 0 8px 0 14px;
+    border-bottom: 1px solid var(--ln-dim);
+    .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+  &__dots {
+    display: inline-flex; gap: 6px;
+    i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid var(--ln); }
+  }
+  &__ctl {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
+    font: 500 12.5px var(--ui); color: var(--cyan-hi);
+    background: transparent; border: 1px solid var(--ln-dim); cursor: pointer;
+    &:hover { border-color: var(--ln); background: color-mix(in srgb, var(--cyan) 8%, transparent); }
+  }
+  &__body {
+    list-style: none; margin: 0; padding: 16px 18px 20px;
+    font: 400 12.5px/1.85 var(--mono); color: var(--dim);
+    min-height: calc(15 * 1.85em + 36px);
+    li { white-space: pre-wrap; overflow-wrap: anywhere; }
+    li.ok { color: var(--text); }
+    li.hd { color: var(--cyan-hi); }
+  }
+  &.is-armed li:not(.on):not(.tx__caret) { opacity: 0; }
+  &.is-armed li.on { animation: tx-in 240ms var(--ease) both; }
+  &__caret {
+    width: 8px; height: 1.1em; margin-top: 3px; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); animation: blink 1s steps(2) infinite;
+  }
+}
+@keyframes tx-in { from { opacity: 0; translate: -6px 0; } }
+@keyframes blink { 50% { opacity: 0; } }
+
+.arrive {
+  display: flex; flex-direction: column; gap: 14px; padding: clamp(20px, 3vw, 30px);
+  border: 1px solid var(--ln-dim);
+  background: radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--ok) 8%, transparent), transparent 60%);
+  .label { color: var(--ok); }
+  &__url {
+    display: flex; align-items: center; gap: 12px; margin: 0;
+    font: 600 clamp(1.15rem, 2.2vw, 1.5rem) var(--mono); color: var(--heading); letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+  &__body { margin: 0; font-size: 15px; color: var(--dim); }
+  .link-arrow { align-self: flex-start; margin-top: auto; }
+}
+
+// ── 04 Help / FAQ ──────────────────────────────────────────────────────────
+.help__grid {
+  display: grid; grid-template-columns: 4fr 7fr; gap: clamp(28px, 5vw, 72px); align-items: start;
+  .chapter__head { position: sticky; top: calc(var(--hdr-h) + 24px); margin-bottom: 0; }
+  .chapter__head .link-arrow { margin-top: 22px; }
+  h2 { font-size: clamp(2rem, 4.4vw, 3.6rem); }
+}
+.faq {
+  border-top: 1px solid var(--ln-dim);
+  &__item {
+    border-bottom: 1px solid var(--ln-dim);
+    interpolate-size: allow-keywords;
+    &::details-content { height: 0; overflow: clip; transition: height var(--base) var(--ease), content-visibility var(--base) allow-discrete; }
+    &[open]::details-content { height: auto; }
+    summary {
+      display: grid; grid-template-columns: 34px 1fr 20px; gap: 12px; align-items: center;
+      min-height: 64px; padding: 14px 4px; cursor: pointer; list-style: none;
+      &::-webkit-details-marker { display: none; }
+      &:hover .faq__q { color: var(--cyan-hi); }
+    }
+    &[open] .faq__plus { transform: rotate(45deg); color: var(--cyan); }
+  }
+  &__n { font: 400 12px var(--mono); color: var(--faint); letter-spacing: 0.1em; }
+  &__q { font-size: clamp(1.02rem, 1.4vw, 1.15rem); font-weight: 600; color: var(--heading); transition: color var(--fast) var(--ease); }
+  &__plus { color: var(--dim); transition: transform var(--base) var(--ease), color var(--base) var(--ease); }
+  &__a {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 0 4px 22px 50px;
+    p { margin: 0; color: var(--dim); font-size: 15.5px; max-width: 62ch; }
+    .cmd { max-width: 520px; }
+  }
+}
+
+// Skip rendering work for long below-the-fold chapters until needed.
+.caps, .help { content-visibility: auto; contain-intrinsic-size: auto 1200px; }
+
+// ── Responsive for the new pieces ──────────────────────────────────────────
+@media (max-width: 1100px) {
+  .hdr__chapter { display: none; }
+}
+@media (max-width: 900px) {
+  .install__after, .help__grid { grid-template-columns: 1fr; }
+  .help__grid .chapter__head { position: static; }
+}
+@media (max-width: 720px) {
+  .proof {
+    flex-direction: column; width: 100%; max-width: 340px;
+    li + li { border-left: 0; border-top: 1px solid var(--ln-dim); }
+  }
+  .alt { grid-template-columns: 1fr; }
+  .faq__a { padding-left: 4px; }
+  .faq__item summary { grid-template-columns: 26px 1fr 18px; }
+  .tx__body { min-height: 0; font-size: 11.5px; }
+  .verify summary em { display: none; }
+}
+@media (pointer: coarse) {
+  .cta { translate: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cta { translate: none; transition: none; }
+  .faq__item::details-content { transition: none; }
+}
+
+// The side HUDs need room beside the proof strip: only on large, tall screens.
+@media (max-width: 1320px), (max-height: 820px) {
+  .hud { display: none; }
+}
