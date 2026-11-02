@@ -1,0 +1,308 @@
+From 67a1d4c1c72546b5ae4c05fb7ee155a5c3bd79ff Mon Sep 17 00:00:00 2001
+From: Luis Armando Oriens <luisarmando.murillobaltodano@gmail.com>
+Date: Mon, 2 Nov 2026 18:03:00 +0000
+Subject: [PATCH 4/4] =?UTF-8?q?style(jarvis):=20mobile=20pass=201=20?=
+ =?UTF-8?q?=E2=80=94=20compact=20voice=20core=20in=20the=20top=20bar,=20dr?=
+ =?UTF-8?q?awer=20scrim,=20legible=20welcome?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- New static/css/jarvis-mobile.css (linked after tron.css, jarvis-scoped).
+- Voice launcher ring is now a true circle around the orb (was a rotating
+  ellipse sweeping outside the pill).
+- ≤768px: launcher becomes a 44px core under the drawer/modals; docked in the
+  chat top bar opposite the hamburger so it no longer covers the composer.
+- Drawer gets a visual-only scrim (pointer-events: none — no behaviour change).
+- Welcome tip + Nobody chip legible (were 20–25% opacity, tip clipped).
+- No resize grip on the composer on touch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015k7oH4Z6gEDGSPJVVyonEz
+---
+ ROADMAP.md                   |   6 +-
+ docs/JARVIS_UI.md            |  45 ++++++++-
+ static/css/jarvis-mobile.css | 174 +++++++++++++++++++++++++++++++++++
+ static/index.html            |   1 +
+ 4 files changed, 223 insertions(+), 3 deletions(-)
+ create mode 100644 static/css/jarvis-mobile.css
+
+diff --git a/ROADMAP.md b/ROADMAP.md
+index 315230b..f7ab299 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -129,8 +129,10 @@ research/compare, login, notes/tasks/calendar, the document editor +
+ library, email (inbox, reader, compose) and the cookbook (scan table,
+ serve list, dependencies, servers), the landing page
+ (`static/css/landing-jarvis.css`) and the `/cases` Intel Board
+-(`static/css/cases-jarvis.css`). Next areas, one per pass:
+-mobile → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
++(`static/css/cases-jarvis.css`). Mobile pass part 1 (app shell at phone
++width — compact voice core in the top bar, drawer scrim, legible welcome)
++lives in `static/css/jarvis-mobile.css`. Next areas, one per pass:
++mobile part 2 (messages, sheets, views) → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
+ 
+ ## High Priority
+ 
+diff --git a/docs/JARVIS_UI.md b/docs/JARVIS_UI.md
+index 4d3fe7a..39a24fc 100644
+--- a/docs/JARVIS_UI.md
++++ b/docs/JARVIS_UI.md
+@@ -11,6 +11,7 @@ saved theme keep it. Built one verified slice per run.
+ | Preset colours (`bg/fg/panel/border/red` + `advanced`) | `THEMES.jarvis` in `static/js/theme.js` |
+ | Default theme / pattern / effect colour / intensity | `DEFAULT_THEME`, `THEME_DEFAULT_PATTERN` (`constellations`), `THEME_DEFAULT_EFFECT_COLOR`, `THEME_DEFAULT_INTENSITY` (0.35) |
+ | Theme name on the DOM | `<html data-odx-theme="…">` — set by the first head script in `static/index.html` (first paint; falls back to `jarvis` with its core colours when nothing is saved) and by `applyThemeName()` in `theme.js` (on `save()`, init, reset, server sync) |
++| Phone-width shell | `static/css/jarvis-mobile.css`, linked after `tron.css` (same scoping) |
+ | Structural styling | `static/css/jarvis.css`, linked **last** in `index.html`. Every selector starts with `:root[data-odx-theme="jarvis"]`, so other presets and custom themes are untouched |
+ 
+ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
+@@ -57,7 +58,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
+ 10. ✅ Cookbook / ✅ research / compare
+ 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
+ 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
+-13. Mobile pass
++13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · part 2 messages, sheets, views
+ 
+ ## Progress log
+ 
+@@ -392,3 +393,45 @@ is served at `/cases`).
+ 
+ **Next:** mobile pass (app shell at 390px end-to-end), then the dedicated
+ settings pass (area 6).
++
++### Run 10 — 2026-11-02 · Mobile pass, part 1: the app shell at 390px
++New sheet `static/css/jarvis-mobile.css`, linked after `tron.css`; every rule
++under `:root[data-odx-theme="jarvis"]`. Audited the shell at 390×844 (welcome,
++chat with table/code, drawer open, and each sidebar tool view).
++- **Voice launcher = the living core.** The dashed ring in `voice-mode.css`
++  spun inside the *pill*, so it rotated as a tall ellipse sweeping outside the
++  button (all widths, all themes). Jarvis pins it to the orb as a 34px circle.
++- **Phones: compact 44px core.** The floating "VOICE" pill (z-index 9990,
++  `bottom: 110px`) sat on the composer's model picker, on top of the open
++  drawer and over modal sheets. At ≤768px it is now a 44px circular core
++  (label visually hidden, aria-label intact), z-index 150 — under the drawer,
++  its scrim and modal sheets. In the chat view it **docks in the top bar**,
++  opposite the hamburger; views that hide the hamburger (documents, notes,
++  compare) keep the original floating anchor, compact. The top bar gets
++  symmetric 52px gutters so the session title centres; the Nobody-mode
++  indicator shifts to 54px to clear the core.
++- **Drawer scrim.** `#sidebar-backdrop` is `display:none !important`
++  upstream (deliberately). Jarvis paints it as a *visual-only* layer (void
++  62 % + 2px blur + a faint cyan corner wash, 180ms expo fade) with
++  `pointer-events: none`, so taps still go to the existing click-outside
++  handler — zero behaviour change. The drawer's inner edge gets a lit
++  hairline.
++- **Composer:** no desktop resize grip on touch.
++- **Welcome:** tip was `opacity: .2` and clipped at `max-height: 60px` (4-line
++  tips cut mid-line) → `--jv-text-faint` at full opacity, 7.5em cap, 30ch
++  measure on phones. Nobody chip `opacity: .25` → `.85` dim text, cyan on
++  hover/focus, 44px tall on touch.
++- A11y gates: reduced-motion (no scrim fade, no press scale),
++  reduced-transparency (solid scrim/core), more-contrast (solid cyan core
++  border, full-ink chip), forced-colors.
++- Verified headless at 1440×900 + 390×844 (welcome, chat, drawer, 10 tool
++  views) in jarvis and light. Light: pixel-identical (only diffs are the
++  animated background canvas and the injected welcome→chat transition
++  timing). No horizontal overflow; no new console errors. FAB still opens
++  voice mode; tapping outside the drawer still closes it.
++- Seen, not fixed (later passes): message tables wrap words mid-token at
++  390px ("Linked/In") and code blocks soft-wrap mid-flag; the Calendar sheet
++  header shows no close key at 390px.
++
++**Next:** mobile pass part 2 — message bubbles (scrollable tables, code
++blocks), modal sheets at 390px (close keys, safe areas), then settings.
+diff --git a/static/css/jarvis-mobile.css b/static/css/jarvis-mobile.css
+new file mode 100644
+index 0000000..85830de
+--- /dev/null
++++ b/static/css/jarvis-mobile.css
+@@ -0,0 +1,174 @@
++/* ═══════════════════════════════════════════════════════════════════════════
++   Jarvis HUD — mobile pass · part 1: the app shell at phone width
++   ───────────────────────────────────────────────────────────────────────────
++   Linked after tron.css. Every selector is scoped to
++   :root[data-odx-theme="jarvis"], so other presets and custom themes are
++   untouched. See docs/JARVIS_UI.md → "Run 10".
++
++   1. Voice launcher — a true circular "core" ring (all widths), and on phones a
++      compact 44px core docked in the top bar, opposite the hamburger, so it
++      can never sit on the composer, the model picker or the drawer.
++   2. Drawer scrim — the mobile sidebar gets a dimmed void behind it. The
++      #sidebar-backdrop element is display:none upstream; jarvis paints it as a
++      purely visual layer (pointer-events: none) so taps still reach the
++      existing click-outside handler exactly as before — no behaviour change.
++   3. Top bar — symmetric 52px gutters so the session title centres between
++      the two docked keys; Nobody-mode indicator moves clear of the core.
++   4. Composer — no desktop resize grip on touch (safe-area padding already
++      lives in style.css).
++   5. Welcome — the tip and the Nobody chip become legible (were 20–25 %
++      opacity, below AA) and the chip gets a 44px touch target.
++   ═══════════════════════════════════════════════════════════════════════════ */
++
++/* ── 1 · Voice launcher: a circular core ring at every width ─────────────
++   voice-mode.css spins a dashed ring inset 4px inside the *pill*, which
++   rotates as a tall ellipse that sweeps outside the button. Pin it to the
++   orb as a 34px circle so the spin reads as the assistant's living core. */
++:root[data-odx-theme="jarvis"] .voice-mode-fab .vx-fab-ring {
++  inset: auto;
++  left: 6px;                       /* 12px padding + 12px orb radius − 17px − 1px border */
++  top: calc(50% - 17px);
++  width: 34px;
++  height: 34px;
++  border-radius: 50%;
++  border-color: color-mix(in srgb, var(--jv-cyan) 34%, transparent);
++}
++
++/* ── 1b · Phones: a compact 44px core ─────────────────────────────────────
++   Every view gets the compact core (label visually hidden; the button keeps
++   its aria-label). In the chat view it docks in the top bar, opposite the
++   hamburger. Views that hide the hamburger (documents, notes, compare) keep
++   the original floating anchor, just compact. z-index drops under the drawer
++   (200), its scrim (190) and modal sheets, which it used to float over. */
++@media (max-width: 768px) {
++  :root[data-odx-theme="jarvis"] .voice-mode-fab {
++    width: 44px;
++    height: 44px;
++    padding: 0;
++    gap: 0;
++    justify-content: center;
++    z-index: 150;
++    border-color: color-mix(in srgb, var(--jv-cyan) 26%, transparent);
++    background:
++      radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--jv-cyan) 14%, transparent) 0%, transparent 70%),
++      color-mix(in srgb, var(--jv-panel) 86%, transparent);
++    box-shadow:
++      0 6px 18px rgba(0, 0, 0, 0.45),
++      0 0 14px color-mix(in srgb, var(--jv-cyan) calc(14% * var(--jv-glow-k)), transparent);
++  }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab .voice-mode-label {
++    position: absolute;
++    width: 1px;
++    height: 1px;
++    overflow: hidden;
++    clip: rect(0 0 0 0);
++    white-space: nowrap;
++  }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab .vx-fab-ring { left: calc(50% - 17px); }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab:hover { transform: none; }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab:active { transform: scale(0.94); }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab:focus-visible {
++    outline: 2px solid var(--jv-cyan);
++    outline-offset: 2px;
++  }
++  /* Chat view: docked in the top bar. */
++  :root[data-odx-theme="jarvis"] body:not(.doc-view):not(.notes-view):not(:has(#notes-pane)):not(:has(.compare-active)) .voice-mode-fab {
++    top: calc(6px + env(safe-area-inset-top, 0px));
++    bottom: auto;
++    right: auto;
++    left: 4px;
++    animation: none;               /* no slide-in from below the fold */
++  }
++}
++
++/* ── 2 · Drawer scrim ──────────────────────────────────────────────────── */
++@media (max-width: 767.98px) {
++  :root[data-odx-theme="jarvis"] #sidebar-backdrop {
++    display: block !important;
++    position: fixed;
++    inset: 0;
++    z-index: 190;
++    background:
++      radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--jv-cyan) 6%, transparent), transparent 60%),
++      color-mix(in srgb, var(--jv-void) 62%, transparent);
++    -webkit-backdrop-filter: blur(2px) saturate(0.8);
++            backdrop-filter: blur(2px) saturate(0.8);
++    opacity: 0;
++    visibility: hidden;
++    pointer-events: none !important;
++    transition: opacity var(--jv-base) var(--jv-ease), visibility 0s linear var(--jv-base);
++  }
++  :root[data-odx-theme="jarvis"] #sidebar-backdrop.visible {
++    opacity: 1;
++    visibility: visible;
++    pointer-events: none !important;   /* visual only; see header note */
++    transition: opacity var(--jv-base) var(--jv-ease), visibility 0s;
++  }
++  /* The drawer's inner edge gets the same lit hairline as the desktop rail. */
++  :root[data-odx-theme="jarvis"] .sidebar.right-side:not(.hidden) {
++    border-left: 1px solid var(--jv-line-strong) !important;
++  }
++  :root[data-odx-theme="jarvis"] .sidebar:not(.right-side):not(.hidden) {
++    border-right: 1px solid var(--jv-line-strong) !important;
++  }
++}
++
++/* ── 3 · Top bar: symmetric gutters around the centred title ───────────── */
++@media (max-width: 768px) {
++  :root[data-odx-theme="jarvis"] body:not(.doc-view):not(.notes-view) .chat-top-bar {
++    padding-left: 52px !important;
++    padding-right: 52px !important;
++  }
++  :root[data-odx-theme="jarvis"] body:not(.doc-view):not(.notes-view) .chat-top-bar .incognito-indicator {
++    left: 54px !important;
++  }
++}
++
++/* ── 4 · Composer on touch ─────────────────────────────────────────────── */
++@media (max-width: 768px), (pointer: coarse) {
++  :root[data-odx-theme="jarvis"] #message { resize: none; }
++}
++
++/* ── 5 · Welcome: legible tip + touchable Nobody chip ─────────────────── */
++:root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip {
++  opacity: 1;
++  max-height: 7.5em;               /* style.css caps at 60px → 4-line tips clipped */
++  color: var(--jv-text-faint);
++  letter-spacing: 0.02em;
++}
++:root[data-odx-theme="jarvis"] .incognito-btn {
++  opacity: 0.85;
++  color: var(--jv-text-dim);
++  border-color: var(--jv-line);
++}
++:root[data-odx-theme="jarvis"] .incognito-btn:hover,
++:root[data-odx-theme="jarvis"] .incognito-btn:focus-visible {
++  opacity: 1;
++  color: var(--jv-cyan-hi);
++  border-color: var(--jv-line-strong);
++}
++@media (max-width: 768px), (pointer: coarse) {
++  :root[data-odx-theme="jarvis"] .incognito-btn { min-height: 44px; padding-inline: 16px; }
++  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip { font-size: 0.75rem; max-width: 30ch; margin-inline: auto; }
++}
++
++/* ── Accessibility gates ──────────────────────────────────────────────── */
++@media (prefers-reduced-motion: reduce) {
++  :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab:active { transform: none; }
++}
++@media (prefers-reduced-transparency: reduce) {
++  :root[data-odx-theme="jarvis"] #sidebar-backdrop {
++    -webkit-backdrop-filter: none;
++            backdrop-filter: none;
++    background: color-mix(in srgb, var(--jv-void) 80%, transparent);
++  }
++  :root[data-odx-theme="jarvis"] .voice-mode-fab { background: var(--jv-panel) !important; }
++}
++@media (prefers-contrast: more) {
++  :root[data-odx-theme="jarvis"] .voice-mode-fab { border-color: var(--jv-cyan) !important; }
++  :root[data-odx-theme="jarvis"] .incognito-btn { opacity: 1; color: var(--jv-text); }
++}
++@media (forced-colors: active) {
++  :root[data-odx-theme="jarvis"] #sidebar-backdrop.visible { background: Canvas; opacity: 0.6; }
++}
+diff --git a/static/index.html b/static/index.html
+index c6dd170..043147c 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -249,6 +249,7 @@
+        :root[data-odx-theme="jarvis"], so other themes are untouched. -->
+   <link rel="stylesheet" href="/static/css/jarvis.css">
+   <link rel="stylesheet" href="/static/css/tron.css">
++  <link rel="stylesheet" href="/static/css/jarvis-mobile.css">
+   <link rel="modulepreload" href="/static/app.js">
+   <link rel="modulepreload" href="/static/js/chat.js">
+   <link rel="modulepreload" href="/static/js/ui.js">
+-- 
+2.34.1
+

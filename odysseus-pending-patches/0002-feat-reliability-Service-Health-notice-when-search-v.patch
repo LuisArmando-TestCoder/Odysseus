@@ -1,0 +1,826 @@
+From 18c603008208d1bd47cf07d8285bc62b417c3eb9 Mon Sep 17 00:00:00 2001
+From: Luis Armando Oriens <luisarmando.murillobaltodano@gmail.com>
+Date: Mon, 2 Nov 2026 12:14:51 +0000
+Subject: [PATCH 2/4] =?UTF-8?q?feat(reliability):=20Service=20Health=20?=
+ =?UTF-8?q?=E2=80=94=20notice=20when=20search,=20vectors,=20ntfy,=20email?=
+ =?UTF-8?q?=20or=20storage=20go=20down?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When SearXNG, ChromaDB, the ntfy server or a mail server disappears the app
+keeps answering, just worse, and reminders silently stop. Nothing said why.
+
+- src/service_health.py (stdlib, injectable probes): checks web search
+  (SearXNG reachability or the provider API key), ChromaDB (when installed),
+  ntfy (when reminders go there), the owner's enabled IMAP/SMTP servers and
+  storage (readiness). Down is reported once per outage after two failed
+  checks in a row, with the error and a fix; recovery is reported once.
+- New scheduled task "Service Health" (check_services, :07/:37 every hour);
+  silent (TaskNoop) when nothing changed.
+- Daily brief gains a "Degraded services" section (from state, no probes).
+- URLs go through check_outbound_url, redirects not followed, credentials
+  and query strings redacted; email accounts owner-scoped.
+- tests/test_service_health.py (11 tests), docs/service-health.md, ROADMAP.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015k7oH8PFSnHVtDdgvB8Tkc
+---
+ ROADMAP.md                   |  18 ++
+ docs/service-health.md       |  51 ++++
+ src/builtin_actions.py       |  30 ++-
+ src/service_health.py        | 439 +++++++++++++++++++++++++++++++++++
+ src/task_scheduler.py        |   1 +
+ tests/test_service_health.py | 160 +++++++++++++
+ 6 files changed, 698 insertions(+), 1 deletion(-)
+ create mode 100644 docs/service-health.md
+ create mode 100644 src/service_health.py
+ create mode 100644 tests/test_service_health.py
+
+diff --git a/ROADMAP.md b/ROADMAP.md
+index 41b0f15..065a94c 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -56,6 +56,22 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
+   Intel Board badge; "snooze / mark done" actions on deadline notifications;
+   deadlines from calendar events and email ("reply by Friday").
+ 
++## Service Health (shipped)
++
++- **Service Health** (`src/service_health.py`, scheduled task
++  `check_services`, every 30 min at :07/:37): probes web search (SearXNG
++  reachability, or the API key for keyed providers), the vector store
++  (ChromaDB, when installed), ntfy (when reminders are routed there), each of
++  your enabled email accounts' IMAP/SMTP servers, and storage (database +
++  writable data folder). Notifies once when a service has failed two checks
++  in a row — with the error and a concrete fix — and once when it recovers;
++  a single blip stays silent. The daily brief lists services that are down
++  right now. URLs pass `check_outbound_url`, redirects are not followed,
++  credentials/query strings are redacted. See `docs/service-health.md`.
++- Next: a `/api/health/services` endpoint + a status dot in the sidebar;
++  LLM provider/endpoint probes (Anthropic, OpenAI, local vLLM/Ollama) with
++  the same down/recovered flow; "snooze this service" for known outages.
++
+ ## Intel Board (shipped)
+ 
+ - **Case Files** (`src/casefiles.py`, `case_file` tool, `/api/cases`, `/cases`):
+@@ -147,6 +163,8 @@ serve list, dependencies, servers) and the landing page
+   fetched pages, and memories should be treated as untrusted data. Keep testing
+   whether models follow malicious instructions from those surfaces.
+ - Better degraded-state reporting for ChromaDB, SearXNG, email, ntfy, and provider probes.
++  (Background checks + notifications shipped as Service Health; still open:
++  in-UI status surface and LLM provider probes.)
+ - Email performance audit. Fetching, searching, opening, deleting, and sending
+   email can feel slow, especially over IMAP/SMTP providers with high latency.
+   Need someone who knows mail performance to profile the current flow, identify
+diff --git a/docs/service-health.md b/docs/service-health.md
+new file mode 100644
+index 0000000..e8feffa
+--- /dev/null
++++ b/docs/service-health.md
+@@ -0,0 +1,51 @@
++# Service Health
++
++Odysseus depends on services that can quietly disappear: SearXNG behind web
++search, ChromaDB behind document/memory recall, the ntfy server that carries
++reminders, your mail servers, and its own data folder. When one goes away the
++app keeps answering — just worse — and reminders silently stop arriving.
++
++**Service Health** (scheduled task `check_services`, every 30 minutes) checks
++them and tells you when something breaks, and again when it is fixed.
++
++## What is checked
++
++| Service | When | Check |
++|---|---|---|
++| Storage (database + data folder) | always | `src/readiness.py` — DB answers `SELECT 1`, `data/` is writable |
++| Web search | provider `searxng` | HTTP GET of `search_url` (or `SEARXNG_INSTANCE`); any answer below 500 counts as up |
++| Web search | keyed providers (Brave, Tavily, …) | the API key is set |
++| Vector store (ChromaDB) | `chromadb` installed | TCP connect to `CHROMADB_HOST:CHROMADB_PORT` |
++| Reminders (ntfy) | `reminder_channel = ntfy` | an enabled ntfy integration exists and `GET <base>/v1/health` answers |
++| Email | each of *your* enabled accounts | TCP connect to the IMAP and SMTP host/port |
++
++Search disabled, ChromaDB not installed or reminders not on ntfy → that
++check is skipped, not reported.
++
++## When you hear about it
++
++- **Down**: after two failed checks in a row (one blip is ignored), once per
++  outage, with the error and a fix, e.g.
++  `DOWN Web search (SearXNG): http://localhost:8080: connection refused Fix: Start SearXNG …`
++- **Recovered**: once, when a service you were told about answers again
++  (`OK again Reminders (ntfy) (was down 2 hours)`).
++- **Daily brief**: a "Degraded services" section lists anything down right
++  now (read from the saved state; the brief does not probe).
++
++Nothing new → the task finishes silently.
++
++## Safety
++
++- Probes are reachability checks: no request body is read and HTTP redirects
++  are not followed. Every URL goes through `src/url_safety.check_outbound_url`
++  first (link-local / metadata addresses refused).
++- Usernames, passwords and query strings are stripped from URLs before they
++  appear in a notification.
++- Email accounts are owner-scoped (legacy null-owner rows only on single-user
++  installs). State lives in `data/service_health/<owner>.json`.
++
++## Tuning
++
++Pause or reschedule "Service Health" in Tasks like any scheduled task. The
++module (`src/service_health.py`) is stdlib-only with injectable probes;
++tests in `tests/test_service_health.py`.
+diff --git a/src/builtin_actions.py b/src/builtin_actions.py
+index f666a2d..2e2c177 100644
+--- a/src/builtin_actions.py
++++ b/src/builtin_actions.py
+@@ -1309,6 +1309,15 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
+         # ----- Intel: open cases + watchlist health -----
+         plain.extend(_intel_brief_lines(owner))
+ 
++        # ----- Services currently down (from Service Health state; no probes) -----
++        try:
++            from src.service_health import health_brief_lines
++            hl = health_brief_lines(owner)
++            if hl:
++                plain += [""] + hl
++        except Exception:
++            logger.debug("daily_brief: service health failed", exc_info=True)
++
+         plain_body = "\n".join(plain)
+ 
+         return plain_body, True
+@@ -1445,6 +1454,23 @@ async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
+     return format_deadline_alerts(due), True
+ 
+ 
++async def action_check_services(owner: str, **kwargs) -> Tuple[str, bool]:
++    """Probe the services Odysseus depends on (search, vector store, ntfy,
++    your email servers, storage). Notifies when one has failed two checks in
++    a row and again when it recovers; otherwise TaskNoop (silent)."""
++    try:
++        from src.service_health import (format_health_alerts, run_live_probes,
++                                        update_health)
++        results = await asyncio.to_thread(run_live_probes, owner)
++        events = await asyncio.to_thread(update_health, owner, results)
++    except Exception as e:
++        logger.exception("check_services action failed")
++        return str(e), False
++    if not events:
++        raise TaskNoop("all services unchanged")
++    return format_health_alerts(events), True
++
++
+ async def action_test_skills(owner: str, **kwargs) -> Tuple[str, bool]:
+     """Run the per-skill Test on every skill: agent runs the procedure in a
+     sandbox, LLM judges the transcript, verdict is recorded on the skill.
+@@ -2367,6 +2393,7 @@ BUILTIN_ACTIONS = {
+     "check_stale_cases": action_check_stale_cases,
+     "check_goals": action_check_goals,
+     "check_deadlines": action_check_deadlines,
++    "check_services": action_check_services,
+     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
+ }
+ 
+@@ -2380,7 +2407,7 @@ BUILTIN_ACTION_INFO = {
+     "draft_email_replies": "Pre-draft AI reply suggestions for new inbox emails",
+     "extract_email_events": "Scan emails for booking/meeting confirmations and auto-add to calendar",
+     "classify_events": "Tag upcoming events with importance (low/normal/high/critical) and type (work/health/travel/etc.); colors them too",
+-    "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos, overdue/upcoming deadlines",
++    "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos, overdue/upcoming deadlines, degraded services",
+     "mark_email_boundaries": "LLM-detect signature & quoted-reply offsets in new emails; cached so future renders fold without further LLM calls",
+     "learn_sender_signatures": "LLM learns each sender's signature from 3+ of their recent emails; cached per address so future renders fold sigs reliably without heuristics",
+     "ssh_command": "Run a shell command on a local or remote host",
+@@ -2391,5 +2418,6 @@ BUILTIN_ACTION_INFO = {
+     "check_stale_cases": "Daily: point out open Case Files with no activity for 3+ days and no goal driving them, with one concrete next move each (drive with a goal, or a suggested pivot). Each case is nudged once per quiet spell.",
+     "check_goals": "Hourly: tell you when your goal needs you — it blocked (with the reason and how to unblock it), finished, stalled with no round for 6h, or sat paused for 2+ days. Each state is reported once.",
+     "check_deadlines": "Twice a day: follow up on notes with a due date — ones that went past due while still open (in case the reminder was missed) and ones due in the next 24h. Each note is reported once per state and due date.",
++    "check_services": "Every 30 min: probe the services Odysseus relies on — web search (SearXNG or the API key), the vector store (ChromaDB), ntfy when reminders go there, your email servers (IMAP/SMTP) and storage. Tells you once when one is down (after two failed checks, with the error and a fix) and again when it recovers.",
+     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
+ }
+diff --git a/src/service_health.py b/src/service_health.py
+new file mode 100644
+index 0000000..c560bf7
+--- /dev/null
++++ b/src/service_health.py
+@@ -0,0 +1,439 @@
++"""
++service_health.py — notice when a backing service degrades, before you do.
++
++Odysseus leans on services that can quietly go away: the SearXNG instance
++behind web search, ChromaDB behind documents/memory recall, the ntfy server
++that carries reminders, the IMAP/SMTP servers behind each email account, and
++its own data directory. When one of them is down the app keeps "working" but
++answers get worse, reminders never arrive, and nothing says why.
++
++This module probes them, keeps a small per-owner state file, and reports
++*transitions* only:
++
++* ``down``      — a service failed ``confirm`` checks in a row (one blip is
++                  not an outage), reported once per outage, with the error and
++                  a concrete fix;
++* ``recovered`` — a service we reported down answers again.
++
++``health_brief_lines`` reads the same state (no new probes) for the daily
++brief. ``collect_probes`` builds the probe list from settings, enabled
++integrations and the owner's own email accounts; everything it touches is
++injectable, so tests run without network, SQLAlchemy or ChromaDB.
++
++Probes are reachability checks only: an HTTP probe never reads the body and
++does not follow redirects, every URL passes ``check_outbound_url`` first, and
++credentials / query strings are stripped from anything shown to the user.
++Stdlib only.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import re
++import socket
++import tempfile
++import time
++import urllib.error
++import urllib.request
++from typing import Any, Callable, Dict, Iterable, List, Optional
++from urllib.parse import urlsplit, urlunsplit
++
++DEFAULT_CONFIRM = 2          # consecutive failures before "down" is reported
++HTTP_TIMEOUT = 5.0
++TCP_TIMEOUT = 4.0
++ALERT_LIMIT = 8
++_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
++
++# Search providers that need an API key, and the settings field holding it
++# (mirrors services/search/providers.py:_get_provider_key).
++SEARCH_KEY_FIELDS = {
++    "langsearch": "langsearch_api_key",
++    "brave": "brave_api_key",
++    "google_pse": "google_pse_key",
++    "tavily": "tavily_api_key",
++    "serper": "serper_api_key",
++    "scrapebadger": "scrapebadger_api_key",
++}
++
++
++def _clean(text: Any, limit: int = 160) -> str:
++    s = " ".join(_CTRL_RE.sub(" ", str(text or "")).split())
++    return s if len(s) <= limit else s[: limit - 1] + "…"
++
++
++def redact_url(url: str) -> str:
++    """Drop userinfo, query and fragment so a URL is safe to show."""
++    try:
++        p = urlsplit(str(url or "").strip())
++    except ValueError:
++        return "(invalid URL)"
++    if not p.scheme or not p.hostname:
++        return _clean(url, 80)
++    host = p.hostname
++    if ":" in host:
++        host = f"[{host}]"
++    try:
++        port = p.port
++    except ValueError:
++        port = None
++    netloc = f"{host}:{port}" if port else host
++    return urlunsplit((p.scheme, netloc, p.path, "", ""))
++
++
++def _result(key: str, label: str, ok: Optional[bool], detail: str = "",
++            fix: str = "") -> Dict[str, Any]:
++    return {"key": key, "label": label, "ok": ok,
++            "detail": _clean(detail), "fix": _clean(fix, 200)}
++
++
++# ── probe primitives ────────────────────────────────────────────────────────
++
++class _NoRedirect(urllib.request.HTTPRedirectHandler):
++    def redirect_request(self, *args, **kwargs):  # noqa: D401
++        return None  # surface the 3xx as an HTTPError: reachable, not followed
++
++
++def _default_http_get(url: str, timeout: float) -> int:
++    """GET ``url`` and return the status code (body is not read)."""
++    opener = urllib.request.build_opener(_NoRedirect)
++    req = urllib.request.Request(url, method="GET",
++                                 headers={"User-Agent": "Odysseus-HealthCheck/1"})
++    try:
++        with opener.open(req, timeout=timeout) as resp:
++            return int(resp.status)
++    except urllib.error.HTTPError as e:
++        return int(e.code)
++
++
++def _default_tcp_connect(host: str, port: int, timeout: float) -> None:
++    with socket.create_connection((host, port), timeout=timeout):
++        pass
++
++
++def _error_text(e: BaseException) -> str:
++    reason = getattr(e, "reason", None)
++    if isinstance(reason, BaseException):
++        e = reason
++    if isinstance(e, (socket.timeout, TimeoutError)):
++        return "timed out"
++    if isinstance(e, ConnectionRefusedError):
++        return "connection refused"
++    if isinstance(e, socket.gaierror):
++        return "host does not resolve"
++    return _clean(str(e) or e.__class__.__name__, 100)
++
++
++def probe_http(key: str, label: str, url: str, *, fix: str = "",
++               http_get: Optional[Callable[[str, float], int]] = None,
++               url_check: Optional[Callable[[str], Any]] = None,
++               timeout: float = HTTP_TIMEOUT) -> Dict[str, Any]:
++    """Reachable = any HTTP answer below 500 (401/403/404 still prove it is up)."""
++    shown = redact_url(url)
++    if url_check is None:
++        from src.url_safety import check_outbound_url as url_check
++    try:
++        safe, why = url_check(url)
++    except Exception as e:  # resolver blew up
++        safe, why = False, _error_text(e)
++    if not safe:
++        return _result(key, label, False, f"{shown}: {why}", fix)
++    try:
++        status = (http_get or _default_http_get)(url, timeout)
++    except Exception as e:
++        return _result(key, label, False, f"{shown}: {_error_text(e)}", fix)
++    if status >= 500:
++        return _result(key, label, False, f"{shown}: HTTP {status}", fix)
++    return _result(key, label, True, shown)
++
++
++def probe_tcp(key: str, label: str, host: str, port: int, *, fix: str = "",
++              tcp_connect: Optional[Callable[[str, int, float], None]] = None,
++              timeout: float = TCP_TIMEOUT) -> Dict[str, Any]:
++    where = f"{_clean(host, 80)}:{port}"
++    try:
++        (tcp_connect or _default_tcp_connect)(host, int(port), timeout)
++    except Exception as e:
++        return _result(key, label, False, f"{where}: {_error_text(e)}", fix)
++    return _result(key, label, True, where)
++
++
++# ── what to probe ───────────────────────────────────────────────────────────
++
++def collect_probes(*, settings: Dict[str, Any],
++                   integrations: Iterable[Dict[str, Any]] = (),
++                   email_accounts: Iterable[Dict[str, Any]] = (),
++                   chroma: Optional[Dict[str, Any]] = None,
++                   storage_check: Optional[Callable[[], Dict[str, Any]]] = None,
++                   default_search_url: str = "http://localhost:8080",
++                   http_get=None, tcp_connect=None, url_check=None) -> List[Dict[str, Any]]:
++    """Run every applicable probe and return their results.
++
++    ``ok`` is True/False, or None when the service is not in use (skipped).
++    ``email_accounts`` must already be scoped to the owner.
++    """
++    out: List[Dict[str, Any]] = []
++    http = dict(http_get=http_get, url_check=url_check)
++
++    # Storage: the data directory must stay writable (DB + files live there).
++    if storage_check is not None:
++        try:
++            rep = storage_check() or {}
++            checks = rep.get("checks") or {}
++            bad = [f"{k}: {_clean(v.get('error') or 'failed', 100)}"
++                   for k, v in checks.items() if isinstance(v, dict) and not v.get("ok")]
++            out.append(_result("storage", "Storage (database + data folder)", not bad,
++                               "; ".join(bad) or "ok",
++                               "Check free disk space and permissions on the data/ folder."))
++        except Exception as e:
++            out.append(_result("storage", "Storage (database + data folder)", False,
++                               _error_text(e), "Check free disk space and permissions on the data/ folder."))
++
++    # Web search.
++    provider = str(settings.get("search_provider") or "searxng").strip().lower()
++    if provider == "searxng":
++        url = (str(settings.get("search_url") or "").strip() or default_search_url).rstrip("/")
++        out.append(probe_http(
++            "search", "Web search (SearXNG)", url,
++            fix="Start SearXNG (e.g. `docker compose up -d searxng`) or pick another "
++                "provider in Settings → Search.", **http))
++    elif provider in SEARCH_KEY_FIELDS:
++        has_key = bool(str(settings.get(SEARCH_KEY_FIELDS[provider]) or "").strip())
++        out.append(_result(
++            "search", f"Web search ({provider})", has_key,
++            "API key set" if has_key else "no API key configured",
++            "Add the API key in Settings → Search, or switch provider."))
++
++    # Vector store (documents + memory recall). Optional dependency.
++    if chroma and chroma.get("installed"):
++        out.append(probe_tcp(
++            "vector", "Vector store (ChromaDB)", str(chroma.get("host") or "localhost"),
++            int(chroma.get("port") or 8100),
++            fix="Start ChromaDB (e.g. `docker compose up -d chromadb`) or set "
++                "CHROMADB_HOST / CHROMADB_PORT.", tcp_connect=tcp_connect))
++
++    # Reminder delivery via ntfy — only when reminders are routed there.
++    if str(settings.get("reminder_channel") or "").strip().lower() == "ntfy":
++        ntfy = next((i for i in integrations
++                     if i.get("preset") == "ntfy" and i.get("enabled", True)
++                     and str(i.get("base_url") or "").strip()), None)
++        if ntfy is None:
++            out.append(_result("ntfy", "Reminders (ntfy)", False,
++                               "reminders go to ntfy but no ntfy integration is enabled",
++                               "Add/enable the ntfy integration, or change the reminder channel."))
++        else:
++            base = str(ntfy["base_url"]).strip().rstrip("/")
++            out.append(probe_http("ntfy", "Reminders (ntfy)", f"{base}/v1/health",
++                                  fix="Check the ntfy server is running and reachable from Odysseus.",
++                                  **http))
++
++    # Email: each enabled account's IMAP and SMTP endpoints.
++    for acct in email_accounts:
++        if not acct.get("enabled", True):
++            continue
++        aid = str(acct.get("id") or "")
++        name = _clean(acct.get("name") or "account", 40)
++        for proto, dport in (("imap", 993), ("smtp", 465)):
++            host = str(acct.get(f"{proto}_host") or "").strip()
++            if not host:
++                continue
++            port = acct.get(f"{proto}_port") or dport
++            out.append(probe_tcp(
++                f"email:{aid}:{proto}", f"Email {name} ({proto.upper()})", host, int(port),
++                fix=f"Check the {proto.upper()} server/port in Settings → Email, "
++                    "or your network/VPN.", tcp_connect=tcp_connect))
++    return out
++
++
++# ── transitions + state ─────────────────────────────────────────────────────
++
++def _state_path(owner: str) -> str:
++    from src.constants import DATA_DIR
++    safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(owner or "default"))
++    return os.path.join(DATA_DIR, "service_health", f"{safe}.json")
++
++
++def _load_state(path: str) -> Dict[str, Any]:
++    try:
++        with open(path, "r", encoding="utf-8") as f:
++            data = json.load(f)
++    except (OSError, ValueError):
++        return {}
++    if not isinstance(data, dict):
++        return {}
++    return {k: v for k, v in data.items() if isinstance(v, dict)}
++
++
++def _save_state(path: str, state: Dict[str, Any]) -> None:
++    d = os.path.dirname(path)
++    os.makedirs(d, exist_ok=True)
++    fd, tmp = tempfile.mkstemp(dir=d, prefix=".service-health-", suffix=".tmp")
++    try:
++        with os.fdopen(fd, "w", encoding="utf-8") as f:
++            json.dump(state, f)
++        os.replace(tmp, path)
++    except BaseException:
++        try:
++            os.unlink(tmp)
++        except OSError:
++            pass
++        raise
++
++
++def update_health(owner: str, results: Iterable[Dict[str, Any]], *,
++                  now: Optional[float] = None, confirm: int = DEFAULT_CONFIRM,
++                  state_path: Optional[str] = None) -> List[Dict[str, Any]]:
++    """Fold probe results into the owner's state; return new transitions.
++
++    A transition is ``{"kind": "down"|"recovered", "key", "label", "detail",
++    "fix", "since", "duration"}``. Skipped services (``ok is None``) and
++    services no longer probed are dropped from state silently.
++    """
++    now = time.time() if now is None else now
++    confirm = max(1, int(confirm))
++    path = state_path or _state_path(owner)
++    state = _load_state(path)
++    new_state: Dict[str, Any] = {}
++    events: List[Dict[str, Any]] = []
++    for r in results:
++        if r.get("ok") is None:
++            continue
++        key = r["key"]
++        prev = state.get(key) or {}
++        if r["ok"]:
++            if prev.get("alerted"):
++                since = float(prev.get("since") or now)
++                events.append({"kind": "recovered", "key": key, "label": r["label"],
++                               "detail": r.get("detail", ""), "fix": "",
++                               "since": since, "duration": max(0.0, now - since)})
++            new_state[key] = {"ok": True, "since": now if not prev.get("ok", False) else
++                              float(prev.get("since") or now),
++                              "fails": 0, "alerted": False, "label": r["label"]}
++            continue
++        was_down = prev and not prev.get("ok", True)
++        since = float(prev.get("since") or now) if was_down else now
++        fails = (int(prev.get("fails") or 0) if was_down else 0) + 1
++        alerted = bool(prev.get("alerted")) if was_down else False
++        if not alerted and fails >= confirm:
++            alerted = True
++            events.append({"kind": "down", "key": key, "label": r["label"],
++                           "detail": r.get("detail", ""), "fix": r.get("fix", ""),
++                           "since": since, "duration": max(0.0, now - since)})
++        new_state[key] = {"ok": False, "since": since, "fails": fails, "alerted": alerted,
++                          "label": r["label"], "detail": r.get("detail", ""),
++                          "fix": r.get("fix", "")}
++    if new_state != state:
++        _save_state(path, new_state)
++    return events
++
++
++def _span(seconds: float) -> str:
++    s = max(0.0, float(seconds))
++    if s < 3600:
++        m = max(1, int(round(s / 60)))
++        return f"{m} min"
++    if s < 86400:
++        h = int(round(s / 3600))
++        return f"{h} hour{'s' if h != 1 else ''}"
++    d = int(round(s / 86400))
++    return f"{d} day{'s' if d != 1 else ''}"
++
++
++def format_health_alerts(events: List[Dict[str, Any]], limit: int = ALERT_LIMIT) -> str:
++    down = [e for e in events if e["kind"] == "down"]
++    up = [e for e in events if e["kind"] == "recovered"]
++    head = []
++    if down:
++        head.append(f"{len(down)} service{'s' if len(down) != 1 else ''} down")
++    if up:
++        head.append(f"{len(up)} recovered")
++    lines = [f"Service health: {', '.join(head)}."]
++    for e in down[:limit]:
++        line = f"- DOWN {e['label']}: {e['detail'] or 'unreachable'}"
++        if e.get("fix"):
++            line += f" Fix: {e['fix']}"
++        lines.append(line)
++    if len(down) > limit:
++        lines.append(f"…and {len(down) - limit} more down")
++    for e in up[:limit]:
++        lines.append(f"- OK again {e['label']} (was down {_span(e['duration'])})")
++    return "\n".join(lines)
++
++
++def health_brief_lines(owner: str, *, now: Optional[float] = None,
++                       confirm: int = DEFAULT_CONFIRM,
++                       state_path: Optional[str] = None) -> List[str]:
++    """Daily-brief section for services currently down (state only, no probes)."""
++    now = time.time() if now is None else now
++    state = _load_state(state_path or _state_path(owner))
++    down = [(k, v) for k, v in state.items()
++            if not v.get("ok", True) and int(v.get("fails") or 0) >= max(1, int(confirm))]
++    if not down:
++        return []
++    down.sort(key=lambda kv: float(kv[1].get("since") or now))
++    lines = ["Degraded services:"]
++    for _k, v in down[:ALERT_LIMIT]:
++        dur = _span(now - float(v.get("since") or now))
++        lines.append(f"- {_clean(v.get('label'), 60)} — down {dur}: "
++                     f"{_clean(v.get('detail'), 120) or 'unreachable'}")
++    if len(down) > ALERT_LIMIT:
++        lines.append(f"…and {len(down) - ALERT_LIMIT} more")
++    return lines
++
++
++# ── live wiring (lazy imports keep the module importable without deps) ──────
++
++def _load_owner_email_accounts(owner: str) -> List[Dict[str, Any]]:
++    from core.database import SessionLocal, EmailAccount
++    from src.auth_helpers import owner_filter
++    try:
++        from core.auth import AuthManager
++        allow_null = not AuthManager().is_configured
++    except Exception:
++        allow_null = False
++    db = SessionLocal()
++    try:
++        q = db.query(EmailAccount)
++        if owner:
++            q = owner_filter(q, EmailAccount, owner, include_shared=allow_null)
++        return [{"id": a.id, "name": a.name, "enabled": bool(a.enabled),
++                 "imap_host": a.imap_host, "imap_port": a.imap_port,
++                 "smtp_host": getattr(a, "smtp_host", ""),
++                 "smtp_port": getattr(a, "smtp_port", None)} for a in q.all()]
++    finally:
++        db.close()
++
++
++def run_live_probes(owner: str) -> List[Dict[str, Any]]:
++    """Probe this install's services for ``owner`` (blocking; run in a thread)."""
++    from src.settings import load_settings
++    settings = load_settings()
++    try:
++        from src.integrations import load_integrations
++        integrations = load_integrations()
++    except Exception:
++        integrations = []
++    try:
++        accounts = _load_owner_email_accounts(owner)
++    except Exception:
++        accounts = []
++    try:
++        import importlib.util
++        installed = importlib.util.find_spec("chromadb") is not None
++    except (ImportError, ValueError):
++        installed = False
++    chroma = {"installed": installed,
++              "host": os.getenv("CHROMADB_HOST", "localhost"),
++              "port": int(os.getenv("CHROMADB_PORT", "8100") or 8100)}
++    try:
++        from src.constants import SEARXNG_INSTANCE
++    except Exception:
++        SEARXNG_INSTANCE = "http://localhost:8080"
++    try:
++        from src.readiness import check_readiness
++    except Exception:
++        check_readiness = None
++    return collect_probes(settings=settings, integrations=integrations,
++                          email_accounts=accounts, chroma=chroma,
++                          storage_check=check_readiness,
++                          default_search_url=SEARXNG_INSTANCE)
+diff --git a/src/task_scheduler.py b/src/task_scheduler.py
+index 9088bf6..770a82c 100644
+--- a/src/task_scheduler.py
++++ b/src/task_scheduler.py
+@@ -198,6 +198,7 @@ HOUSEKEEPING_DEFAULTS = {
+     "check_stale_cases":     {"name": "Intel Cold Cases",         "schedule": "cron",  "scheduled_time": None,    "cron_expression": "23 9 * * *", "legacy_names": []},
+     "check_goals":           {"name": "Goal Check-in",            "schedule": "cron",  "scheduled_time": None,    "cron_expression": "17 * * * *", "legacy_names": []},
+     "check_deadlines":       {"name": "Deadline Watch",           "schedule": "cron",  "scheduled_time": None,    "cron_expression": "41 8,17 * * *", "legacy_names": []},
++    "check_services":        {"name": "Service Health",           "schedule": "cron",  "scheduled_time": None,    "cron_expression": "7,37 * * * *", "legacy_names": []},
+     "audit_skills":          {"name": "Skills Audit",             "trigger_type": "event", "trigger_event": "skill_added", "trigger_count": 5, "schedule": None, "scheduled_time": None, "cron_expression": None, "legacy_names": ["Audit Skills"]},
+ }
+ 
+diff --git a/tests/test_service_health.py b/tests/test_service_health.py
+new file mode 100644
+index 0000000..d9de7d2
+--- /dev/null
++++ b/tests/test_service_health.py
+@@ -0,0 +1,160 @@
++import asyncio
++import socket
++import urllib.error
++
++import pytest
++
++from src.service_health import (collect_probes, format_health_alerts, health_brief_lines,
++                                probe_http, probe_tcp, redact_url, update_health)
++
++SAFE = lambda url: (True, "ok")  # noqa: E731
++
++
++def ok_get(url, timeout):
++    return 200
++
++
++def refuse(*a):
++    raise ConnectionRefusedError()
++
++
++def test_redact_url_strips_credentials_and_query():
++    assert redact_url("https://u:p@search.local:8443/x?token=1#f") == "https://search.local:8443/x"
++    assert redact_url("http://[::1]:8080/") == "http://[::1]:8080/"
++
++
++def test_probe_http_classifies_statuses_and_errors():
++    assert probe_http("s", "S", "http://h/", http_get=ok_get, url_check=SAFE)["ok"] is True
++    assert probe_http("s", "S", "http://h/", http_get=lambda u, t: 403, url_check=SAFE)["ok"] is True
++    r = probe_http("s", "S", "http://h/", http_get=lambda u, t: 502, url_check=SAFE)
++    assert r["ok"] is False and "HTTP 502" in r["detail"]
++
++    def boom(u, t):
++        raise urllib.error.URLError(ConnectionRefusedError())
++    r = probe_http("s", "S", "http://a:secret@h/?k=v", http_get=boom, url_check=SAFE, fix="do x")
++    assert r["ok"] is False and "connection refused" in r["detail"]
++    assert "secret" not in r["detail"] and "k=v" not in r["detail"] and r["fix"] == "do x"
++
++
++def test_probe_http_refuses_unsafe_url_without_fetching():
++    called = []
++    r = probe_http("s", "S", "http://169.254.169.254/", url_check=lambda u: (False, "link-local blocked"),
++                   http_get=lambda u, t: called.append(u) or 200)
++    assert r["ok"] is False and "link-local" in r["detail"] and not called
++
++
++def test_probe_tcp():
++    assert probe_tcp("v", "V", "h", 1, tcp_connect=lambda h, p, t: None)["ok"] is True
++    r = probe_tcp("v", "V", "h", 8100, tcp_connect=refuse)
++    assert r["ok"] is False and r["detail"] == "h:8100: connection refused"
++
++    def to(*a):
++        raise socket.timeout()
++    assert "timed out" in probe_tcp("v", "V", "h", 1, tcp_connect=to)["detail"]
++
++
++def test_collect_probes_picks_what_is_in_use():
++    seen = []
++
++    def get(url, timeout):
++        seen.append(url)
++        return 200
++    res = collect_probes(
++        settings={"search_provider": "searxng", "search_url": "http://sx:8080/",
++                  "reminder_channel": "ntfy"},
++        integrations=[{"preset": "ntfy", "enabled": True, "base_url": "https://ntfy.local/"}],
++        email_accounts=[{"id": "a1", "name": "Work", "imap_host": "imap.x", "imap_port": 993,
++                         "smtp_host": "smtp.x", "smtp_port": 465},
++                        {"id": "a2", "name": "Off", "enabled": False, "imap_host": "imap.y"}],
++        chroma={"installed": True, "host": "c", "port": 8100},
++        storage_check=lambda: {"checks": {"database": {"ok": True}, "data_dir": {"ok": True}}},
++        http_get=get, tcp_connect=lambda h, p, t: None, url_check=SAFE)
++    keys = [r["key"] for r in res]
++    assert keys == ["storage", "search", "vector", "ntfy", "email:a1:imap", "email:a1:smtp"]
++    assert all(r["ok"] for r in res)
++    assert seen == ["http://sx:8080", "https://ntfy.local/v1/health"]
++
++
++def test_collect_probes_config_problems_and_skips():
++    res = collect_probes(settings={"search_provider": "brave", "reminder_channel": "ntfy"},
++                         integrations=[{"preset": "ntfy", "enabled": False, "base_url": "http://n"}],
++                         chroma={"installed": False},
++                         storage_check=lambda: {"checks": {"data_dir": {"ok": False, "error": "disk full"}}},
++                         url_check=SAFE)
++    by = {r["key"]: r for r in res}
++    assert set(by) == {"storage", "search", "ntfy"}
++    assert by["search"]["ok"] is False and "no API key" in by["search"]["detail"]
++    assert by["ntfy"]["ok"] is False and "no ntfy integration" in by["ntfy"]["detail"]
++    assert by["storage"]["ok"] is False and "disk full" in by["storage"]["detail"]
++    assert collect_probes(settings={"search_provider": "disabled"}) == []
++
++
++def down(key="search", label="Web search (SearXNG)"):
++    return {"key": key, "label": label, "ok": False, "detail": "http://sx: connection refused",
++            "fix": "Start SearXNG."}
++
++
++def up(key="search", label="Web search (SearXNG)"):
++    return {"key": key, "label": label, "ok": True, "detail": "http://sx", "fix": ""}
++
++
++def test_transitions_debounce_report_once_and_recover(tmp_path):
++    p = str(tmp_path / "s.json")
++    assert update_health("u", [down()], now=1000, state_path=p) == []      # first blip: quiet
++    ev = update_health("u", [down()], now=2800, state_path=p)
++    assert [e["kind"] for e in ev] == ["down"] and ev[0]["since"] == 1000
++    assert update_health("u", [down()], now=4600, state_path=p) == []      # still down: once
++    assert health_brief_lines("u", now=1000 + 3 * 3600, state_path=p) == [
++        "Degraded services:", "- Web search (SearXNG) — down 3 hours: http://sx: connection refused"]
++    ev = update_health("u", [up()], now=1000 + 7200, state_path=p)
++    assert [e["kind"] for e in ev] == ["recovered"] and ev[0]["duration"] == 7200
++    assert update_health("u", [up()], now=9000, state_path=p) == []
++    assert health_brief_lines("u", state_path=p) == []
++
++
++def test_blip_then_recovery_is_silent_and_skips_drop_state(tmp_path):
++    p = str(tmp_path / "s.json")
++    assert update_health("u", [down()], now=1, state_path=p) == []
++    assert update_health("u", [up()], now=2, state_path=p) == []
++    update_health("u", [down()], now=3, state_path=p)
++    update_health("u", [down()], now=4, state_path=p)
++    # Service no longer in use (skipped) → forgotten, no "recovered" noise.
++    assert update_health("u", [{"key": "search", "label": "x", "ok": None}], now=5, state_path=p) == []
++    assert health_brief_lines("u", state_path=p) == []
++
++
++def test_state_is_per_owner_and_tolerates_corruption(tmp_path):
++    a, b = str(tmp_path / "a.json"), str(tmp_path / "b.json")
++    update_health("a", [down()], now=1, state_path=a)
++    assert update_health("b", [down()], now=2, state_path=b) == []
++    (tmp_path / "c.json").write_text("[broken")
++    assert update_health("c", [down()], now=1, confirm=1, state_path=str(tmp_path / "c.json"))[0]["kind"] == "down"
++
++
++def test_format_alerts():
++    body = format_health_alerts([
++        {"kind": "down", "label": "Vector store (ChromaDB)", "detail": "c:8100: connection refused",
++         "fix": "Start ChromaDB.", "duration": 1800},
++        {"kind": "recovered", "label": "Reminders (ntfy)", "detail": "", "fix": "", "duration": 5400},
++    ])
++    assert body.splitlines() == [
++        "Service health: 1 service down, 1 recovered.",
++        "- DOWN Vector store (ChromaDB): c:8100: connection refused Fix: Start ChromaDB.",
++        "- OK again Reminders (ntfy) (was down 2 hours)",
++    ]
++
++
++def test_check_services_action_and_registration(monkeypatch, tmp_path):
++    ba = pytest.importorskip("src.builtin_actions")
++    ts = pytest.importorskip("src.task_scheduler")
++    import src.service_health as sh
++    monkeypatch.setattr(sh, "run_live_probes", lambda owner: [down()])
++    monkeypatch.setattr(sh, "_state_path", lambda owner: str(tmp_path / f"{owner}.json"))
++    with pytest.raises(ba.TaskNoop):
++        asyncio.run(ba.action_check_services("u"))
++    body, ok = asyncio.run(ba.action_check_services("u"))
++    assert ok and "DOWN Web search (SearXNG)" in body
++    with pytest.raises(ba.TaskNoop):
++        asyncio.run(ba.action_check_services("u"))
++    assert "check_services" in ba.BUILTIN_ACTIONS and "check_services" in ba.BUILTIN_ACTION_INFO
++    assert ts.HOUSEKEEPING_DEFAULTS["check_services"]["name"] == "Service Health"
+-- 
+2.34.1
+
