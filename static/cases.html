@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Intel Board · Odysseus</title>
+<script nonce="{{CSP_NONCE}}">
+// Expose the saved theme name like index.html does, so the theme-scoped
+// sheet (css/cases-jarvis.css) applies. No saved theme = jarvis (default).
+try { var _t = JSON.parse(localStorage.getItem('odysseus-theme'));
+  var _tn = (_t && _t.name) ? String(_t.name).toLowerCase().replace(/[^a-z0-9_-]/g, '') : 'jarvis';
+  if (_tn) document.documentElement.setAttribute('data-odx-theme', _tn);
+} catch (_) { document.documentElement.setAttribute('data-odx-theme', 'jarvis'); }
+</script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='14' cy='14' r='8' stroke='%235fb3ff' stroke-width='3' fill='none'/%3E%3Cpath d='M20 20L28 28' stroke='%235fb3ff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -72,6 +80,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 @media (max-width:1100px){.layout{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+<!-- Jarvis HUD layer — every rule scoped to data-odx-theme="jarvis" on <html>; other themes keep the look above. -->
+<link rel="stylesheet" href="/static/css/cases-jarvis.css">
 </head>
 <body>
 <header>

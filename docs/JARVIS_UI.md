@@ -56,7 +56,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 9. ✅ Email (inbox library, reader + pop-out readers, compose fields)
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
-12. `/cases` Intel Board (`static/cases.html`)
+12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
 13. Mobile pass
 
 ## Progress log
@@ -339,3 +339,56 @@ them up.
 **Next:** `/cases` Intel Board (`static/cases.html`), then the mobile pass;
 settings (area 6) still deserves a dedicated pass.
 
+### Run 9 — 2026-11-02 · `/cases` Intel Board
+`static/cases.html` is standalone (own inline tokens, no theme.js), so — like
+the landing — it gets its own sheet, `static/css/cases-jarvis.css`, linked
+after the inline `<style>`; every rule under `:root[data-odx-theme="jarvis"]`.
+Unlike the landing, the theme is **not** hard-coded: a nonce'd head script
+copies the saved theme name from `localStorage['odysseus-theme']` onto
+`<html>` exactly like `index.html` (nothing saved → `jarvis`). Users on any
+other theme get the original page, pixel-identical (verified by image diff
+at 1440×900 and 390×844, incl. the interaction state). Fonts use the private
+`JV Inter` / `JV Fira Code` names with absolute `/static/fonts/` URLs (the page
+is served at `/cases`).
+- **Re-pointed the page tokens** (`--bg/--panel/--panel2/--border/--muted/
+  --accent/--good/--warn/--bad/--chip/--mono`) so the JS-built markup and
+  inline styles follow without touching the script.
+- **Canvas + header:** void, overhead cyan light, 48px holo grid + scanline
+  veil (fixed, masked). Header is dark glass with a neon bottom edge brightest
+  at centre; "INTEL BOARD" tracked uppercase cyan-hi beside the page's one
+  core (lit diamond in a ring, slow breathe; static under reduced motion);
+  subtitle a mono micro-label behind a hairline; back link a 40px (44 touch)
+  squared key.
+- **Every card drawn** with the frame recipe (chamfer 10px, ticks on both
+  cuts, `.jv-boot`-style reveal); the open case's header card is the key
+  surface — brighter line, 14px cut, 22px ticks, overhead wash.
+- Section labels mono micro-labels led by a lit diamond; buttons squared mono
+  keys, primary = chamfered cyan slab (dark ink; focus lights an inner frame
+  since clip-path cuts outlines), Delete/Remove danger-red; inputs dark slots
+  with the lit-slot focus (cyan line + inset 2px bar); checkboxes square with a
+  cyan core (done steps ok-green).
+- **Case list:** rows dim → ink with a neon bar on hover; selected = cyan bar +
+  wash + cyan-hi title; counts mono tabular.
+- **Goal bar = status strip:** left light bar coloured by phase — active
+  `--jv-ok`, paused amber, blocked danger; phase label mono uppercase.
+- **Data rows:** entities/relationships/findings/watches on hairlines; entity
+  values + conf mono tabular; type groups as faint mono micro-labels;
+  findings and watches hang off a 1px left rail (amber when a watch is paused).
+- **Link graph = scope:** dark slot with a 40px radar grid and centre glow;
+  relation edges cyan with a soft bloom, co-mention edges faint dashed; nodes
+  keep their categorical type colours (data, not decoration) with a void ring;
+  **"also in another case" ring is amber** (overlap = attention), as are the
+  "Also in" / "Shared with other cases" chips. Legend dots are diamonds.
+- Toast: lit slot (cyan bar), danger variant for errors.
+- Touch: 44px controls on coarse pointers (verified: header key, search,
+  inputs, selects, buttons), 20px checkboxes, taller list rows.
+- A11y gates: reduced-motion / reduced-transparency / more-contrast /
+  forced-colors as in the app.
+- Verified headless (1440×900, 390×844 + mobile touch/reduced-motion) — case
+  open, search hits, graph node focused with overlap, keyboard focus on the
+  primary — in jarvis and light; no horizontal overflow, no console errors.
+  Pre-existing, not jarvis: the deterministic layout can stack labels near the
+  graph's bottom edge on dense graphs.
+
+**Next:** mobile pass (app shell at 390px end-to-end), then the dedicated
+settings pass (area 6).

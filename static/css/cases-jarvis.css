@@ -1,0 +1,444 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Intel Board (/cases) — Jarvis HUD layer
+   ───────────────────────────────────────────────────────────────────────────
+   cases.html is a standalone page with its own inline tokens; a nonce'd head
+   script copies the saved theme name onto <html data-odx-theme> (default
+   jarvis). Every rule below is scoped to :root[data-odx-theme="jarvis"], so
+   any other theme renders the original page untouched.
+   Language (docs/JARVIS_UI.md): near-black void, one overhead cyan light,
+   amber for attention, chamfered frames of light, Inter for prose, Fira Code
+   for data/labels, expo-out motion ≤240ms.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@font-face { font-family: "JV Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Regular.woff2") format("woff2"); }
+@font-face { font-family: "JV Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Medium.woff2") format("woff2"); }
+@font-face { font-family: "JV Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "JV Fira Code"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/FiraCode-Regular.woff2") format("woff2"); }
+@font-face { font-family: "JV Fira Code"; font-weight: 600; font-style: normal; font-display: swap; src: url("/static/fonts/FiraCode-SemiBold.woff2") format("woff2"); }
+
+/* ── 0 · Tokens (re-point the page's own, then add jv-*) ──────────────── */
+:root[data-odx-theme="jarvis"] {
+  color-scheme: dark;
+  --jv-cyan: #4fd8ff;
+  --jv-cyan-hi: #b8f3ff;
+  --jv-amber: #ffb347;
+  --jv-danger: #ff6b6b;
+  --jv-ok: #5ef2b3;
+  --jv-void: #060b14;
+  --jv-panel: #0a1424;
+  --jv-slot: #050c18;
+  --jv-text: #d3e9f5;
+  --jv-text-dim: #9fb9c9;     /* 9.6:1 on void, ~8.8:1 on panel */
+  --jv-text-faint: #7d98aa;   /* 6.4:1 on void */
+  --jv-ln: color-mix(in srgb, var(--jv-cyan) 42%, transparent);
+  --jv-ln-dim: color-mix(in srgb, var(--jv-cyan) 18%, transparent);
+  --jv-glow-k: 1;
+  --jv-glow: color-mix(in srgb, var(--jv-cyan) calc(40% * var(--jv-glow-k)), transparent);
+  --jv-ui: "JV Inter", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --jv-mono: "JV Fira Code", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+  --jv-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* The page's tokens — inline rules and JS-built markup read these */
+  --bg: var(--jv-void);
+  --panel: var(--jv-panel);
+  --panel2: var(--jv-slot);
+  --border: var(--jv-ln-dim);
+  --fg: var(--jv-text);
+  --muted: var(--jv-text-dim);
+  --accent: var(--jv-cyan);
+  --good: var(--jv-ok);
+  --warn: var(--jv-amber);
+  --bad: var(--jv-danger);
+  --chip: color-mix(in srgb, var(--jv-cyan) 8%, var(--jv-panel));
+  --mono: var(--jv-mono);
+  background-color: var(--jv-void);
+}
+
+/* ── 1 · Canvas: void + one overhead light + holo grid + scanline veil ── */
+:root[data-odx-theme="jarvis"] body {
+  background:
+    radial-gradient(70% 520px at 50% -160px, color-mix(in srgb, var(--jv-cyan) 14%, transparent), transparent 72%),
+    var(--jv-void);
+  color: var(--jv-text);
+  font: 14px/1.5 var(--jv-ui);
+  font-variant-numeric: tabular-nums;
+  min-height: 100vh;
+}
+:root[data-odx-theme="jarvis"] body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 1px, transparent 1px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 2%, transparent) 0 1px, transparent 1px 3px);
+  background-size: 48px 48px, 48px 48px, auto;
+  background-position: center top;
+  -webkit-mask-image: radial-gradient(90% 75% at 50% 20%, #000 0%, transparent 80%);
+          mask-image: radial-gradient(90% 75% at 50% 20%, #000 0%, transparent 80%);
+}
+:root[data-odx-theme="jarvis"] ::selection { background: color-mix(in srgb, var(--jv-cyan) 32%, transparent); color: #fff; }
+:root[data-odx-theme="jarvis"] a { color: var(--jv-cyan); text-underline-offset: 3px; }
+:root[data-odx-theme="jarvis"] a:hover { color: var(--jv-cyan-hi); }
+:root[data-odx-theme="jarvis"] { scrollbar-color: color-mix(in srgb, var(--jv-cyan) 30%, transparent) transparent; }
+
+/* ── 2 · Header: dark glass, neon bottom edge, tracked wordmark ───────── */
+:root[data-odx-theme="jarvis"] header {
+  background: color-mix(in srgb, var(--jv-void) 84%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+          backdrop-filter: blur(12px) saturate(1.2);
+  border-bottom: 0;
+  padding: 10px 16px;
+  min-height: 60px;
+}
+:root[data-odx-theme="jarvis"] header::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--jv-ln) 25%, var(--jv-cyan) 50%, var(--jv-ln) 75%, transparent);
+  box-shadow: 0 0 10px var(--jv-glow);
+}
+:root[data-odx-theme="jarvis"] header > a:first-child {
+  display: inline-grid; place-items: center; flex: none;
+  width: 40px; height: 40px; text-decoration: none;
+  font-size: 18px; color: var(--jv-cyan);
+  border: 1px solid var(--jv-ln-dim);
+  transition: border-color .12s var(--jv-ease), color .12s var(--jv-ease), background-color .12s var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] header > a:first-child:hover {
+  border-color: var(--jv-ln); color: var(--jv-cyan-hi);
+  background: color-mix(in srgb, var(--jv-cyan) 8%, transparent);
+}
+:root[data-odx-theme="jarvis"] header h1 {
+  display: inline-flex; align-items: center; gap: 10px; white-space: nowrap;
+  font: 600 13.5px/1 var(--jv-ui);
+  text-transform: uppercase; letter-spacing: 0.3em; margin-right: -0.3em;
+  color: var(--jv-cyan-hi);
+  text-shadow: 0 0 12px var(--jv-glow);
+}
+/* The page's one "core": a lit diamond inside a ring */
+:root[data-odx-theme="jarvis"] header h1::before {
+  content: ""; flex: none; width: 7px; height: 7px; transform: rotate(45deg);
+  background: var(--jv-cyan);
+  box-shadow: 0 0 0 4px var(--jv-void), 0 0 0 5px var(--jv-ln), 0 0 12px 4px var(--jv-glow);
+  margin: 0 6px 0 4px;
+  animation: jvc-core 3.2s var(--jv-ease) infinite;
+}
+@keyframes jvc-core { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+:root[data-odx-theme="jarvis"] header .meta {
+  font-family: var(--jv-mono); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--jv-text-faint);
+  padding-left: 12px; border-left: 1px solid var(--jv-ln-dim);
+}
+
+/* ── 3 · Controls ─────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] :is(input, textarea, select) {
+  background: color-mix(in srgb, var(--jv-slot) 90%, transparent);
+  border: 1px solid var(--jv-ln-dim);
+  border-radius: 0;
+  color: var(--jv-text);
+  min-height: 38px;
+  transition: border-color .12s var(--jv-ease), box-shadow .12s var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] :is(input, textarea)::placeholder { color: var(--jv-text-faint); opacity: 1; }
+:root[data-odx-theme="jarvis"] :is(input, textarea, select):hover { border-color: var(--jv-ln); }
+/* Focus = lit slot: cyan line + inset 2px bar (same as the app) */
+:root[data-odx-theme="jarvis"] :is(input, textarea, select):focus-visible {
+  outline: none; border-color: var(--jv-cyan);
+  box-shadow: inset 2px 0 0 var(--jv-cyan), 0 0 0 1px color-mix(in srgb, var(--jv-cyan) 25%, transparent), 0 0 14px -4px var(--jv-glow);
+}
+:root[data-odx-theme="jarvis"] input[type="search"] { font-size: 13px; }
+:root[data-odx-theme="jarvis"] input[type="number"] { font-family: var(--jv-mono); font-size: 13px; }
+:root[data-odx-theme="jarvis"] select {
+  font-family: var(--jv-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+}
+:root[data-odx-theme="jarvis"] input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 16px !important; height: 16px; min-height: 0; padding: 0; margin: 0;
+  border: 1px solid var(--jv-ln); background: var(--jv-slot); cursor: pointer;
+  display: inline-grid; place-content: center;
+}
+:root[data-odx-theme="jarvis"] input[type="checkbox"]::before {
+  content: ""; width: 8px; height: 8px; transform: scale(0);
+  background: var(--jv-cyan); box-shadow: 0 0 6px var(--jv-glow);
+  transition: transform .12s var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] input[type="checkbox"]:checked { border-color: var(--jv-cyan); }
+:root[data-odx-theme="jarvis"] input[type="checkbox"]:checked::before { transform: scale(1); }
+:root[data-odx-theme="jarvis"] input[type="checkbox"]:disabled { cursor: default; opacity: .7; }
+:root[data-odx-theme="jarvis"] input[type="checkbox"]:focus-visible { outline: 2px solid var(--jv-cyan); outline-offset: 2px; box-shadow: none; }
+
+/* Buttons: squared mono keys; primary = chamfered cyan slab */
+:root[data-odx-theme="jarvis"] button {
+  --c: 7px;
+  min-height: 34px; padding: 6px 12px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--jv-cyan) 6%, transparent);
+  border: 1px solid var(--jv-ln-dim);
+  color: var(--jv-text);
+  font: 400 11.5px/1.2 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em;
+  transition: border-color .12s var(--jv-ease), color .12s var(--jv-ease), background-color .12s var(--jv-ease), box-shadow .12s var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] button:hover {
+  border-color: var(--jv-ln); color: var(--jv-cyan-hi);
+  background: color-mix(in srgb, var(--jv-cyan) 12%, transparent);
+}
+:root[data-odx-theme="jarvis"] button.ghost { background: transparent; border-color: transparent; color: var(--jv-cyan); }
+:root[data-odx-theme="jarvis"] button.ghost:hover { border-color: var(--jv-ln-dim); background: color-mix(in srgb, var(--jv-cyan) 8%, transparent); }
+:root[data-odx-theme="jarvis"] button.bad { color: var(--jv-danger); }
+:root[data-odx-theme="jarvis"] button.bad:hover {
+  color: #ffd0d0; border-color: color-mix(in srgb, var(--jv-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--jv-danger) 12%, transparent);
+}
+:root[data-odx-theme="jarvis"] button.primary {
+  background: linear-gradient(180deg, #8be6ff, var(--jv-cyan));
+  border-color: transparent; color: #03121c; font-weight: 600;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  box-shadow: none;
+}
+:root[data-odx-theme="jarvis"] button.primary:hover { background: linear-gradient(180deg, #c8f6ff, #7fe3ff); color: #03121c; }
+:root[data-odx-theme="jarvis"] button:active { transform: translateY(1px); }
+:root[data-odx-theme="jarvis"] :is(a, button, [tabindex]):focus-visible { outline: 2px solid var(--jv-cyan); outline-offset: 2px; }
+/* clip-path would cut an outline: the slab lights an inner frame instead */
+:root[data-odx-theme="jarvis"] button.primary:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--jv-void), inset 0 0 0 3px #03121c; }
+
+/* ── 4 · The frame recipe: fill clipped to a 45° chamfer, light line +
+         drawn diagonals + bright ticks on top in ::after ──────────────── */
+:root[data-odx-theme="jarvis"] .layout { gap: 16px; padding: 18px 16px 32px; }
+:root[data-odx-theme="jarvis"] .card {
+  --c: 10px;
+  --ln: var(--jv-ln-dim);
+  --hi: color-mix(in srgb, var(--jv-cyan-hi) 70%, transparent);
+  --tick: 14px;
+  --fill: color-mix(in srgb, var(--jv-panel) 88%, transparent);
+  position: relative;
+  border: 0; border-radius: 0;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--jv-cyan) 6%, var(--fill)), var(--fill) 120px);
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  animation: jvc-boot .24s var(--jv-ease) both;
+}
+:root[data-odx-theme="jarvis"] .card::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  border: 1px solid var(--ln);
+  clip-path: inherit;
+  background:
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) var(--c) 0 / var(--tick) 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) 0 var(--c) / 1.5px var(--tick) no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) calc(100% - var(--c)) 100% / var(--tick) 1.5px no-repeat border-box,
+    linear-gradient(var(--hi), var(--hi)) 100% calc(100% - var(--c)) / 1.5px var(--tick) no-repeat border-box;
+}
+@keyframes jvc-boot { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* The case header is the one key surface: brighter line, bigger ticks */
+:root[data-odx-theme="jarvis"] #detail > .stack > .card:first-child {
+  --c: 14px; --tick: 22px; --ln: var(--jv-ln); --hi: var(--jv-cyan-hi);
+  background:
+    radial-gradient(80% 140px at 50% 0, color-mix(in srgb, var(--jv-cyan) 10%, transparent), transparent 75%),
+    var(--fill);
+}
+:root[data-odx-theme="jarvis"] .card.empty {
+  color: var(--jv-text-dim); padding: 48px 24px; font-size: 14px;
+  background:
+    radial-gradient(50% 120px at 50% 0, color-mix(in srgb, var(--jv-cyan) 8%, transparent), transparent 75%),
+    var(--fill);
+}
+
+/* Section labels: mono micro-labels led by a lit diamond */
+:root[data-odx-theme="jarvis"] .card h2 {
+  display: flex; align-items: center; gap: 9px;
+  font: 400 10.5px/1.3 var(--jv-mono);
+  letter-spacing: 0.16em; color: var(--jv-cyan);
+}
+:root[data-odx-theme="jarvis"] .card h2::before {
+  content: ""; flex: none; width: 5px; height: 5px; transform: rotate(45deg);
+  background: var(--jv-cyan); box-shadow: 0 0 6px var(--jv-glow);
+}
+:root[data-odx-theme="jarvis"] .meta { color: var(--jv-text-dim); }
+
+/* ── 5 · Case list + search hits ──────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .list li {
+  border-radius: 0; border: 0;
+  padding: 8px 10px;
+  transition: background-color .12s var(--jv-ease), box-shadow .12s var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .list li + li { margin-top: 2px; }
+:root[data-odx-theme="jarvis"] .list li > div:first-child { color: var(--jv-text-dim); transition: color .12s var(--jv-ease); }
+:root[data-odx-theme="jarvis"] .list li .meta { font-family: var(--jv-mono); font-size: 11px; color: var(--jv-text-faint); }
+:root[data-odx-theme="jarvis"] .list li[data-id]:hover {
+  background: color-mix(in srgb, var(--jv-cyan) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--jv-ln);
+}
+:root[data-odx-theme="jarvis"] .list li[data-id]:hover > div:first-child { color: var(--jv-text); }
+:root[data-odx-theme="jarvis"] .list li.sel {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jv-cyan) 14%, transparent), transparent 85%);
+  box-shadow: inset 2px 0 0 var(--jv-cyan), -4px 0 12px -6px var(--jv-glow);
+}
+:root[data-odx-theme="jarvis"] .list li.sel > div:first-child { color: var(--jv-cyan-hi); font-weight: 500; }
+:root[data-odx-theme="jarvis"] .list li:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--jv-cyan), inset 2px 0 0 var(--jv-cyan); }
+
+/* ── 6 · Case detail ──────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #detail > .stack > .card:first-child > .row:first-child > div:first-child > div:first-child {
+  font-family: var(--jv-ui); font-weight: 600 !important; font-size: 20px !important;
+  letter-spacing: -0.01em; color: #eaf8ff;
+}
+:root[data-odx-theme="jarvis"] #detail > .stack > .card:first-child > .row:first-child .meta {
+  font-family: var(--jv-mono); font-size: 11px; letter-spacing: 0.04em; color: var(--jv-text-faint); margin-top: 2px;
+}
+:root[data-odx-theme="jarvis"] #detail > .stack > .card:first-child > p { color: var(--jv-text); line-height: 1.6; max-width: 80ch; }
+:root[data-odx-theme="jarvis"] .chip {
+  border-radius: 0;
+  background: transparent;
+  border: 1px solid var(--jv-ln-dim);
+  color: var(--jv-text-dim);
+  font: 400 10.5px/1.6 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 0 7px;
+}
+
+/* Goal bar: a lit status strip — active ok-green, blocked danger, paused amber */
+:root[data-odx-theme="jarvis"] .goalbar {
+  border-radius: 0; border: 1px dashed var(--jv-ln-dim);
+  background: color-mix(in srgb, var(--jv-slot) 70%, transparent);
+  padding: 8px 10px 8px 12px;
+}
+:root[data-odx-theme="jarvis"] .goalbar.on {
+  border: 1px solid var(--jv-ln-dim);
+  box-shadow: inset 2px 0 0 var(--jv-cyan);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jv-cyan) 9%, transparent), transparent 70%);
+}
+:root[data-odx-theme="jarvis"] .goalbar.on:has(b.good) { box-shadow: inset 2px 0 0 var(--jv-ok); background: linear-gradient(90deg, color-mix(in srgb, var(--jv-ok) 8%, transparent), transparent 70%); }
+:root[data-odx-theme="jarvis"] .goalbar.on:has(b.warn) { box-shadow: inset 2px 0 0 var(--jv-amber); background: linear-gradient(90deg, color-mix(in srgb, var(--jv-amber) 9%, transparent), transparent 70%); }
+:root[data-odx-theme="jarvis"] .goalbar.on:has(b.bad) { box-shadow: inset 2px 0 0 var(--jv-danger); background: linear-gradient(90deg, color-mix(in srgb, var(--jv-danger) 9%, transparent), transparent 70%); }
+:root[data-odx-theme="jarvis"] .goalbar b {
+  font: 600 11px/1 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.14em; margin-right: 6px;
+}
+:root[data-odx-theme="jarvis"] .goalbar.on .meta { font-family: var(--jv-mono); font-size: 11.5px; }
+
+/* Entities / relationships / findings / steps: data rows on hairlines */
+:root[data-odx-theme="jarvis"] :is(.ent, .finding, .w) { border-bottom: 1px solid color-mix(in srgb, var(--jv-cyan) 10%, transparent); }
+:root[data-odx-theme="jarvis"] .ent { padding: 6px 0; align-items: baseline; }
+:root[data-odx-theme="jarvis"] .ent code { color: var(--jv-text); font-size: 12.5px; }
+:root[data-odx-theme="jarvis"] .conf { color: var(--jv-text-faint); white-space: nowrap; }
+/* Type group labels (bare .meta divs straight inside the entities card) */
+:root[data-odx-theme="jarvis"] .grid2 > .card:first-child > div.meta {
+  font-family: var(--jv-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--jv-text-faint); padding-top: 4px;
+}
+:root[data-odx-theme="jarvis"] .grid2 > .card:first-child > div.meta code { text-transform: none; letter-spacing: 0; color: var(--jv-text); font-size: 12px; }
+:root[data-odx-theme="jarvis"] .grid2 > .card:first-child > div.meta b { color: var(--jv-cyan); font-weight: 400; letter-spacing: 0.08em; }
+:root[data-odx-theme="jarvis"] .finding { padding: 9px 0 9px 12px; line-height: 1.55; box-shadow: inset 1px 0 0 var(--jv-ln-dim); margin-bottom: 2px; }
+:root[data-odx-theme="jarvis"] .finding .meta { font-family: var(--jv-mono); font-size: 11px; margin-top: 3px; color: var(--jv-text-faint); }
+:root[data-odx-theme="jarvis"] .step { padding: 6px 0; gap: 10px; }
+:root[data-odx-theme="jarvis"] .step input[type="checkbox"] { margin-top: 2px; }
+:root[data-odx-theme="jarvis"] .step.done span { color: var(--jv-text-faint); text-decoration-color: color-mix(in srgb, var(--jv-text-faint) 70%, transparent); }
+:root[data-odx-theme="jarvis"] .step.done input[type="checkbox"] { border-color: var(--jv-ok); }
+:root[data-odx-theme="jarvis"] .step.done input[type="checkbox"]::before { background: var(--jv-ok); box-shadow: none; }
+:root[data-odx-theme="jarvis"] .pivot { align-items: center; padding: 3px 0; }
+:root[data-odx-theme="jarvis"] .pivot > span { font-family: var(--jv-mono); font-size: 12px; color: var(--jv-text); word-break: break-word; }
+
+/* ── 7 · Link graph: a dark scope with a faint radar grid ─────────────── */
+:root[data-odx-theme="jarvis"] .graph-wrap {
+  border-radius: 0; border: 1px solid var(--jv-ln-dim);
+  background:
+    radial-gradient(60% 60% at 50% 50%, color-mix(in srgb, var(--jv-cyan) 7%, transparent), transparent 75%),
+    linear-gradient(to right, color-mix(in srgb, var(--jv-cyan) 6%, transparent) 1px, transparent 1px) center / 40px 40px,
+    linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 6%, transparent) 1px, transparent 1px) center / 40px 40px,
+    var(--jv-slot);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, .5);
+}
+:root[data-odx-theme="jarvis"] .graph-wrap .g-edge { stroke: var(--jv-text-faint); stroke-opacity: .5; }
+:root[data-odx-theme="jarvis"] .graph-wrap .g-edge.link { stroke: var(--jv-cyan); stroke-opacity: .9; filter: drop-shadow(0 0 3px var(--jv-glow)); }
+:root[data-odx-theme="jarvis"] .graph-wrap .g-node {
+  stroke: var(--jv-void); stroke-width: 2;
+  filter: drop-shadow(0 0 3px var(--jv-glow));
+  transition: opacity .18s var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .graph-wrap .g-node.x { stroke: var(--jv-amber); stroke-width: 2.5; stroke-dasharray: 3 2; }
+:root[data-odx-theme="jarvis"] .graph-wrap .g-node:focus-visible { stroke: var(--jv-cyan-hi); stroke-width: 3; stroke-dasharray: none; }
+:root[data-odx-theme="jarvis"] .graph-wrap text { font-family: var(--jv-mono); fill: var(--jv-text); stroke: var(--jv-slot); stroke-width: 4px; }
+:root[data-odx-theme="jarvis"] .graph-wrap :is(line, text) { transition: opacity .18s var(--jv-ease); }
+:root[data-odx-theme="jarvis"] .graph-wrap .dim { opacity: .12; }
+:root[data-odx-theme="jarvis"] #g-meta { font-family: var(--jv-mono); font-size: 11px; letter-spacing: 0.04em; color: var(--jv-text-faint); }
+:root[data-odx-theme="jarvis"] .legend { gap: 6px 14px; margin-top: 10px; }
+:root[data-odx-theme="jarvis"] .legend span { font-family: var(--jv-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--jv-text-dim); }
+:root[data-odx-theme="jarvis"] .legend i { border-radius: 0; width: 7px; height: 7px; transform: rotate(45deg); margin-right: 2px; }
+:root[data-odx-theme="jarvis"] #graph > .meta:last-of-type { line-height: 1.6; }
+:root[data-odx-theme="jarvis"] #graph code { color: var(--jv-cyan-hi); }
+/* "Shared with other cases" + "Also in" — overlap is attention: amber */
+:root[data-odx-theme="jarvis"] .overlap > :is(b, span:first-child) {
+  font: 400 10.5px/1.3 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--jv-amber);
+}
+:root[data-odx-theme="jarvis"] .overlap button.ghost {
+  border: 1px solid color-mix(in srgb, var(--jv-amber) 35%, transparent); color: var(--jv-amber);
+  text-transform: none; letter-spacing: 0.02em; font-size: 11.5px;
+}
+:root[data-odx-theme="jarvis"] .overlap button.ghost:hover { background: color-mix(in srgb, var(--jv-amber) 10%, transparent); color: #ffe0b3; }
+
+/* ── 8 · Watchlist ────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .card > label.row.meta { gap: 10px; cursor: pointer; font-size: 12.5px; }
+:root[data-odx-theme="jarvis"] .w { padding: 12px 0 12px 12px; box-shadow: inset 1px 0 0 var(--jv-ln-dim); }
+:root[data-odx-theme="jarvis"] .w:has(.row .warn) { box-shadow: inset 1px 0 0 color-mix(in srgb, var(--jv-amber) 50%, transparent); }
+:root[data-odx-theme="jarvis"] .w b { font-weight: 600; color: var(--jv-text); }
+:root[data-odx-theme="jarvis"] .w .row:first-child .meta { font-family: var(--jv-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+:root[data-odx-theme="jarvis"] .w .url { color: var(--jv-text-faint); font-size: 11.5px; margin-top: 2px; }
+:root[data-odx-theme="jarvis"] .w > .meta { font-size: 12px; margin-top: 3px; }
+:root[data-odx-theme="jarvis"] .w button { min-height: 30px; padding: 4px 10px; font-size: 10.5px; }
+:root[data-odx-theme="jarvis"] .w .row:last-child { flex-wrap: wrap; }
+
+/* ── 9 · Toast: lit slot above the floor ──────────────────────────────── */
+:root[data-odx-theme="jarvis"] #toast {
+  border-radius: 0;
+  background: color-mix(in srgb, var(--jv-panel) 94%, transparent);
+  border: 1px solid var(--jv-ln);
+  box-shadow: inset 2px 0 0 var(--jv-cyan), 0 8px 30px rgba(0, 0, 0, .5), 0 0 18px -6px var(--jv-glow);
+  font: 400 12px/1.4 var(--jv-mono); letter-spacing: 0.04em;
+  padding: 10px 16px; max-width: calc(100vw - 32px);
+}
+:root[data-odx-theme="jarvis"] #toast.bad {
+  color: #ffd0d0; border-color: color-mix(in srgb, var(--jv-danger) 55%, transparent);
+  box-shadow: inset 2px 0 0 var(--jv-danger), 0 8px 30px rgba(0, 0, 0, .5);
+}
+
+/* ── 10 · Mobile ──────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  :root[data-odx-theme="jarvis"] .layout { padding: 14px 12px 28px; gap: 14px; }
+}
+@media (max-width: 600px) {
+  :root[data-odx-theme="jarvis"] header { gap: 10px; padding: 8px 12px; }
+  :root[data-odx-theme="jarvis"] header h1 { font-size: 12px; letter-spacing: 0.22em; margin-right: -0.22em; }
+  :root[data-odx-theme="jarvis"] header h1::before { margin: 0 4px 0 2px; }
+  :root[data-odx-theme="jarvis"] header #q { min-width: 0; }
+  :root[data-odx-theme="jarvis"] .card { padding: 14px; }
+  :root[data-odx-theme="jarvis"] .graph-wrap text { stroke-width: 6px; }
+}
+@media (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] :is(button, select, input:not([type="checkbox"])) { min-height: 44px; }
+  :root[data-odx-theme="jarvis"] header > a:first-child { width: 44px; height: 44px; }
+  :root[data-odx-theme="jarvis"] .list li { padding: 11px 10px; }
+  :root[data-odx-theme="jarvis"] .w button { min-height: 40px; }
+  :root[data-odx-theme="jarvis"] input[type="checkbox"] { width: 20px !important; height: 20px; }
+}
+
+/* ── 11 · Preferences ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] .card { animation: none; }
+  :root[data-odx-theme="jarvis"] header h1::before { animation: none; }
+  :root[data-odx-theme="jarvis"] button:active { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-odx-theme="jarvis"] header { background: var(--jv-void); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :root[data-odx-theme="jarvis"] body::before { display: none; }
+  :root[data-odx-theme="jarvis"] .card { --fill: var(--jv-panel); }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] {
+    --jv-glow-k: 0; --jv-ln: var(--jv-cyan); --jv-ln-dim: color-mix(in srgb, var(--jv-cyan) 60%, transparent);
+    --jv-text-dim: var(--jv-text); --jv-text-faint: #b7cddb;
+  }
+  :root[data-odx-theme="jarvis"] header h1 { text-shadow: none; }
+  :root[data-odx-theme="jarvis"] .card { --ln: var(--jv-ln); }
+  :root[data-odx-theme="jarvis"] :is(.graph-wrap .g-node, .graph-wrap .g-edge.link) { filter: none; }
+}
+@media (forced-colors: active) {
+  :root[data-odx-theme="jarvis"] body::before { display: none; }
+  :root[data-odx-theme="jarvis"] :is(.card, button.primary) { clip-path: none; border: 1px solid CanvasText; }
+  :root[data-odx-theme="jarvis"] .card::after { display: none; }
+  :root[data-odx-theme="jarvis"] input[type="checkbox"] { appearance: auto; -webkit-appearance: auto; }
+}

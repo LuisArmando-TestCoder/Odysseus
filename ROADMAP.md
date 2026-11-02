@@ -127,9 +127,10 @@ global primitives in `static/css/jarvis.css`, scoped to
 (`static/css/tron.css`) now covers shell, chat, composer, modals, settings,
 research/compare, login, notes/tasks/calendar, the document editor +
 library, email (inbox, reader, compose) and the cookbook (scan table,
-serve list, dependencies, servers) and the landing page
-(`static/css/landing-jarvis.css`). Next areas, one per pass:
-/cases → mobile → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
+serve list, dependencies, servers), the landing page
+(`static/css/landing-jarvis.css`) and the `/cases` Intel Board
+(`static/css/cases-jarvis.css`). Next areas, one per pass:
+mobile → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 
