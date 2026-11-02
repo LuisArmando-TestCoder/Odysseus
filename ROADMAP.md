@@ -56,6 +56,22 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   Intel Board badge; "snooze / mark done" actions on deadline notifications;
   deadlines from calendar events and email ("reply by Friday").
 
+## Service Health (shipped)
+
+- **Service Health** (`src/service_health.py`, scheduled task
+  `check_services`, every 30 min at :07/:37): probes web search (SearXNG
+  reachability, or the API key for keyed providers), the vector store
+  (ChromaDB, when installed), ntfy (when reminders are routed there), each of
+  your enabled email accounts' IMAP/SMTP servers, and storage (database +
+  writable data folder). Notifies once when a service has failed two checks
+  in a row — with the error and a concrete fix — and once when it recovers;
+  a single blip stays silent. The daily brief lists services that are down
+  right now. URLs pass `check_outbound_url`, redirects are not followed,
+  credentials/query strings are redacted. See `docs/service-health.md`.
+- Next: a `/api/health/services` endpoint + a status dot in the sidebar;
+  LLM provider/endpoint probes (Anthropic, OpenAI, local vLLM/Ollama) with
+  the same down/recovered flow; "snooze this service" for known outages.
+
 ## Intel Board (shipped)
 
 - **Case Files** (`src/casefiles.py`, `case_file` tool, `/api/cases`, `/cases`):
@@ -147,6 +163,8 @@ serve list, dependencies, servers) and the landing page
   fetched pages, and memories should be treated as untrusted data. Keep testing
   whether models follow malicious instructions from those surfaces.
 - Better degraded-state reporting for ChromaDB, SearXNG, email, ntfy, and provider probes.
+  (Background checks + notifications shipped as Service Health; still open:
+  in-UI status surface and LLM provider probes.)
 - Email performance audit. Fetching, searching, opening, deleting, and sending
   email can feel slow, especially over IMAP/SMTP providers with high latency.
   Need someone who knows mail performance to profile the current flow, identify

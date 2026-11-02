@@ -1309,6 +1309,15 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
         # ----- Intel: open cases + watchlist health -----
         plain.extend(_intel_brief_lines(owner))
 
+        # ----- Services currently down (from Service Health state; no probes) -----
+        try:
+            from src.service_health import health_brief_lines
+            hl = health_brief_lines(owner)
+            if hl:
+                plain += [""] + hl
+        except Exception:
+            logger.debug("daily_brief: service health failed", exc_info=True)
+
         plain_body = "\n".join(plain)
 
         return plain_body, True
@@ -1443,6 +1452,23 @@ async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
     if not due:
         raise TaskNoop("no new deadlines")
     return format_deadline_alerts(due), True
+
+
+async def action_check_services(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Probe the services Odysseus depends on (search, vector store, ntfy,
+    your email servers, storage). Notifies when one has failed two checks in
+    a row and again when it recovers; otherwise TaskNoop (silent)."""
+    try:
+        from src.service_health import (format_health_alerts, run_live_probes,
+                                        update_health)
+        results = await asyncio.to_thread(run_live_probes, owner)
+        events = await asyncio.to_thread(update_health, owner, results)
+    except Exception as e:
+        logger.exception("check_services action failed")
+        return str(e), False
+    if not events:
+        raise TaskNoop("all services unchanged")
+    return format_health_alerts(events), True
 
 
 async def action_test_skills(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -2367,6 +2393,7 @@ BUILTIN_ACTIONS = {
     "check_stale_cases": action_check_stale_cases,
     "check_goals": action_check_goals,
     "check_deadlines": action_check_deadlines,
+    "check_services": action_check_services,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
 
@@ -2380,7 +2407,7 @@ BUILTIN_ACTION_INFO = {
     "draft_email_replies": "Pre-draft AI reply suggestions for new inbox emails",
     "extract_email_events": "Scan emails for booking/meeting confirmations and auto-add to calendar",
     "classify_events": "Tag upcoming events with importance (low/normal/high/critical) and type (work/health/travel/etc.); colors them too",
-    "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos, overdue/upcoming deadlines",
+    "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos, overdue/upcoming deadlines, degraded services",
     "mark_email_boundaries": "LLM-detect signature & quoted-reply offsets in new emails; cached so future renders fold without further LLM calls",
     "learn_sender_signatures": "LLM learns each sender's signature from 3+ of their recent emails; cached per address so future renders fold sigs reliably without heuristics",
     "ssh_command": "Run a shell command on a local or remote host",
@@ -2391,5 +2418,6 @@ BUILTIN_ACTION_INFO = {
     "check_stale_cases": "Daily: point out open Case Files with no activity for 3+ days and no goal driving them, with one concrete next move each (drive with a goal, or a suggested pivot). Each case is nudged once per quiet spell.",
     "check_goals": "Hourly: tell you when your goal needs you — it blocked (with the reason and how to unblock it), finished, stalled with no round for 6h, or sat paused for 2+ days. Each state is reported once.",
     "check_deadlines": "Twice a day: follow up on notes with a due date — ones that went past due while still open (in case the reminder was missed) and ones due in the next 24h. Each note is reported once per state and due date.",
+    "check_services": "Every 30 min: probe the services Odysseus relies on — web search (SearXNG or the API key), the vector store (ChromaDB), ntfy when reminders go there, your email servers (IMAP/SMTP) and storage. Tells you once when one is down (after two failed checks, with the error and a fix) and again when it recovers.",
     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
 }
