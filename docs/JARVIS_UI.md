@@ -11,6 +11,7 @@ saved theme keep it. Built one verified slice per run.
 | Preset colours (`bg/fg/panel/border/red` + `advanced`) | `THEMES.jarvis` in `static/js/theme.js` |
 | Default theme / pattern / effect colour / intensity | `DEFAULT_THEME`, `THEME_DEFAULT_PATTERN` (`constellations`), `THEME_DEFAULT_EFFECT_COLOR`, `THEME_DEFAULT_INTENSITY` (0.35) |
 | Theme name on the DOM | `<html data-odx-theme="…">` — set by the first head script in `static/index.html` (first paint; falls back to `jarvis` with its core colours when nothing is saved) and by `applyThemeName()` in `theme.js` (on `save()`, init, reset, server sync) |
+| Phone-width shell | `static/css/jarvis-mobile.css`, linked after `tron.css` (same scoping) |
 | Structural styling | `static/css/jarvis.css`, linked **last** in `index.html`. Every selector starts with `:root[data-odx-theme="jarvis"]`, so other presets and custom themes are untouched |
 
 Keep the head-script fallback colours in sync with `THEMES.jarvis`.
@@ -57,7 +58,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · part 2 messages, sheets, views
 
 ## Progress log
 
@@ -392,3 +393,45 @@ is served at `/cases`).
 
 **Next:** mobile pass (app shell at 390px end-to-end), then the dedicated
 settings pass (area 6).
+
+### Run 10 — 2026-11-02 · Mobile pass, part 1: the app shell at 390px
+New sheet `static/css/jarvis-mobile.css`, linked after `tron.css`; every rule
+under `:root[data-odx-theme="jarvis"]`. Audited the shell at 390×844 (welcome,
+chat with table/code, drawer open, and each sidebar tool view).
+- **Voice launcher = the living core.** The dashed ring in `voice-mode.css`
+  spun inside the *pill*, so it rotated as a tall ellipse sweeping outside the
+  button (all widths, all themes). Jarvis pins it to the orb as a 34px circle.
+- **Phones: compact 44px core.** The floating "VOICE" pill (z-index 9990,
+  `bottom: 110px`) sat on the composer's model picker, on top of the open
+  drawer and over modal sheets. At ≤768px it is now a 44px circular core
+  (label visually hidden, aria-label intact), z-index 150 — under the drawer,
+  its scrim and modal sheets. In the chat view it **docks in the top bar**,
+  opposite the hamburger; views that hide the hamburger (documents, notes,
+  compare) keep the original floating anchor, compact. The top bar gets
+  symmetric 52px gutters so the session title centres; the Nobody-mode
+  indicator shifts to 54px to clear the core.
+- **Drawer scrim.** `#sidebar-backdrop` is `display:none !important`
+  upstream (deliberately). Jarvis paints it as a *visual-only* layer (void
+  62 % + 2px blur + a faint cyan corner wash, 180ms expo fade) with
+  `pointer-events: none`, so taps still go to the existing click-outside
+  handler — zero behaviour change. The drawer's inner edge gets a lit
+  hairline.
+- **Composer:** no desktop resize grip on touch.
+- **Welcome:** tip was `opacity: .2` and clipped at `max-height: 60px` (4-line
+  tips cut mid-line) → `--jv-text-faint` at full opacity, 7.5em cap, 30ch
+  measure on phones. Nobody chip `opacity: .25` → `.85` dim text, cyan on
+  hover/focus, 44px tall on touch.
+- A11y gates: reduced-motion (no scrim fade, no press scale),
+  reduced-transparency (solid scrim/core), more-contrast (solid cyan core
+  border, full-ink chip), forced-colors.
+- Verified headless at 1440×900 + 390×844 (welcome, chat, drawer, 10 tool
+  views) in jarvis and light. Light: pixel-identical (only diffs are the
+  animated background canvas and the injected welcome→chat transition
+  timing). No horizontal overflow; no new console errors. FAB still opens
+  voice mode; tapping outside the drawer still closes it.
+- Seen, not fixed (later passes): message tables wrap words mid-token at
+  390px ("Linked/In") and code blocks soft-wrap mid-flag; the Calendar sheet
+  header shows no close key at 390px.
+
+**Next:** mobile pass part 2 — message bubbles (scrollable tables, code
+blocks), modal sheets at 390px (close keys, safe areas), then settings.

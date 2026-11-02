@@ -1,0 +1,174 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Jarvis HUD — mobile pass · part 1: the app shell at phone width
+   ───────────────────────────────────────────────────────────────────────────
+   Linked after tron.css. Every selector is scoped to
+   :root[data-odx-theme="jarvis"], so other presets and custom themes are
+   untouched. See docs/JARVIS_UI.md → "Run 10".
+
+   1. Voice launcher — a true circular "core" ring (all widths), and on phones a
+      compact 44px core docked in the top bar, opposite the hamburger, so it
+      can never sit on the composer, the model picker or the drawer.
+   2. Drawer scrim — the mobile sidebar gets a dimmed void behind it. The
+      #sidebar-backdrop element is display:none upstream; jarvis paints it as a
+      purely visual layer (pointer-events: none) so taps still reach the
+      existing click-outside handler exactly as before — no behaviour change.
+   3. Top bar — symmetric 52px gutters so the session title centres between
+      the two docked keys; Nobody-mode indicator moves clear of the core.
+   4. Composer — no desktop resize grip on touch (safe-area padding already
+      lives in style.css).
+   5. Welcome — the tip and the Nobody chip become legible (were 20–25 %
+      opacity, below AA) and the chip gets a 44px touch target.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · Voice launcher: a circular core ring at every width ─────────────
+   voice-mode.css spins a dashed ring inset 4px inside the *pill*, which
+   rotates as a tall ellipse that sweeps outside the button. Pin it to the
+   orb as a 34px circle so the spin reads as the assistant's living core. */
+:root[data-odx-theme="jarvis"] .voice-mode-fab .vx-fab-ring {
+  inset: auto;
+  left: 6px;                       /* 12px padding + 12px orb radius − 17px − 1px border */
+  top: calc(50% - 17px);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border-color: color-mix(in srgb, var(--jv-cyan) 34%, transparent);
+}
+
+/* ── 1b · Phones: a compact 44px core ─────────────────────────────────────
+   Every view gets the compact core (label visually hidden; the button keeps
+   its aria-label). In the chat view it docks in the top bar, opposite the
+   hamburger. Views that hide the hamburger (documents, notes, compare) keep
+   the original floating anchor, just compact. z-index drops under the drawer
+   (200), its scrim (190) and modal sheets, which it used to float over. */
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] .voice-mode-fab {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    z-index: 150;
+    border-color: color-mix(in srgb, var(--jv-cyan) 26%, transparent);
+    background:
+      radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--jv-cyan) 14%, transparent) 0%, transparent 70%),
+      color-mix(in srgb, var(--jv-panel) 86%, transparent);
+    box-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.45),
+      0 0 14px color-mix(in srgb, var(--jv-cyan) calc(14% * var(--jv-glow-k)), transparent);
+  }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab .voice-mode-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab .vx-fab-ring { left: calc(50% - 17px); }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab:hover { transform: none; }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab:active { transform: scale(0.94); }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab:focus-visible {
+    outline: 2px solid var(--jv-cyan);
+    outline-offset: 2px;
+  }
+  /* Chat view: docked in the top bar. */
+  :root[data-odx-theme="jarvis"] body:not(.doc-view):not(.notes-view):not(:has(#notes-pane)):not(:has(.compare-active)) .voice-mode-fab {
+    top: calc(6px + env(safe-area-inset-top, 0px));
+    bottom: auto;
+    right: auto;
+    left: 4px;
+    animation: none;               /* no slide-in from below the fold */
+  }
+}
+
+/* ── 2 · Drawer scrim ──────────────────────────────────────────────────── */
+@media (max-width: 767.98px) {
+  :root[data-odx-theme="jarvis"] #sidebar-backdrop {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    z-index: 190;
+    background:
+      radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--jv-cyan) 6%, transparent), transparent 60%),
+      color-mix(in srgb, var(--jv-void) 62%, transparent);
+    -webkit-backdrop-filter: blur(2px) saturate(0.8);
+            backdrop-filter: blur(2px) saturate(0.8);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none !important;
+    transition: opacity var(--jv-base) var(--jv-ease), visibility 0s linear var(--jv-base);
+  }
+  :root[data-odx-theme="jarvis"] #sidebar-backdrop.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none !important;   /* visual only; see header note */
+    transition: opacity var(--jv-base) var(--jv-ease), visibility 0s;
+  }
+  /* The drawer's inner edge gets the same lit hairline as the desktop rail. */
+  :root[data-odx-theme="jarvis"] .sidebar.right-side:not(.hidden) {
+    border-left: 1px solid var(--jv-line-strong) !important;
+  }
+  :root[data-odx-theme="jarvis"] .sidebar:not(.right-side):not(.hidden) {
+    border-right: 1px solid var(--jv-line-strong) !important;
+  }
+}
+
+/* ── 3 · Top bar: symmetric gutters around the centred title ───────────── */
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] body:not(.doc-view):not(.notes-view) .chat-top-bar {
+    padding-left: 52px !important;
+    padding-right: 52px !important;
+  }
+  :root[data-odx-theme="jarvis"] body:not(.doc-view):not(.notes-view) .chat-top-bar .incognito-indicator {
+    left: 54px !important;
+  }
+}
+
+/* ── 4 · Composer on touch ─────────────────────────────────────────────── */
+@media (max-width: 768px), (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] #message { resize: none; }
+}
+
+/* ── 5 · Welcome: legible tip + touchable Nobody chip ─────────────────── */
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip {
+  opacity: 1;
+  max-height: 7.5em;               /* style.css caps at 60px → 4-line tips clipped */
+  color: var(--jv-text-faint);
+  letter-spacing: 0.02em;
+}
+:root[data-odx-theme="jarvis"] .incognito-btn {
+  opacity: 0.85;
+  color: var(--jv-text-dim);
+  border-color: var(--jv-line);
+}
+:root[data-odx-theme="jarvis"] .incognito-btn:hover,
+:root[data-odx-theme="jarvis"] .incognito-btn:focus-visible {
+  opacity: 1;
+  color: var(--jv-cyan-hi);
+  border-color: var(--jv-line-strong);
+}
+@media (max-width: 768px), (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] .incognito-btn { min-height: 44px; padding-inline: 16px; }
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip { font-size: 0.75rem; max-width: 30ch; margin-inline: auto; }
+}
+
+/* ── Accessibility gates ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab:active { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-odx-theme="jarvis"] #sidebar-backdrop {
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    background: color-mix(in srgb, var(--jv-void) 80%, transparent);
+  }
+  :root[data-odx-theme="jarvis"] .voice-mode-fab { background: var(--jv-panel) !important; }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] .voice-mode-fab { border-color: var(--jv-cyan) !important; }
+  :root[data-odx-theme="jarvis"] .incognito-btn { opacity: 1; color: var(--jv-text); }
+}
+@media (forced-colors: active) {
+  :root[data-odx-theme="jarvis"] #sidebar-backdrop.visible { background: Canvas; opacity: 0.6; }
+}

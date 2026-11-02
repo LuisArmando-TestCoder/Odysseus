@@ -129,8 +129,10 @@ research/compare, login, notes/tasks/calendar, the document editor +
 library, email (inbox, reader, compose) and the cookbook (scan table,
 serve list, dependencies, servers), the landing page
 (`static/css/landing-jarvis.css`) and the `/cases` Intel Board
-(`static/css/cases-jarvis.css`). Next areas, one per pass:
-mobile → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
+(`static/css/cases-jarvis.css`). Mobile pass part 1 (app shell at phone
+width — compact voice core in the top bar, drawer scrim, legible welcome)
+lives in `static/css/jarvis-mobile.css`. Next areas, one per pass:
+mobile part 2 (messages, sheets, views) → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 
