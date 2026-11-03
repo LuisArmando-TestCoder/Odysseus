@@ -101,3 +101,7 @@ home.html
 # Installer / updater local state
 installer/.install-state.json
 venv.broken-*/
+
+# scheduled-sync scratch (format-patch / bundles)
+odysseus-pending-patches/
+odysseus-pending.bundle
