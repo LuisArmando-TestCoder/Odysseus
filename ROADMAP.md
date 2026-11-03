@@ -75,8 +75,15 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   wrong with the fix and last-check time, and a rate-limited "Check now"
   (live probes, not saved, so notifications stay with the task).
   `GET /api/health/services`, `POST /api/health/services/check`.
-- Next: LLM provider/endpoint probes (Anthropic, OpenAI, local vLLM/Ollama) with
-  the same down/recovered flow; "snooze this service" for known outages.
+- **Model endpoint probes** (`llm_probes`/`probe_llm`): the LLM endpoints
+  behind your Chat / Utility / Task / Research models and their fallbacks
+  (Anthropic, OpenAI-compatible incl. vLLM/OpenRouter/Groq, native Ollama)
+  get a model-list call with their own key — unreachable, 5xx and a
+  rejected/missing API key (401/403) are outages in the same down/recovered
+  flow and sidebar dot; a role pointing at a deleted or disabled endpoint is
+  flagged with "pick a model in AI Defaults".
+- Next: "snooze this service" for known outages; auto-switch a role to its
+  first healthy fallback while its endpoint is down (with a notification).
 
 ## Intel Board (shipped)
 

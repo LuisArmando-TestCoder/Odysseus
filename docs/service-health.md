@@ -2,7 +2,8 @@
 
 Odysseus depends on services that can quietly disappear: SearXNG behind web
 search, ChromaDB behind document/memory recall, the ntfy server that carries
-reminders, your mail servers, and its own data folder. When one goes away the
+reminders, your mail servers, the LLM endpoints your models run on, and its
+own data folder. When one goes away the
 app keeps answering — just worse — and reminders silently stop arriving.
 
 **Service Health** (scheduled task `check_services`, every 30 minutes) checks
@@ -18,6 +19,8 @@ them and tells you when something breaks, and again when it is fixed.
 | Vector store (ChromaDB) | `chromadb` installed | TCP connect to `CHROMADB_HOST:CHROMADB_PORT` |
 | Reminders (ntfy) | `reminder_channel = ntfy` | an enabled ntfy integration exists and `GET <base>/v1/health` answers |
 | Email | each of *your* enabled accounts | TCP connect to the IMAP and SMTP host/port |
+| Model endpoints | the endpoints your Chat / Utility / Task / Research models (and their fallbacks) use; if none is set, up to 6 enabled LLM endpoints | GET of the model list (`<base>/models`; Anthropic `/v1/models` with `x-api-key`; native Ollama `/api/tags`) with the endpoint's own key. **401/403 counts as down** ("API key rejected" / "needs an API key"); 404 and 429 count as up |
+| Model role → endpoint | a model role points at an endpoint that was deleted or disabled | reported as its own failure (`Chat, Utility model endpoint`) with "pick a model in Settings → AI Defaults" |
 
 Search disabled, ChromaDB not installed or reminders not on ntfy → that
 check is skipped, not reported.
@@ -61,6 +64,10 @@ API (owner-scoped, behind normal auth):
   first (link-local / metadata addresses refused).
 - Usernames, passwords and query strings are stripped from URLs before they
   appear in a notification.
+- An endpoint's API key is sent only to that endpoint's own URL (the same
+  place every model call goes) and never appears in results. Endpoints are
+  owner-scoped: your own plus shared (null-owner) ones; image endpoints are
+  not probed.
 - Email accounts are owner-scoped (legacy null-owner rows only on single-user
   installs). State lives in `data/service_health/<owner>.json`.
 
@@ -68,5 +75,5 @@ API (owner-scoped, behind normal auth):
 
 Pause or reschedule "Service Health" in Tasks like any scheduled task. The
 module (`src/service_health.py`) is stdlib-only with injectable probes;
-tests in `tests/test_service_health.py` and
-`tests/test_service_health_status.py`.
+tests in `tests/test_service_health.py`,
+`tests/test_service_health_status.py` and `tests/test_service_health_llm.py`.

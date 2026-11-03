@@ -3,8 +3,9 @@ service_health.py — notice when a backing service degrades, before you do.
 
 Odysseus leans on services that can quietly go away: the SearXNG instance
 behind web search, ChromaDB behind documents/memory recall, the ntfy server
-that carries reminders, the IMAP/SMTP servers behind each email account, and
-its own data directory. When one of them is down the app keeps "working" but
+that carries reminders, the IMAP/SMTP servers behind each email account, the
+LLM endpoints the chat / utility / task / research models run on, and its own
+data directory. When one of them is down the app keeps "working" but
 answers get worse, reminders never arrive, and nothing says why.
 
 This module probes them, keeps a small per-owner state file, and reports
@@ -160,6 +161,187 @@ def probe_tcp(key: str, label: str, host: str, port: int, *, fix: str = "",
     return _result(key, label, True, where)
 
 
+# ── LLM endpoints ───────────────────────────────────────────────────────────
+
+LLM_PROBE_LIMIT = 6   # when no model role is configured, probe at most this many
+ANTHROPIC_VERSION = "2023-06-01"
+
+# (settings key, role label) for the model roles that pick an endpoint.
+MODEL_ROLES = (
+    ("default_endpoint_id", "Chat"),
+    ("utility_endpoint_id", "Utility"),
+    ("task_endpoint_id", "Task"),
+    ("research_endpoint_id", "Research"),
+)
+MODEL_FALLBACK_KEYS = (
+    ("default_model_fallbacks", "Chat fallback"),
+    ("utility_model_fallbacks", "Utility fallback"),
+)
+
+
+def _host_is(host: str, domain: str) -> bool:
+    host = (host or "").lower().rstrip(".")
+    return host == domain or host.endswith("." + domain)
+
+
+def model_refs(get: Callable[[str], Any]) -> List[tuple]:
+    """``[(role_label, endpoint_id), ...]`` for every model role set in
+    settings, fallbacks included. ``get(key)`` resolves a setting (per-user
+    where the app supports it)."""
+    refs: List[tuple] = []
+    for key, role in MODEL_ROLES:
+        try:
+            eid = str(get(key) or "").strip()
+        except Exception:
+            eid = ""
+        if eid:
+            refs.append((role, eid))
+    for key, role in MODEL_FALLBACK_KEYS:
+        try:
+            chain = get(key) or []
+        except Exception:
+            chain = []
+        if not isinstance(chain, list):
+            continue
+        for entry in chain:
+            eid = str((entry or {}).get("endpoint_id") or "").strip() if isinstance(entry, dict) else ""
+            if eid:
+                refs.append((role, eid))
+    return refs
+
+
+def llm_probe_request(base_url: str, api_key: str = "") -> tuple:
+    """``(url, headers)`` for a cheap model-list call on an LLM endpoint.
+
+    Native Ollama (``…/api`` or ollama.com) → ``/api/tags``; Anthropic →
+    ``/v1/models`` with ``x-api-key``; everything else is OpenAI-compatible
+    → ``{base}/models`` with a Bearer token.
+    """
+    base = str(base_url or "").strip().rstrip("/")
+    try:
+        p = urlsplit(base)
+    except ValueError:
+        return base, {}
+    host = p.hostname or ""
+    path = (p.path or "").rstrip("/")
+    headers: Dict[str, str] = {}
+    key = str(api_key or "").strip()
+    if _host_is(host, "anthropic.com"):
+        root = base if path.endswith("/v1") else base + "/v1"
+        if key:
+            headers["x-api-key"] = key
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+        return root + "/models", headers
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    if path == "/api" or path.endswith("/api") or (_host_is(host, "ollama.com") and "/v1" not in path):
+        root = base if path.endswith("/api") else base + "/api"
+        return root + "/tags", headers
+    for tail in ("/chat/completions", "/completions", "/models"):
+        if path.endswith(tail):
+            base = base[: -len(tail)]
+            break
+    return base + "/models", headers
+
+
+def _default_http_get_headers(url: str, headers: Dict[str, str], timeout: float) -> int:
+    opener = urllib.request.build_opener(_NoRedirect)
+    h = {"User-Agent": "Odysseus-HealthCheck/1"}
+    h.update(headers or {})
+    req = urllib.request.Request(url, method="GET", headers=h)
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            return int(resp.status)
+    except urllib.error.HTTPError as e:
+        return int(e.code)
+
+
+def probe_llm(key: str, label: str, base_url: str, api_key: str = "", *,
+              http_get_headers: Optional[Callable[[str, Dict[str, str], float], int]] = None,
+              url_check: Optional[Callable[[str], Any]] = None,
+              timeout: float = HTTP_TIMEOUT) -> Dict[str, Any]:
+    """Is this LLM endpoint answering, and does it accept our key?
+
+    Unlike ``probe_http``, 401/403 is a failure here: the server is up but
+    every model call will be refused. 404 (no model-list route) and 429
+    (rate limited) still count as up. The key is sent only to the endpoint it
+    is configured for and never appears in the result.
+    """
+    url, headers = llm_probe_request(base_url, api_key)
+    shown = redact_url(url)
+    fix = "Check the endpoint is running and its URL in Settings → Add Models."
+    if url_check is None:
+        from src.url_safety import check_outbound_url as url_check
+    try:
+        safe, why = url_check(url)
+    except Exception as e:
+        safe, why = False, _error_text(e)
+    if not safe:
+        return _result(key, label, False, f"{shown}: {why}", fix)
+    try:
+        status = (http_get_headers or _default_http_get_headers)(url, headers, timeout)
+    except Exception as e:
+        return _result(key, label, False, f"{shown}: {_error_text(e)}", fix)
+    if status in (401, 403):
+        if str(api_key or "").strip():
+            return _result(key, label, False, f"{shown}: API key rejected (HTTP {status})",
+                           "Update the API key for this endpoint in Settings → Add Models "
+                           "(it may be expired, revoked or out of credit).")
+        return _result(key, label, False, f"{shown}: needs an API key (HTTP {status})",
+                       "Add the provider's API key to this endpoint in Settings → Add Models.")
+    if status >= 500:
+        return _result(key, label, False, f"{shown}: HTTP {status}", fix)
+    return _result(key, label, True, shown)
+
+
+def llm_probes(endpoints: Iterable[Dict[str, Any]], refs: Iterable[tuple], *,
+               http_get_headers=None, url_check=None,
+               limit: int = LLM_PROBE_LIMIT) -> List[Dict[str, Any]]:
+    """Probe the LLM endpoints your model roles point at.
+
+    ``endpoints`` must already be scoped to what the owner can see. A role
+    pointing at an endpoint that was deleted or disabled is reported as its
+    own failure (every request in that role will fail). With no role set,
+    the first ``limit`` enabled LLM endpoints are probed instead.
+    """
+    eps = [e for e in endpoints if str(e.get("model_type") or "llm").lower() == "llm"]
+    by_id = {str(e.get("id") or ""): e for e in eps}
+    refs = list(refs)
+    roles: Dict[str, List[str]] = {}
+    order: List[str] = []
+    out: List[Dict[str, Any]] = []
+    broken: Dict[str, Dict[str, Any]] = {}
+    for role, eid in refs:
+        ep = by_id.get(eid)
+        if ep is None or not ep.get("enabled", True):
+            why = "no longer exists" if ep is None else f"({_clean(ep.get('name'), 40)}) is disabled"
+            b = broken.setdefault(eid, {"roles": [], "why": why})
+            if role not in b["roles"]:
+                b["roles"].append(role)
+            continue
+        if eid not in roles:
+            roles[eid] = []
+            order.append(eid)
+        if role not in roles[eid]:
+            roles[eid].append(role)
+    for eid, b in broken.items():
+        names = ", ".join(b["roles"])
+        out.append(_result(f"model-ref:{_clean(eid, 60)}", f"{names} model endpoint", False,
+                           f"the endpoint selected for {names} {b['why']}",
+                           "Pick a working model in Settings → AI Defaults, or re-enable the "
+                           "endpoint in Settings → Add Models."))
+    if not refs:
+        order = [str(e.get("id") or "") for e in eps if e.get("enabled", True)][: max(0, int(limit))]
+    for eid in order:
+        ep = by_id[eid]
+        name = _clean(ep.get("name") or "endpoint", 40)
+        role_txt = f" ({', '.join(roles[eid])})" if roles.get(eid) else ""
+        out.append(probe_llm(f"llm:{_clean(eid, 60)}", f"Model {name}{role_txt}",
+                             str(ep.get("base_url") or ""), str(ep.get("api_key") or ""),
+                             http_get_headers=http_get_headers, url_check=url_check))
+    return out
+
+
 # ── what to probe ───────────────────────────────────────────────────────────
 
 def collect_probes(*, settings: Dict[str, Any],
@@ -168,11 +350,15 @@ def collect_probes(*, settings: Dict[str, Any],
                    chroma: Optional[Dict[str, Any]] = None,
                    storage_check: Optional[Callable[[], Dict[str, Any]]] = None,
                    default_search_url: str = "http://localhost:8080",
-                   http_get=None, tcp_connect=None, url_check=None) -> List[Dict[str, Any]]:
+                   model_endpoints: Optional[Iterable[Dict[str, Any]]] = None,
+                   model_refs: Iterable[tuple] = (),
+                   http_get=None, tcp_connect=None, url_check=None,
+                   http_get_headers=None) -> List[Dict[str, Any]]:
     """Run every applicable probe and return their results.
 
     ``ok`` is True/False, or None when the service is not in use (skipped).
-    ``email_accounts`` must already be scoped to the owner.
+    ``email_accounts`` and ``model_endpoints`` must already be scoped to the
+    owner; ``model_endpoints=None`` skips the LLM endpoint probes.
     """
     out: List[Dict[str, Any]] = []
     http = dict(http_get=http_get, url_check=url_check)
@@ -244,6 +430,11 @@ def collect_probes(*, settings: Dict[str, Any],
                 f"email:{aid}:{proto}", f"Email {name} ({proto.upper()})", host, int(port),
                 fix=f"Check the {proto.upper()} server/port in Settings → Email, "
                     "or your network/VPN.", tcp_connect=tcp_connect))
+
+    # LLM endpoints behind the model roles (chat, utility, task, research).
+    if model_endpoints is not None:
+        out.extend(llm_probes(model_endpoints, model_refs,
+                              http_get_headers=http_get_headers, url_check=url_check))
     return out
 
 
@@ -493,6 +684,35 @@ def _load_owner_email_accounts(owner: str) -> List[Dict[str, Any]]:
         db.close()
 
 
+def _load_owner_model_endpoints(owner: str) -> List[Dict[str, Any]]:
+    from core.database import SessionLocal, ModelEndpoint
+    from src.auth_helpers import owner_filter
+    db = SessionLocal()
+    try:
+        q = db.query(ModelEndpoint)
+        if owner:
+            q = owner_filter(q, ModelEndpoint, owner)  # own + shared endpoints
+        return [{"id": e.id, "name": e.name, "base_url": e.base_url,
+                 "api_key": e.api_key or "", "enabled": bool(e.is_enabled),
+                 "model_type": e.model_type or "llm"} for e in q.all()]
+    finally:
+        db.close()
+
+
+def _owner_setting_getter(owner: str, settings: Dict[str, Any]) -> Callable[[str], Any]:
+    try:
+        from src.settings import get_user_setting
+    except Exception:
+        return settings.get
+
+    def get(key: str) -> Any:
+        try:
+            return get_user_setting(key, owner, settings.get(key))
+        except Exception:
+            return settings.get(key)
+    return get
+
+
 def run_live_probes(owner: str) -> List[Dict[str, Any]]:
     """Probe this install's services for ``owner`` (blocking; run in a thread)."""
     from src.settings import load_settings
@@ -522,7 +742,13 @@ def run_live_probes(owner: str) -> List[Dict[str, Any]]:
         from src.readiness import check_readiness
     except Exception:
         check_readiness = None
+    try:
+        endpoints = _load_owner_model_endpoints(owner)
+    except Exception:
+        endpoints = None  # DB unavailable — storage probe reports it
+    refs = model_refs(_owner_setting_getter(owner, settings)) if endpoints is not None else []
     return collect_probes(settings=settings, integrations=integrations,
                           email_accounts=accounts, chroma=chroma,
                           storage_check=check_readiness,
-                          default_search_url=SEARXNG_INSTANCE)
+                          default_search_url=SEARXNG_INSTANCE,
+                          model_endpoints=endpoints, model_refs=refs)

@@ -1456,7 +1456,7 @@ async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
 
 async def action_check_services(owner: str, **kwargs) -> Tuple[str, bool]:
     """Probe the services Odysseus depends on (search, vector store, ntfy,
-    your email servers, storage). Notifies when one has failed two checks in
+    your email servers, the LLM endpoints your models use, storage). Notifies when one has failed two checks in
     a row and again when it recovers; otherwise TaskNoop (silent)."""
     try:
         from src.service_health import (format_health_alerts, run_live_probes,
