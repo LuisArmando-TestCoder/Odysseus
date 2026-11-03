@@ -385,6 +385,7 @@ export function processWithThinking(text) {
 export function mdToHtml(src) {
   // CRITICAL: Extract allowed HTML blocks first (details/summary)
   const allowedHtmlBlocks = [];
+  const inlineLinkIdx = new Set();   // allowedHtmlBlocks indices that are inline <a> links
   let s = (src ?? '');
 
   // Repair common ways the agent mangles the entity-anchor convention
@@ -450,8 +451,12 @@ export function mdToHtml(src) {
   });
 
   // ALSO preserve <a> tags the same way (they're now in the HTML from markdown conversion)
+  // Their indices are remembered so a pipe table that merely *contains* a
+  // link (a bare domain or [text](url) in a cell) still renders as a table;
+  // only block-level placeholders (<details>, fenced code) skip it.
   s = s.replace(/<a\s+[^>]*>.*?<\/a>/gi, (match) => {
     const placeholder = `___ALLOWED_HTML_${allowedHtmlBlocks.length}___`;
+    inlineLinkIdx.add(allowedHtmlBlocks.length);
     allowedHtmlBlocks.push(sanitizeAllowedHtml(match));
     return placeholder;
   });
@@ -539,12 +544,18 @@ export function mdToHtml(src) {
 
   // Handle pipe tables
   s = s.replace(/(?:^|\n)([^\n]*\|[^\n]*\|[^\n]*)(?:\n([^\n]*\|[^\n]*\|[^\n]*))*/g, (table) => {
-    if (table.includes('___CODE_BLOCK_') || table.includes('___ALLOWED_HTML_')) return table;
+    if (table.includes('___CODE_BLOCK_')) return table;
+    for (const m of table.matchAll(/___ALLOWED_HTML_(\d+)___/g)) {
+      if (!inlineLinkIdx.has(Number(m[1]))) return table;
+    }
 
     const rows = table.trim().split('\n');
     if (rows.length < 2) return table;
 
-    let html = '<table style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
+    // The scroll wrapper lets a table wider than its bubble scroll sideways
+    // in its own slot (keyboard-reachable) instead of crushing its columns.
+    let html = '<div class="md-table-scroll" tabindex="0" role="region" aria-label="Table">'
+      + '<table style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
 
     rows.forEach((row, idx) => {
       if (idx === 1 && /^[\s|:\-]+$/.test(row)) {
@@ -564,7 +575,7 @@ export function mdToHtml(src) {
       html += '</tr>';
     });
 
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     return html;
   });
 

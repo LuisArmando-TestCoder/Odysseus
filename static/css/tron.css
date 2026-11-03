@@ -111,7 +111,40 @@
   background: color-mix(in srgb, var(--tr-cyan) 8%, transparent) !important;
 }
 :root[data-odx-theme="jarvis"] .msg blockquote { border-left: 2px solid var(--tr-cyan); background: color-mix(in srgb, var(--tr-cyan) 5%, transparent); }
+/* Tables: a scroll slot, never a crushed grid. The bubble body sets
+   overflow-wrap:anywhere, which let auto-layout squeeze columns until words
+   broke per letter ("Confi|dence", "20|26-|10"). Cells now break only at
+   spaces, wrap at a readable 34ch, and a table wider than its bubble scrolls
+   sideways inside its .md-table-scroll slot (markdown.js); the column cut
+   at the slot edge plus a thin cyan scrollbar is the "more" cue. */
+:root[data-odx-theme="jarvis"] .msg .md-table-scroll {
+  max-width: 100%;
+  margin: 10px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tr-ln) transparent;
+}
+:root[data-odx-theme="jarvis"] .msg .md-table-scroll:focus-visible { outline: 2px solid var(--tr-cyan); outline-offset: 2px; }
 :root[data-odx-theme="jarvis"] .msg table { border-collapse: collapse; }
+:root[data-odx-theme="jarvis"] .msg .md-table-scroll > table { margin: 0 !important; }
+/* Phones: columns take their natural width (cells wrap at 34ch) and the
+   slot scrolls, instead of every row growing ten lines tall (cells wrap at
+   28ch here). */
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] .msg .md-table-scroll > table {
+    width: max-content !important;   /* inline style says 100% */
+    min-width: 100%;
+  }
+  :root[data-odx-theme="jarvis"] .msg :is(th, td) { max-width: 28ch; }
+}
+:root[data-odx-theme="jarvis"] .msg :is(th, td) {
+  word-break: normal;
+  overflow-wrap: normal;
+  max-width: 34ch;
+}
+:root[data-odx-theme="jarvis"] .msg th { white-space: nowrap; }
 :root[data-odx-theme="jarvis"] .msg :is(th, td) { border: 1px solid var(--tr-ln-dim) !important; }
 :root[data-odx-theme="jarvis"] .msg th { background: color-mix(in srgb, var(--tr-cyan) 9%, transparent) !important; color: var(--tr-cyan-hi); }
 

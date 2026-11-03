@@ -144,8 +144,10 @@ serve list, dependencies, servers), the landing page
 (`static/css/landing-jarvis.css`) and the `/cases` Intel Board
 (`static/css/cases-jarvis.css`). Mobile pass part 1 (app shell at phone
 width — compact voice core in the top bar, drawer scrim, legible welcome)
-lives in `static/css/jarvis-mobile.css`. Next areas, one per pass:
-mobile part 2 (messages, sheets, views) → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
+lives in `static/css/jarvis-mobile.css`; part 2 made message tables and
+code blocks scroll instead of breaking mid-word and gave phone sheets a
+tappable close key. Next areas, one per pass: mobile part 3 (tool views and
+sheet bodies at 390px) → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

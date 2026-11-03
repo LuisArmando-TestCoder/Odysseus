@@ -494,7 +494,7 @@ function _initChatSwipeToOpenSidebar() {
   const EXCLUDE = [
     '#sidebar', '#icon-rail', '.modal', '.input-bar', '#message',
     '#minimized-dock', '.minimized-dock-chip', '#dock-trash-zone',
-    'pre', 'table', '.agent-tool-output', '.agent-thread-cmd',
+    'pre', 'table', '.md-table-scroll', '.agent-tool-output', '.agent-thread-cmd',
     'input', 'textarea', 'select',
   ].join(', ');
 

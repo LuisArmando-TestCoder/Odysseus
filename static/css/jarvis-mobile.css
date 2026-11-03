@@ -18,6 +18,8 @@
       lives in style.css).
    5. Welcome — the tip and the Nobody chip become legible (were 20–25 %
       opacity, below AA) and the chip gets a 44px touch target.
+   Part 2 (Run 11): 6. code blocks get a key strip + sideways scroll;
+   7. sheets get a tappable 44px close key back.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── 1 · Voice launcher: a circular core ring at every width ─────────────
@@ -152,6 +154,87 @@
   :root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip { font-size: 0.75rem; max-width: 30ch; margin-inline: auto; }
 }
 
+/* ── 6 · Code blocks on phones: a header strip + sideways scroll ──────────
+   At 390px the bubble body's pre-wrap + overflow-wrap:anywhere soft-wrapped
+   commands mid-flag ("--max-|concurrency"), and a one-line command (which
+   chat.js tags .pre-compact) kept its 200px desktop right-gutter for the
+   Run/Edit/Copy row, leaving ~120px of code per line. On phones the keys
+   sit in a reserved strip above the code, and code keeps its real lines and
+   scrolls sideways inside the slot (style.css already sets overflow-x:auto
+   and pan-x on .msg pre at this width). */
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] .msg pre,
+  :root[data-odx-theme="jarvis"] .msg pre.pre-compact {
+    padding-top: 36px !important;
+    padding-right: 4px !important;
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--jv-cyan) 6%, transparent) 0 33px,
+      color-mix(in srgb, var(--jv-cyan) 18%, transparent) 33px 34px,
+      transparent 34px
+    ) !important;
+    background-repeat: no-repeat !important;
+    background-attachment: local !important;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+  }
+  :root[data-odx-theme="jarvis"] .msg pre code {
+    white-space: pre !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+  }
+  /* Keys always live in the strip; the near-viewport-top ".bottom" flip
+     would drop them onto the code. */
+  :root[data-odx-theme="jarvis"] .msg pre :is(.copy-code, .edit-code, .run-code),
+  :root[data-odx-theme="jarvis"] .msg pre :is(.copy-code, .edit-code, .run-code).bottom {
+    top: 3px !important;
+    bottom: auto !important;
+  }
+  :root[data-odx-theme="jarvis"] .msg pre.editing::before { top: 8px; }
+}
+
+/* ── 7 · Sheets on phones: a tappable close key ───────────────────────────
+   style.css hides every sheet's ✕ at ≤768px ("swipe down to dismiss"), so
+   on a phone the only way out of Calendar, Tasks, Library, Settings, Theme…
+   was a drag gesture — no single-tap alternative (WCAG 2.5.1), and nothing
+   on screen said how to leave. Jarvis brings the key back as a 44px square
+   at the header's trailing edge; swipe-to-dismiss still works. The
+   auto-injected minimise (_) stays hidden — the dock chip covers that. */
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] .modal-content .modal-header :is(.close-btn, .modal-close),
+  :root[data-odx-theme="jarvis"] #theme-popup .close-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px;
+    margin: -4px -6px -4px auto !important;
+    padding: 0 !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    opacity: 1 !important;
+    color: var(--jv-text-dim) !important;
+    background: transparent !important;
+    border: 1px solid var(--jv-line) !important;
+    border-radius: 0 !important;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  :root[data-odx-theme="jarvis"] .modal-content .modal-header :is(.close-btn, .modal-close):active,
+  :root[data-odx-theme="jarvis"] #theme-popup .close-btn:active {
+    color: var(--jv-cyan-hi) !important;
+    border-color: var(--jv-line-strong) !important;
+    background: color-mix(in srgb, var(--jv-cyan) 10%, transparent) !important;
+  }
+  :root[data-odx-theme="jarvis"] .modal-content .modal-header :is(.close-btn, .modal-close):focus-visible,
+  :root[data-odx-theme="jarvis"] #theme-popup .close-btn:focus-visible {
+    outline: 2px solid var(--jv-cyan) !important;
+    outline-offset: 2px;
+  }
+}
+
 /* ── Accessibility gates ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }
@@ -168,6 +251,8 @@
 @media (prefers-contrast: more) {
   :root[data-odx-theme="jarvis"] .voice-mode-fab { border-color: var(--jv-cyan) !important; }
   :root[data-odx-theme="jarvis"] .incognito-btn { opacity: 1; color: var(--jv-text); }
+  :root[data-odx-theme="jarvis"] .modal-content .modal-header :is(.close-btn, .modal-close),
+  :root[data-odx-theme="jarvis"] #theme-popup .close-btn { color: var(--jv-text) !important; border-color: var(--jv-cyan) !important; }
 }
 @media (forced-colors: active) {
   :root[data-odx-theme="jarvis"] #sidebar-backdrop.visible { background: Canvas; opacity: 0.6; }

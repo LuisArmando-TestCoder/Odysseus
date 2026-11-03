@@ -58,7 +58,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · part 2 messages, sheets, views
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · part 3 tool views / sheet bodies
 
 ## Progress log
 
@@ -435,3 +435,47 @@ chat with table/code, drawer open, and each sidebar tool view).
 
 **Next:** mobile pass part 2 — message bubbles (scrollable tables, code
 blocks), modal sheets at 390px (close keys, safe areas), then settings.
+
+### Run 11 — 2026-11-03 · Mobile pass, part 2: tables, code blocks, sheet keys
+- **Tables rendered at all when they contain links (bug fix, all themes).**
+  `mdToHtml` skipped any pipe table containing an `___ALLOWED_HTML_`
+  placeholder — meant for `<details>` blocks, but inline `<a>` links (bare
+  domains, `[text](url)`) use the same placeholder, so a table with a URL in a
+  cell came out as raw `| … |` paragraphs. Link placeholders are now tracked
+  (`inlineLinkIdx`) and don't block the table; `<details>`/fenced code still
+  do. Tests: `tests/test_markdown_rendering_js.py` (+2; the node harness now
+  stubs the DOM-based sanitizer).
+- **Table scroll slot.** Tables are emitted inside
+  `<div class="md-table-scroll" tabindex="0" role="region" aria-label="Table">`
+  (unstyled in other themes — verified identical in light). Swipe-to-open
+  the drawer ignores it (`sidebar-layout.js` EXCLUDE). Jarvis (`tron.css`):
+  cells break only at spaces (bubble body's `overflow-wrap:anywhere` had
+  split "Confi|dence", "20|26-|10" — desktop too), headers nowrap, cells cap
+  at 34ch; the slot scrolls sideways with a thin cyan scrollbar and a focus
+  ring. Phones: columns take natural width (cap 28ch) instead of rows ten
+  lines tall. Tried a local/scroll background edge fade — it drew visible
+  bands on the translucent bubble, so dropped it; the cut column is the cue.
+- **Code blocks on phones** (`jarvis-mobile.css` §6): Run/Edit/Copy sit in a
+  reserved 34px key strip with a hairline; code keeps its real lines
+  (`white-space: pre`) and scrolls sideways. One-line commands (`.pre-compact`)
+  lost their 200px desktop right gutter, which had left ~120px of code per
+  line. The near-top `.bottom` flip is pinned back to the strip.
+- **Sheet close keys** (§7): `style.css` hides every sheet's ✕ at ≤768px
+  (swipe-down only — no single-tap way out, WCAG 2.5.1). Jarvis restores it as
+  a 44px square key at the header's trailing edge in Calendar, Tasks,
+  Library, Gallery, Cookbook, Research, Theme and Settings (verified present
+  and 44×44 in all eight); swipe still works; minimise stays hidden.
+  More-contrast: full-ink key, solid cyan border.
+- Verified headless at 1440×900 + 390×844 in jarvis and light: chat with a
+  linked table + long command, and the eight sheets. No horizontal page
+  overflow; desktop table fits without scroll; light identical apart from the
+  table now rendering. No new console errors (only the harness's
+  service-worker fetch).
+- Seen, not fixed: light/other themes still crush table columns mid-word
+  (jarvis-only rules); desktop `.pre-compact` keeps its 200px gutter, so a
+  long one-liner wraps at ~440px; scrollable `pre` blocks aren't
+  keyboard-focusable.
+
+**Next:** mobile pass part 3 — tool views and sheet bodies at 390px
+(Settings tab strip overflow, Cookbook/Research forms, Library cards), then
+the dedicated settings pass.

@@ -51,6 +51,13 @@ def _run_markdown_case(markdown: str) -> str:
             .replace(/'/g, '&#39;');`
         );
 
+        // The real sanitizer walks a DOM tree; node has none. Its output is
+        // not under test here, so pass allowed HTML through unchanged.
+        source = source.replace(
+          /function sanitizeAllowedHtml\(html\) \{/,
+          'function sanitizeAllowedHtml(html) { return html;'
+        );
+
         const moduleUrl = 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
         const mod = await import(moduleUrl);
         const input = JSON.parse(process.argv[1]);
@@ -99,3 +106,23 @@ def test_table_separator_row_not_rendered_as_data(node_available):
     assert "<th" in html
     assert "<td" in html
     assert "---" not in html
+
+
+def test_table_with_links_in_cells_still_renders(node_available):
+    html = _run_markdown_case(
+        "| Lead | Profile |\n|---|---|\n"
+        "| Ana | linkedin.com/in/ana |\n"
+        "| Bo | [site](https://example.org/bo) |"
+    )
+
+    assert html.count("<tr>") == 3
+    assert "<table" in html
+    assert 'href="https://linkedin.com/in/ana"' in html
+    assert 'href="https://example.org/bo"' in html
+    assert "|---|" not in html
+
+
+def test_details_block_inside_pipe_lines_is_left_alone(node_available):
+    html = _run_markdown_case("<details><summary>x</summary>a | b | c</details>")
+
+    assert "<table" not in html
