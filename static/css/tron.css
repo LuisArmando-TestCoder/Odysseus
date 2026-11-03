@@ -1409,6 +1409,14 @@
 /* Sidebar entry: notification dot is attention (amber), an error is danger */
 :root[data-odx-theme="jarvis"] .cookbook-notif-dot { --notif-glow: var(--jv-amber); background: var(--jv-amber) !important; }
 :root[data-odx-theme="jarvis"] .cookbook-notif-dot.cookbook-notif-error { --notif-glow: var(--jv-danger); background: var(--jv-danger) !important; }
+:root[data-odx-theme="jarvis"] .svc-health-dot.svc-ok { background: var(--jv-ok); box-shadow: 0 0 6px color-mix(in srgb, var(--jv-ok) 60%, transparent); }
+:root[data-odx-theme="jarvis"] .svc-health-dot.svc-flaky,
+:root[data-odx-theme="jarvis"] .svc-health-dot.svc-stale { background: var(--jv-amber); box-shadow: 0 0 6px color-mix(in srgb, var(--jv-amber) 60%, transparent); }
+:root[data-odx-theme="jarvis"] .svc-health-dot.svc-down { background: var(--jv-danger); box-shadow: 0 0 8px var(--jv-danger); }
+:root[data-odx-theme="jarvis"] .svc-health-panel { border-color: var(--jv-line); background: var(--jv-panel); border-radius: 2px; }
+:root[data-odx-theme="jarvis"] .svc-health-row { border-left-color: var(--jv-danger); }
+:root[data-odx-theme="jarvis"] .svc-health-row.svc-flaky { border-left-color: var(--jv-amber); }
+:root[data-odx-theme="jarvis"] .svc-health-check { border-color: var(--jv-line-strong); color: var(--jv-cyan-hi); border-radius: 2px; letter-spacing: .04em; }
 
 @media (max-width: 640px) {
   /* Mono is wider than Inter — keep the tab strip on one row */

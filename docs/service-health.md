@@ -34,6 +34,26 @@ check is skipped, not reported.
 
 Nothing new → the task finishes silently.
 
+## In the app
+
+The **Services** row in the sidebar's Tools section carries a status dot:
+green (all OK), amber (one failed check — maybe a blip — or checks have not
+run for 2+ hours, e.g. the task is paused), red (a confirmed outage), grey
+(never checked). Click it to expand what is wrong, the error, the fix and
+when it was last checked. **Check now** probes immediately and shows the
+live result; it is not saved, so notifications still come only from the
+scheduled task (manual checks are limited to one per 20 s). Hide the row in
+Settings → Appearance ("Services").
+
+API (owner-scoped, behind normal auth):
+
+- `GET /api/health/services` — saved state, no probes:
+  `{status: ok|flaky|down|stale|unknown, label, down, flaky, total,
+  checked_at, live: false, services: [{key, label, status, detail?, fix?,
+  since?, for?}]}`
+- `POST /api/health/services/check` — live probes, same shape with
+  `live: true`; `429` when called again within 20 s.
+
 ## Safety
 
 - Probes are reachability checks: no request body is read and HTTP redirects
@@ -48,4 +68,5 @@ Nothing new → the task finishes silently.
 
 Pause or reschedule "Service Health" in Tasks like any scheduled task. The
 module (`src/service_health.py`) is stdlib-only with injectable probes;
-tests in `tests/test_service_health.py`.
+tests in `tests/test_service_health.py` and
+`tests/test_service_health_status.py`.

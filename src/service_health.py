@@ -43,6 +43,8 @@ DEFAULT_CONFIRM = 2          # consecutive failures before "down" is reported
 HTTP_TIMEOUT = 5.0
 TCP_TIMEOUT = 4.0
 ALERT_LIMIT = 8
+META_KEY = "_meta"           # state-file entry holding {"checked_at": ts}
+STALE_AFTER = 2 * 3600       # no check for this long → status "stale"
 _CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 # Search providers that need an API key, and the settings field holding it
@@ -322,6 +324,7 @@ def update_health(owner: str, results: Iterable[Dict[str, Any]], *,
         new_state[key] = {"ok": False, "since": since, "fails": fails, "alerted": alerted,
                           "label": r["label"], "detail": r.get("detail", ""),
                           "fix": r.get("fix", "")}
+    new_state[META_KEY] = {"checked_at": now}
     if new_state != state:
         _save_state(path, new_state)
     return events
@@ -367,7 +370,7 @@ def health_brief_lines(owner: str, *, now: Optional[float] = None,
     now = time.time() if now is None else now
     state = _load_state(state_path or _state_path(owner))
     down = [(k, v) for k, v in state.items()
-            if not v.get("ok", True) and int(v.get("fails") or 0) >= max(1, int(confirm))]
+            if not k.startswith("_") and not v.get("ok", True) and int(v.get("fails") or 0) >= max(1, int(confirm))]
     if not down:
         return []
     down.sort(key=lambda kv: float(kv[1].get("since") or now))
@@ -379,6 +382,92 @@ def health_brief_lines(owner: str, *, now: Optional[float] = None,
     if len(down) > ALERT_LIMIT:
         lines.append(f"…and {len(down) - ALERT_LIMIT} more")
     return lines
+
+
+# ── status summary (sidebar dot / GET /api/health/services) ────────────────
+
+def _service_rows(items: Iterable[Dict[str, Any]], now: float,
+                  confirm: int) -> List[Dict[str, Any]]:
+    rows = []
+    for v in items:
+        ok = v.get("ok")
+        if ok is None:
+            continue
+        fails = int(v.get("fails") or 0)
+        if ok:
+            status = "ok"
+        else:
+            status = "down" if fails >= confirm else "flaky"
+        since = v.get("since")
+        row = {"key": _clean(v.get("key"), 80), "label": _clean(v.get("label"), 60) or "Service",
+               "status": status}
+        if status != "ok":
+            row["detail"] = _clean(v.get("detail"), 160) or "unreachable"
+            row["fix"] = _clean(v.get("fix"), 200)
+            if since is not None:
+                row["since"] = float(since)
+                row["for"] = _span(now - float(since))
+        rows.append(row)
+    order = {"down": 0, "flaky": 1, "ok": 2}
+    rows.sort(key=lambda r: (order[r["status"]], r["label"].lower()))
+    return rows
+
+
+def summarize(rows: List[Dict[str, Any]], *, checked_at: Optional[float],
+              now: float, live: bool = False) -> Dict[str, Any]:
+    """Overall verdict for a list of service rows.
+
+    ``status`` is ``down`` (a confirmed outage), ``flaky`` (one failed check —
+    may be a blip), ``ok``, ``stale`` (checks have not run for STALE_AFTER —
+    the Service Health task may be paused), or ``unknown`` (never checked).
+    """
+    down = sum(1 for r in rows if r["status"] == "down")
+    flaky = sum(1 for r in rows if r["status"] == "flaky")
+    if checked_at is None and not rows:
+        status, label = "unknown", "Service health: not checked yet"
+    elif down:
+        status = "down"
+        names = ", ".join(r["label"] for r in rows if r["status"] == "down")
+        label = f"{down} service{'s' if down != 1 else ''} down: {names}"
+    elif flaky:
+        status = "flaky"
+        label = f"{flaky} service{'s' if flaky != 1 else ''} failed the last check"
+    elif not live and checked_at is not None and now - checked_at > STALE_AFTER:
+        status = "stale"
+        label = (f"Service health last checked {_span(now - checked_at)} ago — "
+                 "is the Service Health task paused?")
+    else:
+        status = "ok"
+        label = (f"All {len(rows)} services OK" if rows else "No services to check")
+    return {"status": status, "label": label, "down": down, "flaky": flaky,
+            "total": len(rows), "checked_at": checked_at, "live": live,
+            "services": rows}
+
+
+def health_status(owner: str, *, now: Optional[float] = None,
+                  confirm: int = DEFAULT_CONFIRM,
+                  state_path: Optional[str] = None) -> Dict[str, Any]:
+    """Summary of the saved state (no probes) for the sidebar status dot."""
+    now = time.time() if now is None else now
+    confirm = max(1, int(confirm))
+    state = _load_state(state_path or _state_path(owner))
+    meta = state.get(META_KEY) or {}
+    try:
+        checked_at = float(meta["checked_at"]) if "checked_at" in meta else None
+    except (TypeError, ValueError):
+        checked_at = None
+    items = [dict(v, key=k) for k, v in state.items() if not k.startswith("_")]
+    return summarize(_service_rows(items, now, confirm), checked_at=checked_at, now=now)
+
+
+def live_status(results: Iterable[Dict[str, Any]], *,
+                now: Optional[float] = None) -> Dict[str, Any]:
+    """Summary of fresh probe results ("Check now"). Not saved to state, so
+    the scheduled task still owns the down/recovered notifications; a failure
+    seen here counts as ``down`` because the user is looking at it now."""
+    now = time.time() if now is None else now
+    items = [dict(r, fails=0 if r.get("ok") else 1, since=None) for r in results]
+    return summarize(_service_rows(items, now, 1), checked_at=now, now=now, live=True)
 
 
 # ── live wiring (lazy imports keep the module importable without deps) ──────

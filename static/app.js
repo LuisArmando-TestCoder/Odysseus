@@ -2405,6 +2405,7 @@ function initializeEventListeners() {
     'tool-tasks':          '#tool-tasks-btn',
     'tool-theme':          '#tool-theme-btn',
     'tool-cases':          '#tool-cases-btn, #rail-cases',
+    'tool-services':       '#tool-services-btn, #svc-health-panel',
     'user-bar':            '#user-bar-profile',
     'sidebar-settings-btn':'#user-bar-settings',
     'chat-meta':           '.chat-meta-overlay',

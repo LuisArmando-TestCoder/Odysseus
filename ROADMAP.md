@@ -68,8 +68,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   a single blip stays silent. The daily brief lists services that are down
   right now. URLs pass `check_outbound_url`, redirects are not followed,
   credentials/query strings are redacted. See `docs/service-health.md`.
-- Next: a `/api/health/services` endpoint + a status dot in the sidebar;
-  LLM provider/endpoint probes (Anthropic, OpenAI, local vLLM/Ollama) with
+- **Status in the app** (`health_status`/`live_status`,
+  `routes/service_health_routes.py`, `static/js/serviceHealth.js`): a
+  "Services" row in the Tools sidebar with a status dot (ok / flaky / down /
+  stale — task not running — / unknown), an expandable panel listing what is
+  wrong with the fix and last-check time, and a rate-limited "Check now"
+  (live probes, not saved, so notifications stay with the task).
+  `GET /api/health/services`, `POST /api/health/services/check`.
+- Next: LLM provider/endpoint probes (Anthropic, OpenAI, local vLLM/Ollama) with
   the same down/recovered flow; "snooze this service" for known outages.
 
 ## Intel Board (shipped)
@@ -166,8 +172,8 @@ mobile part 2 (messages, sheets, views) → a dedicated settings pass. Spec + lo
   fetched pages, and memories should be treated as untrusted data. Keep testing
   whether models follow malicious instructions from those surfaces.
 - Better degraded-state reporting for ChromaDB, SearXNG, email, ntfy, and provider probes.
-  (Background checks + notifications shipped as Service Health; still open:
-  in-UI status surface and LLM provider probes.)
+  (Background checks + notifications + sidebar status dot shipped as Service
+  Health; still open: LLM provider probes.)
 - Email performance audit. Fetching, searching, opening, deleting, and sending
   email can feel slow, especially over IMAP/SMTP providers with high latency.
   Need someone who knows mail performance to profile the current flow, identify

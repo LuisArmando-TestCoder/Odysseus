@@ -563,6 +563,10 @@ app.include_router(setup_trusted_claims_routes())
 from routes.case_routes import setup_case_routes
 app.include_router(setup_case_routes())
 
+# Service Health status (sidebar dot) — saved state + on-demand check
+from routes.service_health_routes import setup_service_health_routes
+app.include_router(setup_service_health_routes())
+
 # Goals (continuous goals — versioned goal state + round driver)
 from routes.goal_routes import setup_goal_routes
 app.include_router(setup_goal_routes())

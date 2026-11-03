@@ -926,6 +926,16 @@
           <span class="grow">Intel Board</span>
           <span id="intel-badge" class="intel-badge" style="display:none" aria-live="polite"></span>
         </div>
+        <div class="list-item" id="tool-services-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="svc-health-panel" title="Service health">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          <span class="grow">Services</span>
+          <span id="svc-health-dot" class="svc-health-dot svc-unknown" role="status" aria-label="Service health not checked yet"></span>
+        </div>
+        <div id="svc-health-panel" class="svc-health-panel" hidden aria-live="polite"></div>
         <div class="list-item" id="tool-gallery-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
@@ -1826,6 +1836,11 @@
                 <input type="checkbox" checked data-ui-key="tool-cases"><span class="vis-switch"></span>
               </label>
               <label class="vis-row">
+                <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+                <span class="vis-label">Services <span class="vis-hint">Service health dot</span></span>
+                <input type="checkbox" checked data-ui-key="tool-services"><span class="vis-switch"></span>
+              </label>
+              <label class="vis-row">
                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
                 <span class="vis-label">Gallery</span>
                 <input type="checkbox" checked data-ui-key="tool-gallery"><span class="vis-switch"></span>
@@ -2416,6 +2431,7 @@
 <script type="module" src="/static/js/admin.js"></script>
 <script type="module" src="/static/js/assistant.js"></script>
 <script type="module" src="/static/js/intelLink.js"></script>
+<script type="module" src="/static/js/serviceHealth.js"></script>
 <script type="module" src="/static/js/update-notice.js"></script>
 <script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST -->
 <script type="module" src="/static/js/init.js"></script>

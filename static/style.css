@@ -1169,6 +1169,54 @@ body.bg-pattern-sparkles {
       box-sizing: border-box;
       flex-shrink: 0;
     }
+    /* Services sidebar entry — Service Health status dot + expandable
+       panel (static/js/serviceHealth.js). */
+    .svc-health-dot {
+      margin-left: auto;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--fg-muted, #888);
+      opacity: 0.6;
+    }
+    .svc-health-dot.svc-ok { background: #3fb97f; opacity: 0.9; }
+    .svc-health-dot.svc-flaky,
+    .svc-health-dot.svc-stale { background: #e0a43a; opacity: 1; }
+    .svc-health-dot.svc-down { background: #e05252; opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, #e05252 25%, transparent); }
+    .svc-health-panel {
+      margin: 2px 8px 6px 28px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--fg);
+      background: color-mix(in srgb, var(--bg) 92%, var(--fg) 4%);
+      overflow-wrap: anywhere;
+    }
+    .svc-health-panel[hidden] { display: none !important; }
+    .svc-health-head { font-weight: 600; margin-bottom: 6px; }
+    .svc-health-list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .svc-health-row { padding-left: 8px; border-left: 2px solid #e05252; }
+    .svc-health-row.svc-flaky { border-left-color: #e0a43a; }
+    .svc-health-name { font-weight: 600; }
+    .svc-health-for, .svc-health-when, .svc-health-detail, .svc-health-empty { opacity: 0.7; font-weight: 400; }
+    .svc-health-fix { margin-top: 2px; }
+    .svc-health-empty { margin-bottom: 6px; }
+    .svc-health-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .svc-health-check {
+      font: inherit;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .svc-health-check:disabled { opacity: 0.5; cursor: progress; }
     /* Shared notification dot for sidebar section titles. Single source of
        truth so chats / email / assistant / future-section dots all sit at
        the same offset from their label. */
