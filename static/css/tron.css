@@ -1477,3 +1477,174 @@
   :root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-tab.active, .hwfit-gpu-btn.active, .cookbook-srv-status, .admin-card h2::before) { box-shadow: none !important; }
   :root[data-odx-theme="jarvis"] #cookbook-modal :is(.cookbook-tab, .memory-desc, .doclib-desc, .doclib-card .memory-item-meta) { color: var(--tr-ink) !important; }
 }
+
+/* ── 16 · Settings: nav rail, form rows, endpoint + user rows (run 13) ─────
+   Scoped to #settings-modal. One rhythm: an 88px mono label column so every
+   field in a card starts on the same line, 32px fields with a drawn chevron
+   on selects, square hairline rows (no more 9px pills inside chamfered
+   cards), and mono status chips — cyan = live, amber = needs attention,
+   neutral = off. Red only on the destructive key, and only at full strength
+   under the pointer. Phones (≤768px) stack label over field and drop row
+   actions onto their own line instead of squeezing the name. */
+:root[data-odx-theme="jarvis"] #settings-modal {
+  --st-label-w: 88px;
+  --st-field-h: 32px;
+  --st-row-line: color-mix(in srgb, var(--tr-cyan) 18%, transparent);
+  --st-chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%234fd8ff' stroke-width='1.4' stroke-linecap='square'/%3E%3C/svg%3E");
+}
+/* Intro line under the title: a quiet caption strip, not body copy */
+:root[data-odx-theme="jarvis"] #settings-modal .settings-modal-content > .admin-toggle-sub {
+  font-family: var(--jv-mono); font-size: 10px !important; letter-spacing: .06em;
+  color: var(--tr-dim) !important; opacity: 1 !important;
+  padding: 6px 14px 8px !important; border-bottom: 1px solid var(--tr-ln-dim);
+}
+
+/* Nav rail */
+:root[data-odx-theme="jarvis"] #settings-modal .settings-nav-item {
+  min-height: 34px; color: var(--tr-dim);
+  transition: color var(--jv-fast, 120ms) var(--jv-ease, ease-out), background-color var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #settings-modal .settings-nav-item:hover:not(.active) {
+  color: var(--tr-ink); background: color-mix(in srgb, var(--tr-cyan) 6%, transparent);
+}
+:root[data-odx-theme="jarvis"] #settings-modal .settings-nav-item svg { opacity: .7; }
+:root[data-odx-theme="jarvis"] #settings-modal .settings-nav-item.active { color: var(--tr-cyan-hi); }
+:root[data-odx-theme="jarvis"] #settings-modal .settings-nav-item.active svg { opacity: 1; color: var(--tr-cyan); }
+:root[data-odx-theme="jarvis"] #settings-modal .settings-sidebar-divider {
+  background: linear-gradient(90deg, var(--tr-ln-dim), transparent);
+}
+/* "ADMIN" sat at 35 % opacity (~2:1) — now a readable micro-label */
+:root[data-odx-theme="jarvis"] #settings-modal .settings-sidebar-label {
+  font-family: var(--jv-mono); font-size: var(--jv-label-size, 10.5px); font-weight: 500;
+  letter-spacing: var(--jv-label-track, .14em); opacity: 1; color: var(--jv-amber);
+}
+
+/* Form rows: aligned label column, 32px fields, drawn select chevron */
+:root[data-odx-theme="jarvis"] #settings-modal .settings-label {
+  flex: 0 0 var(--st-label-w); min-width: var(--st-label-w);
+  font-family: var(--jv-mono); font-size: 10.5px; letter-spacing: .1em; color: var(--tr-dim);
+}
+:root[data-odx-theme="jarvis"] #settings-modal :is(.settings-select, .admin-card input[type="text"], .admin-card input[type="password"], .admin-card input[type="number"], .admin-card input[type="email"], .admin-card input[type="url"], .admin-card select) {
+  min-height: var(--st-field-h); font-size: 12.5px;
+  background-color: color-mix(in srgb, #000 35%, var(--tr-fill-solid)) !important;
+  border-color: var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] #settings-modal :is(select.settings-select, .admin-card select) {
+  background-image: var(--st-chev) !important; background-repeat: no-repeat !important;
+  background-position: right 10px center !important; padding-right: 28px !important;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+}
+:root[data-odx-theme="jarvis"] #settings-modal :is(.settings-select, .admin-card input, .admin-card select):hover:not(:focus) {
+  border-color: var(--tr-ln) !important;
+}
+:root[data-odx-theme="jarvis"] #settings-modal .admin-card :has(> .settings-label + :is(select, input)) { gap: 8px !important; }
+:root[data-odx-theme="jarvis"] #settings-modal .settings-fallback-row {
+  border-left: 1px solid var(--tr-ln-dim); margin-left: calc(var(--st-label-w) - 12px);
+}
+
+/* Endpoint + user rows: square hairline rows, lit edge on hover */
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-row {
+  border-radius: 0 !important; border-color: var(--st-row-line) !important;
+  background: color-mix(in srgb, #000 22%, transparent) !important;
+  box-shadow: inset 2px 0 0 transparent;
+  transition: border-color var(--jv-fast, 120ms) var(--jv-ease, ease-out), box-shadow var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-row:hover {
+  border-color: var(--tr-ln) !important; box-shadow: inset 2px 0 0 var(--tr-cyan);
+  background: color-mix(in srgb, var(--tr-cyan) 5%, color-mix(in srgb, #000 22%, transparent)) !important;
+}
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-row.admin-ep-disabled { border-style: dashed !important; }
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-name { font-weight: 500; color: var(--tr-ink); }
+:root[data-odx-theme="jarvis"] #settings-modal .admin-ep-detail {
+  font-family: var(--jv-mono); font-size: 10.5px; color: var(--tr-dim); opacity: 1;
+}
+/* "Click to manage …" hints were 40 % opacity (~2.4:1) */
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-row .admin-user-info span[style*="opacity:0.4"] {
+  opacity: 1 !important; color: var(--tr-dim); font-family: var(--jv-mono); font-size: 10px !important; letter-spacing: .04em;
+}
+/* User avatar: the inline var(--accent) tint is empty in jarvis, so only the
+   letter showed. Draw it as a small lit square. */
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-info > div[style*="border-radius:50%"] {
+  border-radius: 0 !important; background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--tr-ln); color: var(--tr-cyan-hi) !important;
+  font-family: var(--jv-mono); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+/* Account card: same lit-square avatar; logout is a quiet outlined key */
+:root[data-odx-theme="jarvis"] #settings-modal #settings-account-avatar {
+  border-radius: 0 !important; background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--tr-ln) !important; color: var(--tr-cyan-hi) !important; font-family: var(--jv-mono);
+}
+:root[data-odx-theme="jarvis"] #settings-modal #settings-account-role { opacity: 1 !important; color: var(--tr-dim); font-family: var(--jv-mono); font-size: 10px !important; letter-spacing: .1em; text-transform: uppercase; }
+:root[data-odx-theme="jarvis"] #settings-modal #settings-logout-btn {
+  border-radius: 0 !important; background: transparent !important; min-height: 30px;
+  border-color: color-mix(in srgb, var(--jv-danger) 45%, transparent) !important;
+  color: color-mix(in srgb, var(--jv-danger) 80%, var(--tr-ink)) !important;
+  font-family: var(--jv-mono) !important; font-size: 10.5px !important; letter-spacing: .08em; text-transform: uppercase;
+}
+:root[data-odx-theme="jarvis"] #settings-modal #settings-logout-btn:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--jv-danger) 16%, transparent) !important; border-color: var(--jv-danger) !important; color: #ffd9d9 !important;
+}
+
+/* Status chips */
+:root[data-odx-theme="jarvis"] #settings-modal .admin-badge {
+  font-family: var(--jv-mono); font-size: 9.5px !important; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .08em; line-height: 1.5;
+  border-radius: 0 !important; padding: 1px 6px !important;
+  background: color-mix(in srgb, var(--tr-cyan) 8%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tr-cyan) 40%, transparent);
+  color: var(--tr-cyan-hi) !important;
+}
+:root[data-odx-theme="jarvis"] #settings-modal .admin-badge-off {
+  background: color-mix(in srgb, var(--jv-amber) 8%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jv-amber) 45%, transparent);
+  color: var(--jv-amber) !important;
+}
+/* A disabled endpoint is a choice, not a fault: its chips go neutral */
+:root[data-odx-theme="jarvis"] #settings-modal .admin-ep-disabled .admin-badge-off {
+  background: transparent !important; color: var(--tr-dim) !important;
+  box-shadow: inset 0 0 0 1px var(--tr-ln-dim);
+}
+
+/* Row action keys: one height, mono; destructive quiet until hovered */
+:root[data-odx-theme="jarvis"] #settings-modal .admin-user-row :is(.admin-btn-sm, .admin-btn-delete) {
+  min-height: 28px; padding: 0 10px !important; font-size: 10.5px !important;
+  font-family: var(--jv-mono); letter-spacing: .08em; text-transform: uppercase;
+}
+:root[data-odx-theme="jarvis"] #settings-modal .admin-btn-delete {
+  border-radius: 0 !important; background: transparent !important;
+  border: 1px solid color-mix(in srgb, var(--jv-danger) 35%, transparent) !important;
+  color: color-mix(in srgb, var(--jv-danger) 80%, var(--tr-ink)) !important; box-shadow: none !important;
+  transition: background-color var(--jv-fast, 120ms) var(--jv-ease, ease-out), color var(--jv-fast, 120ms) var(--jv-ease, ease-out);
+}
+:root[data-odx-theme="jarvis"] #settings-modal .admin-btn-delete:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--jv-danger) 16%, transparent) !important;
+  border-color: var(--jv-danger) !important; color: #ffd9d9 !important;
+}
+
+/* Phones: stack label over field, actions on their own line */
+@media (max-width: 768px) {
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-modal-content > .admin-toggle-sub { display: none; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-card :has(> .settings-label + :is(select, input)) { flex-direction: column; align-items: stretch !important; gap: 4px !important; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-card :has(> .settings-label + :is(select, input)) > .settings-label { flex: none; min-width: 0; }
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-fallback-row { margin-left: 0; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-user-row > div:first-child { flex-wrap: wrap; row-gap: 8px; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-user-row > div:first-child > .admin-user-info { flex: 1 1 100% !important; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-user-row > div:first-child > div:last-child { margin-left: auto; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-add-form { flex-wrap: wrap; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-add-form > input { flex: 1 1 100%; min-width: 0; }
+}
+@media (max-width: 768px) and (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-user-row :is(.admin-btn-sm, .admin-btn-delete) { min-height: 44px; padding: 0 14px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] #settings-modal :is(.settings-nav-item, .admin-user-row, .admin-btn-delete) { transition: none !important; }
+}
+@media (prefers-contrast: more) {
+  :root[data-odx-theme="jarvis"] #settings-modal :is(.settings-label, .settings-nav-item, .admin-ep-detail, .settings-modal-content > .admin-toggle-sub) { color: var(--tr-ink) !important; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-user-row { border-color: var(--tr-cyan) !important; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-badge { box-shadow: inset 0 0 0 1px currentColor; }
+}
+@media (forced-colors: active) {
+  :root[data-odx-theme="jarvis"] #settings-modal :is(select.settings-select, .admin-card select) { background-image: none !important; padding-right: 8px !important; }
+}

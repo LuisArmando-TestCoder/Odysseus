@@ -51,14 +51,14 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 3. ✅ Chat canvas + message bubbles (Tron "drawn" pass, `tron.css`)
 4. ✅ Composer (Tron pass) — voice mode itself is out of scope (`voice-hyper.css`)
 5. ✅ Modals / windows / dropdowns (Tron pass)
-6. Settings
+6. ✅ Settings (`tron.css` §16)
 7. ✅ Notes / tasks / calendar
 8. ✅ Documents / editor (+ library documents tab)
 9. ✅ Email (inbox library, reader + pop-out readers, compose fields)
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · part 4 settings panel bodies + chat overlays (after area 6)
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · part 4 chat overlays + remaining settings panels
 
 ## Progress log
 
@@ -520,3 +520,47 @@ focus below 16px); tab strips scroll with a hidden scrollbar, so
 **Next:** area 6, the dedicated settings pass (nav rail, panel cards, endpoint
 rows, toggles), including its 390px panel bodies.
 
+
+### Run 13 — 2026-11-04 · Settings
+`static/css/tron.css` §16, every rule scoped to `#settings-modal` under the
+jarvis root. Audit (1440×900 + 390×844, mocked admin with three endpoints,
+two users): fields in a card started at different x (label `min-width:70px`
++ one card with a 12px inline gap); selects had no chevron, so they read as
+text inputs; endpoint/user rows were 9px-rounded pills inside chamfered
+cards; status badges were filled pills (offline and disabled both red);
+"ADMIN" nav label and "Click to manage …" hints at 35–40 % opacity
+(~2:1); the user avatar tint used `--accent`, empty in jarvis, so only the
+letter showed; on phones row actions squeezed the endpoint name to two
+lines and the add-user fields truncated their placeholders.
+- **Form rhythm:** 88px mono label column (`--st-label-w`) for
+  `.settings-row` and any `label + select/input` pair (vision row's inline
+  gap normalised to 8px); 32px fields on a darker well; selects get a drawn
+  cyan chevron (`--st-chev`, removed under `forced-colors`); fallback chains
+  indent under the field column.
+- **Nav rail:** 34px items, hover tint, active icon lit; dividers fade out;
+  "ADMIN" is an amber micro-label (attention = admin-only power).
+- **Rows:** square hairline rows, dashed when disabled, 2px cyan edge + tint
+  on hover; endpoint URL in mono; hints at the dim token. Avatars (users +
+  account) are lit squares.
+- **Chips:** mono uppercase 9.5px, hairline outline — cyan = live/count,
+  amber = offline, neutral inside a disabled row (a choice, not a fault).
+- **Keys:** row actions one height, mono; Delete/Remove/Logout outlined and
+  quiet, full danger only on hover/focus.
+- **Phones (≤768px):** intro caption hidden; label stacks over field; row
+  actions drop to their own right-aligned line; add-user fields full width;
+  44px row keys on touch.
+- Removed a duplicate `.settings-sidebar-divider` rule from `style.css`.
+- Verified headless: jarvis before/after on Add Models, AI Defaults, Users,
+  Appearance, Account at 1440 and 390; light rendered from a clean `HEAD`
+  worktree vs. the change on Account/AI (1440) and Add Models/Users (390) —
+  pixel-identical apart from the animated voice button. No horizontal
+  overflow. CSS-touching tests 33 pass, same as baseline. Console: only the
+  harness's existing mock errors (`_notes.filter`, `userTemplates.map`).
+- Seen, not fixed: the phone sheet leaves a ~100px dark band under its last
+  card (pre-existing); the window's minimise key has a brighter border than
+  the close key; the intro caption ("Toggle on/off visibility …") is the
+  same copy on every tab.
+
+**Next:** mobile pass part 4 — chat overlays at 390px plus the settings
+panels not yet audited (Integrations, Email, Reminders, Search, Shortcuts,
+Agent Tools, System), and the sheet's bottom band.

@@ -20908,8 +20908,6 @@ body.gallery-selecting .gallery-dl-btn,
   opacity: 1;
 }
 
-.settings-sidebar-divider { height: 1px; background: var(--border); margin: 8px 12px; }
-
 /* Keyboard shortcuts */
 .shortcut-category {
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
