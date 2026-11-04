@@ -340,6 +340,61 @@
   }
 }
 
+/* ── 9 · Settings panels on phones ───────────────────────────────────────
+   Audited all twelve Settings panels at 390×844 touch (Run 15). Found:
+   · the sheet is full height on phones, but .settings-layout kept its
+     desktop cap (85vh − 60px), so the last ~110px of the sheet was a dead
+     band and every panel scrolled inside a shorter window than needed;
+   · Run 13's 32px field height (--st-field-h, ID-scoped) out-ranked Run 12's
+     44px touch minimum — every Settings select/input was 32–34px;
+   · Search: provider picker + Test key sat on the label's row and pushed
+     the key 33px past the card edge; Add Models' API row ran 89px past it;
+   · Wipe keys, Logout, the shortcut caps, the shortcut reset key (28px),
+     visibility rows (32px) and the 16px toggles were all under 44px. */
+@media (max-width: 768px) {
+  /* The sheet's body fills the sheet: no band under the last card. */
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-layout {
+    flex: 1 1 0; min-height: 0; max-height: none;
+  }
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-panels {
+    min-height: 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior-y: contain;
+  }
+  /* Label on its own line, everything else of the row shares the next. */
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-row { flex-wrap: wrap; row-gap: 4px; }
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-row > .settings-label { flex: 1 1 100%; min-width: 0; }
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-row > :not(.settings-label) { min-width: 0; }
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-row > :is(#search-provider-picker, #set-searchTestBtn) { top: 0 !important; }
+  :root[data-odx-theme="jarvis"] #settings-modal .settings-row > .search-fallback-chain { flex: 1 1 100%; }
+  /* Add Models forms: fields take the full row, select + keys share the
+     next (the API row was key | type | Test | Add — 89px past the card). */
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-model-form-row { flex-wrap: wrap; row-gap: 6px; }
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-model-form-row > input { flex: 1 1 100% !important; min-width: 0; }  /* beats inline flex:1 */
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-model-form-row > select { flex: 1 1 0; width: auto !important; min-width: 0; }
+  /* Shortcuts caption sat at 40 % opacity (~2.3:1). */
+  :root[data-odx-theme="jarvis"] #settings-modal [data-settings-panel="shortcuts"] .admin-card p[style*="opacity:0.4"] {
+    opacity: 1 !important; color: var(--tr-dim);
+  }
+}
+@media (max-width: 768px) and (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] #settings-modal { --st-field-h: 44px; }
+  :root[data-odx-theme="jarvis"] #settings-modal :is(
+      .admin-btn-delete, .admin-btn-sm, .admin-btn-add, #settings-logout-btn,
+      .shortcut-key, .adm-section-toggle, .adm-quickstart-toggle, .adm-provider-btn,
+      .settings-fallback-add, .vis-row) {
+    min-height: 44px; touch-action: manipulation;
+  }
+  :root[data-odx-theme="jarvis"] #settings-modal .shortcut-key { min-width: 44px; }
+  :root[data-odx-theme="jarvis"] #settings-modal #shortcuts-reset-btn { width: 44px !important; height: 44px !important; }
+  :root[data-odx-theme="jarvis"] #settings-modal :is(.adm-section-toggle, .adm-quickstart-toggle) { display: flex; align-items: center; }
+  /* Toggles keep their drawn size; an invisible 44×44 hit area around them
+     (pseudo-element of the <label>, so a tap still flips the checkbox). */
+  :root[data-odx-theme="jarvis"] #settings-modal .admin-switch::after {
+    content: ""; position: absolute; inset: -14px -7px;
+  }
+}
+
 /* ── Accessibility gates ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }

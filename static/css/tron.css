@@ -1542,6 +1542,15 @@
   border-left: 1px solid var(--tr-ln-dim); margin-left: calc(var(--st-label-w) - 12px);
 }
 
+/* Provider pickers (Add Models API, Search) were the last rounded fields:
+   same square well and hairline as every other settings field. */
+:root[data-odx-theme="jarvis"] #settings-modal .adm-provider-btn {
+  border-radius: 0 !important; min-height: var(--st-field-h);
+  background-color: color-mix(in srgb, #000 35%, var(--tr-fill-solid)) !important;
+  border-color: var(--tr-ln-dim) !important;
+}
+:root[data-odx-theme="jarvis"] #settings-modal .adm-provider-btn:hover { border-color: var(--tr-ln) !important; }
+
 /* Endpoint + user rows: square hairline rows, lit edge on hover */
 :root[data-odx-theme="jarvis"] #settings-modal .admin-user-row {
   border-radius: 0 !important; border-color: var(--st-row-line) !important;

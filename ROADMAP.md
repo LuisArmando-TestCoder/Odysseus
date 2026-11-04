@@ -155,9 +155,11 @@ tappable close key; part 3 gave sheet bodies 44px tabs/keys, 16px fields
 (no iOS focus-zoom) and tab strips that fade where there is more to scroll.
 The settings pass (tron.css §16) aligned every form row on one label
 column, drew select chevrons, squared endpoint/user rows with mono status
-chips (cyan live, amber attention) and stacks rows on phones. Next: mobile
-part 4 (chat overlays at 390px, remaining settings panels: integrations,
-email, reminders, system). Spec + log: `docs/JARVIS_UI.md`.
+chips (cyan live, amber attention) and stacks rows on phones. Mobile part 4
+audited all twelve Settings panels on phones: the sheet body now fills the
+sheet (no dead band), every field/key/toggle hits 44px on touch, and the
+Search and Add Models rows wrap instead of running off the card. Next:
+mobile part 5 (chat overlays at 390px). Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

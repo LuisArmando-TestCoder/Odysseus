@@ -58,7 +58,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · part 4 chat overlays + remaining settings panels
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · part 5 chat overlays
 
 ## Progress log
 
@@ -588,3 +588,42 @@ kept). `jarvis-mobile.css` §8:
 
 **Next:** unchanged — mobile pass part 4 (chat overlays at 390px, remaining
 settings panels, the sheet's bottom band).
+
+### Run 15 — 2026-11-04 · Mobile pass, part 4: Settings panels on phones
+`static/css/jarvis-mobile.css` §9 (+ one desktop-wide rule in `tron.css`
+§16). Audit of all twelve Settings panels at 390×844 touch with a scripted
+metric (sheet band, controls < 44px, elements past the viewport):
+- **No dead band.** On phones the sheet is full height, but
+  `.settings-layout` kept its desktop cap (`85vh − 60px`), so the last
+  112px of the sheet was empty and every panel scrolled in a shorter window.
+  Now `flex: 1 1 0; max-height: none` (≤768px); panels get a safe-area
+  bottom pad and `overscroll-behavior-y: contain`. Band 112–369px → 1px.
+- **44px on touch, for real.** Run 13's ID-scoped `--st-field-h: 32px`
+  out-ranked Run 12's 44px field minimum, so every Settings field was
+  32–34px. The variable is 44px under `(max-width:768px) and (pointer:
+  coarse)`; Wipe, Logout, Test/Add, Add fallback, Local/API/Quickstart
+  section heads, shortcut caps, the reset key (28px) and visibility rows are
+  44px too. Toggles keep their drawn 30×16 size and get an invisible 44×44
+  hit area (`.admin-switch::after`, part of the label — hit-tested).
+  Controls under 44px: 98 → 0 (toggles' boxes and one inline text link
+  excluded).
+- **Rows wrap instead of overflowing.** `.settings-row` puts its label on
+  its own line and lets the rest share the next (Search's Test key sat 33px
+  past the card); Add Models form rows put inputs full width and the
+  type select + Test + Add on one row (the API row ran 89px past the card;
+  the Local URL needed `!important` to beat its inline `flex:1`).
+- **Provider pickers squared** (all widths, `tron.css`): Add Models' and
+  Search's picker were the last 7px-rounded fields; now the same square
+  well + hairline as every other settings field.
+- Shortcuts caption at 40 % opacity → `--tr-dim` on phones.
+- Verified headless, clean `HEAD` worktree vs. change, all 12 panels:
+  jarvis 390 touch (intended diffs only), jarvis 1440 (only the two
+  provider pickers change, ~330/750px), light 390 + 1440 pixel-identical.
+  No horizontal page overflow. CSS tests 11/11 pass, same as baseline.
+  Console: only the harness's existing mock error (`userTemplates.map`).
+- Seen, not fixed: light theme's Search Test key also overflows at 390px
+  (upstream, not jarvis); the Integrations/Agent Tools panels were only
+  audited empty (mocks return no integrations/tools).
+
+**Next:** mobile pass part 5 — chat overlays at 390px (slash menu, model
+picker, message action bar, toasts, the voice overlay's controls).
