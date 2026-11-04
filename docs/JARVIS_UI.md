@@ -564,3 +564,27 @@ lines and the add-user fields truncated their placeholders.
 **Next:** mobile pass part 4 — chat overlays at 390px plus the settings
 panels not yet audited (Integrations, Email, Reminders, Search, Shortcuts,
 Agent Tools, System), and the sheet's bottom band.
+
+### Run 14 — 2026-11-04 · Tab-strip follow-up: legibility, settings underline, no snap nudge
+Small follow-up to Run 12 (this run started on the mobile tab strips before
+Runs 12/13 had landed locally; overlapping work was dropped, only the gaps
+kept). `jarvis-mobile.css` §8:
+- **Inactive Brain/Gallery tabs legible at every width.** Upstream stacks
+  50–60 % opacity on a 55 %-alpha ink (~3:1, below AA). Now full opacity on
+  `--jv-text-dim`; full ink under more-contrast.
+- **Settings active tab = underline on phones.** The rail becomes a
+  horizontal strip at ≤768px but kept its desktop left-edge bar; it now uses
+  the same bottom underline as the other strips (Run 13's active colour and
+  lit icon still apply).
+- **Removed the strips' `scroll-snap`.** Each strip's own inline padding
+  (Gallery: 16px) ≠ `scroll-padding-inline: 12px`, so proximity snap opened
+  Gallery at `scrollLeft: 4` — waking the leading edge fade over the active
+  "Photos" tab. Without snap it opens at 0 with only the trailing fade.
+  Strips get `overscroll-behavior-x: contain`; tabs `nowrap` + `flex-shrink: 0`.
+- Verified headless at 1440×900 + 390×844 touch in jarvis and light (six
+  sheets): computed tab opacity/colour/box-shadow/mask diff vs. Run 12 shows
+  only the three intended changes; light identical. CSS tests 11/11, same as
+  baseline. No page errors.
+
+**Next:** unchanged — mobile pass part 4 (chat overlays at 390px, remaining
+settings panels, the sheet's bottom band).

@@ -249,9 +249,18 @@
    · tabs and toolbar keys get a 44px row; chips 40px (they sit in wrapping
      rows of filters, the extra 4px of hit area comes from row gap)
    · text fields and selects: 44px tall, 16px text (stops the focus-zoom)
-   · tab strips snap tab-by-tab and fade at the edge that has more to show —
+   · tab strips fade at the edge that has more to show —
      a scroll-driven mask, so at rest only the right edge fades and at the
      end only the left. Browsers without scroll timelines get no fade. */
+/* Inactive Brain/Gallery tabs (every width): upstream stacks 50–60 %
+   opacity on a 55 %-alpha ink — ~3:1 on the panel, below AA. Full opacity
+   on --jv-text-dim instead (Run 13). */
+:root[data-odx-theme="jarvis"] :is(.memory-tab, .gallery-tab):not(.active) {
+  opacity: 1;
+  color: var(--jv-text-dim);
+}
+:root[data-odx-theme="jarvis"] :is(.memory-tab, .gallery-tab):not(.active):hover { color: var(--jv-text); }
+
 @property --jv-fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @property --jv-fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @keyframes jv-strip-fade {
@@ -261,15 +270,23 @@
   100% { --jv-fade-l: 32px; --jv-fade-r: 0px; }
 }
 @media (max-width: 768px) and (pointer: coarse) {
-  /* Tab strips: one tab per snap, 44px row, scroll room for the fade. */
+  /* Tab strips: 44px row. No scroll-snap (Run 13): with the strips' own
+     inline padding ≠ scroll-padding, proximity snap nudged Gallery to
+     scrollLeft 4 on open, which woke the leading fade over the active tab. */
   :root[data-odx-theme="jarvis"] :is(.cookbook-tabs, .memory-tabs, .admin-tabs, .lib-tabs, .gallery-tabs, .preset-tabs, .settings-sidebar) {
-    scroll-snap-type: x proximity;
-    scroll-padding-inline: 12px;
+    overscroll-behavior-x: contain;
   }
   :root[data-odx-theme="jarvis"] :is(.cookbook-tab, .memory-tab, .admin-tab, .lib-tab, .gallery-tab, .gallery-editor-tab, .preset-tab, .settings-nav-item) {
     min-height: 44px;
-    scroll-snap-align: start;
+    flex-shrink: 0;
+    white-space: nowrap;
     touch-action: manipulation;
+  }
+  /* The settings rail is a horizontal strip here, so its desktop left-edge
+     "active" bar becomes the same underline every other strip uses. */
+  :root[data-odx-theme="jarvis"] .settings-nav-item.active {
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--jv-cyan) 14%, transparent)) !important;
+    box-shadow: inset 0 -2px 0 var(--jv-cyan) !important;
   }
   :root[data-odx-theme="jarvis"] :is(.cookbook-tab, .memory-tab, .admin-tab, .lib-tab, .gallery-tab, .gallery-editor-tab, .preset-tab, .settings-nav-item):focus-visible {
     outline-offset: -3px;          /* the strip clips overflow-y */
@@ -344,6 +361,7 @@
   }
   :root[data-odx-theme="jarvis"] .voice-mode-fab { border-color: var(--jv-cyan) !important; }
   :root[data-odx-theme="jarvis"] .incognito-btn { opacity: 1; color: var(--jv-text); }
+  :root[data-odx-theme="jarvis"] :is(.memory-tab, .gallery-tab):not(.active) { color: var(--jv-text); }
   :root[data-odx-theme="jarvis"] .modal-content .modal-header :is(.close-btn, .modal-close),
   :root[data-odx-theme="jarvis"] #theme-popup .close-btn { color: var(--jv-text) !important; border-color: var(--jv-cyan) !important; }
 }
