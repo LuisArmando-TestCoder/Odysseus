@@ -52,8 +52,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   reported once per state and due date. The daily brief gets a "Deadlines"
   section (overdue + next 48h; 30+ day backlog summarized). See
   `docs/deadlines.md`.
+- **Email deadlines** (`src/email_deadlines.py`): the Email Tags scan pulls
+  "reply by Friday" / "deadline: Nov 20" / "due on the 10th" asks out of each
+  new unread email (deterministic, resolved against the email's `Date:`),
+  and Deadline Watch + the daily brief follow up on them like notes — due
+  soon, then overdue while still unread. Bulk/spam mail skipped; owner-scoped.
 - Next: one-tap Resume from the notification; "snooze / mark done" actions on deadline notifications;
-  deadlines from calendar events and email ("reply by Friday").
+  deadlines from calendar events; an LLM fallback for deadline phrasing the
+  regexes miss; treat a sent reply (not just opening the email) as done.
 
 ## Service Health (shipped)
 

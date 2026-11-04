@@ -1291,7 +1291,7 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
                  "due_date": n.due_date, "archived": bool(n.archived),
                  "repeat": n.repeat or "none"}
                 for n in notes if n.due_date
-            ])
+            ] + _email_deadline_notes_safe(owner))
             if dl:
                 plain += [""] + dl
         except Exception:
@@ -1436,6 +1436,16 @@ async def action_check_goals(owner: str, **kwargs) -> Tuple[str, bool]:
     return format_goal_alerts(due), True
 
 
+def _email_deadline_notes_safe(owner: str) -> list:
+    """Email "reply by …" deadlines (from the Email Tags scan), or [] on any error."""
+    try:
+        from src.email_deadlines import load_owner_email_deadlines
+        return load_owner_email_deadlines(owner)
+    except Exception:
+        logger.debug("email deadlines unavailable", exc_info=True)
+        return []
+
+
 async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
     """Follow up on notes with a due date: ones that went past due while
     still open (the at-due-time ping may have been missed) and ones due in
@@ -1445,6 +1455,11 @@ async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
         from src.deadline_watch import (due_deadline_alerts, format_deadline_alerts,
                                         load_owner_notes)
         notes = await asyncio.to_thread(load_owner_notes, owner)
+        try:
+            from src.email_deadlines import load_owner_email_deadlines
+            notes = list(notes) + await asyncio.to_thread(load_owner_email_deadlines, owner)
+        except Exception:
+            logger.debug("check_deadlines: email deadlines unavailable", exc_info=True)
         due = await asyncio.to_thread(due_deadline_alerts, owner, notes)
     except Exception as e:
         logger.exception("check_deadlines action failed")
@@ -1976,6 +1991,7 @@ async def action_check_email_urgency(owner: str, **kwargs) -> Tuple[str, bool]:
                                 "headers": header_blob,
                                 "body": body_snippet.strip(),
                                 "message_id": (msg.get("Message-ID") or "").strip(),
+                                "date": (msg.get("Date") or "").strip(),
                             })
                         except Exception as _fe:
                             logger.debug(f"urgency: header fetch for uid {uid} failed: {_fe}")
@@ -2107,6 +2123,19 @@ async def action_check_email_urgency(owner: str, **kwargs) -> Tuple[str, bool]:
                         "message_id": (item.get("message_id") or "").strip(),
                         "ts": _time.time(),
                     }
+                    # "reply by Friday": a deterministic deadline from the
+                    # subject + snippet, resolved against the email's own
+                    # Date header. Deadline Watch follows up on it.
+                    try:
+                        from src.email_deadlines import extract_deadline, parse_sent
+                        _dl = extract_deadline(
+                            f"{item.get('subject') or ''}\n{item.get('body') or ''}",
+                            parse_sent(item.get("date")),
+                        )
+                        if _dl:
+                            verdict["deadline"] = _dl
+                    except Exception:
+                        logger.debug("urgency: deadline extraction failed", exc_info=True)
                     cache.setdefault("uids", {})[item["uid"]] = verdict
                     per_uid_scores[key] = verdict
                     saved_classifications += 1

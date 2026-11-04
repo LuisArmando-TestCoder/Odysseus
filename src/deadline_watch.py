@@ -141,7 +141,9 @@ def assess_notes(notes: Iterable[Dict[str, Any]], *, now: Optional[float] = None
             kind = "due_soon"
         else:
             continue
-        title = _clean(note.get("title"), 100) or _clean(note.get("content"), 60) or "(untitled note)"
+        source = "email" if note.get("source") == "email" else "note"
+        title = (_clean(note.get("title"), 140 if source == "email" else 100)
+                 or _clean(note.get("content"), 60) or "(untitled note)")
         extra = f" ({len(pending)} open item{'s' if len(pending) != 1 else ''})" if pending else ""
         if kind == "overdue":
             message = f'Overdue by {_span(delta)}: "{title}"{extra}'
@@ -150,7 +152,7 @@ def assess_notes(notes: Iterable[Dict[str, Any]], *, now: Optional[float] = None
         items.append({
             "kind": kind, "note_id": str(note["id"]), "title": title,
             "due_date": str(note.get("due_date")), "due_at": due_at,
-            "pending": pending or [], "message": message,
+            "pending": pending or [], "message": message, "source": source,
         })
     items.sort(key=lambda i: (0 if i["kind"] == "overdue" else 1, i["due_at"]))
     return {"items": items, "long_overdue": long_overdue}
@@ -250,7 +252,12 @@ def format_deadline_alerts(items: List[Dict[str, Any]], limit: int = ALERT_LIMIT
     lines += [f"- {i['message']}" for i in items[:limit]]
     if len(items) > limit:
         lines.append(f"…and {len(items) - limit} more")
-    lines.append("Open Notes to finish, reschedule or archive them.")
+    has_email = any(i.get("source") == "email" for i in items)
+    has_note = any(i.get("source") != "email" for i in items)
+    if has_note:
+        lines.append("Open Notes to finish, reschedule or archive them.")
+    if has_email:
+        lines.append("Open Email to reply — an email drops off once you've opened it.")
     return "\n".join(lines)
 
 

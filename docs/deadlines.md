@@ -31,6 +31,34 @@ Data is owner-scoped; legacy null-owner notes are included only on
 single-user installs (same rule as the daily brief). Titles are stripped of
 control characters and capped before they reach a notification.
 
+## Deadlines that arrive by email
+
+"Please confirm by Friday", "send it over before 5pm Monday",
+"Deadline: Nov 20", "your invoice is due on the 10th of December" — asks
+like these never become a note. When the **Email Tags** scheduled task is on
+(`check_email_urgency`; it ships paused), each newly scanned unread email is
+also run through `src/email_deadlines.py`:
+
+- A deterministic extractor (no LLM) looks in the subject + first ~1.6k
+  chars for an ask verb + `by` / `before` / `no later than` + a date,
+  `deadline: <date>`, or `due (by|on) <date>`. Dates: today / tonight /
+  tomorrow, EOD / COB, end of the week / month, weekdays (`next Friday`),
+  `Nov 12`, `15 December`, ISO `2026-11-20`, with an optional time
+  (`5pm`, `15:30`, `noon`). Ambiguous numeric dates (`11/12`) are ignored.
+- Relative dates resolve against the email's own `Date:` header, so
+  "tomorrow" means the day after it was sent. Deadlines before the send time
+  or more than 120 days after it are ignored (contract terms, event dates).
+- The result is stored on the email's triage verdict as `deadline`.
+
+Deadline Watch and the daily brief then treat it like a note: "Due in 6
+hours: Email from Bob: Contract — "reply by Friday"", once per state, and
+overdue while the email is still unread. Spam, marketing, newsletters,
+shopping and social mail are skipped. **An email drops off once you open
+it** — Odysseus can't tell whether you replied, so opening it counts as
+handled. Only the scan-state file for your own user is read
+(`data/email_urgency_state_<owner>.json`, checked against its `owner`).
+
 ## Finishing a deadline
 
 Check off the checklist items, archive the note, or give it a new due date.
+For an email deadline, open (or reply to) the email.
