@@ -1628,7 +1628,9 @@ async def stream_agent_loop(
     # Layer 0 / F0.5: round cap comes from settings (callers may override).
     if max_rounds is None:
         try:
-            from src.settings import get_setting
+            # Module-level get_setting: a local import here made the name
+            # function-local, so callers passing max_rounds (scheduled tasks,
+            # bg_monitor, skill tests) crashed with UnboundLocalError later.
             max_rounds = int(get_setting("agent_max_rounds", MAX_AGENT_ROUNDS))
         except Exception:
             max_rounds = MAX_AGENT_ROUNDS
@@ -1944,6 +1946,14 @@ async def stream_agent_loop(
     time_to_first_token = None
     first_token_received = False
     tool_events = []   # Persist tool executions for history reload
+    # Action Gate — once any tool output this turn is flagged by Injection
+    # Guard, side-effecting calls in later rounds wait for the user's OK
+    # (src/action_gate.py).
+    try:
+        from src.action_gate import ActionGate as _ActionGate, is_enabled as _gate_enabled
+        _action_gate = _ActionGate(enabled=_gate_enabled())
+    except Exception:
+        _action_gate = None
     round_texts = []   # Cleaned text per round for history reload
     # Completion-verifier state (mechanism 3a). _effectful_used flips on when
     # a tool that produces a checkable artifact runs; the verifier only fires
@@ -2562,11 +2572,17 @@ async def stream_agent_loop(
             # events and results still map back to tool_call_ids in order.
             progress_q: asyncio.Queue = asyncio.Queue()
 
-            def _make_exec(block):
+            def _make_exec(block, bypass_gate=False):
                 async def _exec():
                     async def _push_progress(payload):
                         await progress_q.put((block.tool_type, payload))
                     try:
+                        # Action Gate — a tainted turn holds side-effecting
+                        # calls; the result loop below asks the user.
+                        if not bypass_gate and _action_gate is not None:
+                            _hold = _action_gate.check(block.tool_type, block.content)
+                            if _hold is not None:
+                                return (f"{block.tool_type}: held for confirmation", {"gate_hold": _hold})
                         # H2 — PRE_TOOL_USE hooks may rewrite the tool content.
                         _content = block.content
                         try:
@@ -2660,6 +2676,43 @@ async def stream_agent_loop(
             desc_results = []
 
         for (block, cmd_display, is_doc_tool), (desc, result) in zip(block_meta, desc_results):
+
+            # Action Gate — ask the user before running a held call (live
+            # root turn only); anywhere else it is refused with a report.
+            _gate_note = None
+            if isinstance(result, dict) and result.get("gate_hold") is not None:
+                _hold = result["gate_hold"]
+                _asked = False
+                _decision = "block"
+                if can_ask_user and session_id:
+                    from src.user_questions import ask as _uq_ask, get_future as _uq_get_future
+                    _q = _hold.question(f"action_gate_{round_num}_{total_tool_calls}")
+                    _reg = _uq_ask(session_id, [_q], can_ask_user=True)
+                    if _reg.get("status") == "pending":
+                        _asked = True
+                        yield (
+                            f'data: {json.dumps({"type": "ask_user", "data": {"questions": [_q], "session_id": session_id}})}\n\n'
+                        )
+                        from src.stream_util import heartbeat_wait, HEARTBEAT
+                        _gate_payload = None
+                        _gfut = _uq_get_future(session_id)
+                        if _gfut is not None:
+                            async for _hb in heartbeat_wait(_gfut, interval=15.0):
+                                if _hb == HEARTBEAT:
+                                    yield _hb
+                                else:
+                                    _gate_payload = _hb
+                        _decision = _action_gate.decide(_gate_payload)
+                if _decision == "block":
+                    if not _asked:
+                        _action_gate.blocked += 1
+                    _gate_note = "blocked" if _asked else "held"
+                    desc, result = f"{block.tool_type}: {_gate_note} by Action Gate", _action_gate.refusal(_hold, asked=_asked)
+                    logger.warning("Action Gate: %s %s (taint from %s)", block.tool_type, _gate_note, ", ".join(_hold.sources))
+                else:
+                    _gate_note = "allowed"
+                    desc, result = await _make_exec(block, bypass_gate=True)
+                    logger.info("Action Gate: %s allowed by user (%s)", block.tool_type, _decision)
 
             # Q3 — ask_user_question: the tool registered the question; the
             # loop now emits the ask_user SSE event, awaits the human answer
@@ -2906,6 +2959,8 @@ async def stream_agent_loop(
                 tool_event["path"] = str(result["path"])
             if result.get("guard"):
                 tool_event["guard"] = result["guard"]
+            if _gate_note:
+                tool_event["action_gate"] = _gate_note
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
@@ -2963,6 +3018,8 @@ async def stream_agent_loop(
                 formatted, _inj = guard_tool_result(block.tool_type, formatted)
                 if _inj:
                     tool_event["injection"] = sorted({s.kind for s in _inj})
+                    if _action_gate is not None:
+                        _action_gate.taint(block.tool_type, tool_event["injection"])
                     logger.warning(
                         "Injection Guard: %s output flagged (%s)",
                         block.tool_type, ", ".join(sorted({s.kind for s in _inj})),

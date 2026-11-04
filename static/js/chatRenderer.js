@@ -2220,6 +2220,18 @@ export function addMessage(role, content, modelName, metadata, _target) {
                 ev.injection.map(k => String(k).replace(/_/g, ' ')).join(', ') + ') — treated as data';
               _tc.appendChild(g);
             }
+            // Action Gate verdict (src/action_gate.py): a side-effecting call
+            // made after injected text was held for the user's confirmation.
+            if (_tc && ev.action_gate) {
+              const g = document.createElement('div');
+              g.className = 'agent-guard-note agent-injection-note';
+              g.textContent = {
+                held: '⏸ action gate: held — needs your confirmation after suspicious output',
+                blocked: '⛔ action gate: you blocked this call',
+                allowed: '✓ action gate: you allowed this call',
+              }[ev.action_gate] || ('action gate: ' + String(ev.action_gate));
+              _tc.appendChild(g);
+            }
             // Click handling is delegated globally \u2014 see chat.js init.
             threadWrap.appendChild(node);
           }

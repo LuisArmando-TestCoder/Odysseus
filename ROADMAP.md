@@ -196,10 +196,18 @@ email, reminders, system). Spec + log: `docs/JARVIS_UI.md`.
   hidden Unicode; control tokens and fence markers are defanged; flagged output
   gets a one-line "treat as data" warning and a note on the tool step. The
   `UNTRUSTED_SOURCE_DATA` fence can no longer be closed from inside.
-  Next: a live (streaming) badge for flagged tool steps; require explicit user
-  confirmation for send_email/write/delete tool calls made in a round right after
-  flagged output; an eval harness that replays the payload corpus against small
-  local models.)
+  Shipped: **Action Gate** — `src/action_gate.py`: once any tool output in a
+  reply is flagged, later side-effecting calls (send/delete email, bash/python/JS,
+  write_file, api_call, vault reads, skill/memory/settings/endpoint/token writes,
+  deletes, action-verb MCP tools) wait for a Block / Allow once / Allow for this
+  reply question card; with nobody to ask (goals, scheduled tasks, subagents)
+  they are refused and reported. Setting `injection_action_gate`.
+  Also fixed: `stream_agent_loop` crashed with UnboundLocalError (`get_setting`)
+  whenever a caller passed `max_rounds` (scheduled LLM tasks, bg monitor,
+  skill tests).
+  Next: a live (streaming) badge for flagged tool steps and held calls; an eval
+  harness that replays the payload corpus against small local models; gate
+  `web_fetch` URLs that carry long data-looking query strings on tainted turns.)
 - Better degraded-state reporting for ChromaDB, SearXNG, email, ntfy, and provider probes.
   (Background checks + notifications + sidebar status dot shipped as Service
   Health; still open: LLM provider probes.)
