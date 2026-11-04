@@ -1464,8 +1464,8 @@
   :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row .hwfit-c-vram { width: 36px; }
 }
 @media (pointer: coarse) {
-  :root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab { min-height: 40px; }
-  :root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip { min-height: 32px; }
+  :root[data-odx-theme="jarvis"] #cookbook-modal .cookbook-tab { min-height: 44px; }   /* jarvis-mobile.css §8 */
+  :root[data-odx-theme="jarvis"] #cookbook-modal .memory-cat-chip { min-height: 40px; }
   :root[data-odx-theme="jarvis"] #cookbook-modal .hwfit-row:not(.hwfit-header) { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) {

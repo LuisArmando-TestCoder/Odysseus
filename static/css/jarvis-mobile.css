@@ -20,6 +20,8 @@
       opacity, below AA) and the chip gets a 44px touch target.
    Part 2 (Run 11): 6. code blocks get a key strip + sideways scroll;
    7. sheets get a tappable 44px close key back.
+   Part 3 (Run 12): 8. sheet bodies on touch — 44px tabs and toolbar keys,
+   16px form fields (no iOS focus-zoom), tab strips that show they scroll.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── 1 · Voice launcher: a circular core ring at every width ─────────────
@@ -235,6 +237,92 @@
   }
 }
 
+/* ── 8 · Sheet bodies on touch: keys you can hit, strips that say "more" ──
+   Audited every tool sheet at 390×844 on a touch viewport. Upstream sizes
+   are desktop-dense: Library/Tasks/Brain toolbar keys 24px, sort selects
+   24px, Cookbook hardware fields 28px, Research categories and selects
+   32px, every tab strip 32px. Form fields were 11–13px, which makes iOS
+   Safari zoom the page on focus. And style.css turns each tab strip into a
+   sideways scroller with its scrollbar hidden, so "Settings", "Integrations"
+   or the Brain's fourth tab were simply cut off with no cue.
+   Fix (touch phones only, so desktop density is untouched):
+   · tabs and toolbar keys get a 44px row; chips 40px (they sit in wrapping
+     rows of filters, the extra 4px of hit area comes from row gap)
+   · text fields and selects: 44px tall, 16px text (stops the focus-zoom)
+   · tab strips snap tab-by-tab and fade at the edge that has more to show —
+     a scroll-driven mask, so at rest only the right edge fades and at the
+     end only the left. Browsers without scroll timelines get no fade. */
+@property --jv-fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --jv-fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes jv-strip-fade {
+  0%   { --jv-fade-l: 0px;  --jv-fade-r: 32px; }
+  12%  { --jv-fade-l: 32px; }
+  88%  { --jv-fade-r: 32px; }
+  100% { --jv-fade-l: 32px; --jv-fade-r: 0px; }
+}
+@media (max-width: 768px) and (pointer: coarse) {
+  /* Tab strips: one tab per snap, 44px row, scroll room for the fade. */
+  :root[data-odx-theme="jarvis"] :is(.cookbook-tabs, .memory-tabs, .admin-tabs, .lib-tabs, .gallery-tabs, .preset-tabs, .settings-sidebar) {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 12px;
+  }
+  :root[data-odx-theme="jarvis"] :is(.cookbook-tab, .memory-tab, .admin-tab, .lib-tab, .gallery-tab, .gallery-editor-tab, .preset-tab, .settings-nav-item) {
+    min-height: 44px;
+    scroll-snap-align: start;
+    touch-action: manipulation;
+  }
+  :root[data-odx-theme="jarvis"] :is(.cookbook-tab, .memory-tab, .admin-tab, .lib-tab, .gallery-tab, .gallery-editor-tab, .preset-tab, .settings-nav-item):focus-visible {
+    outline-offset: -3px;          /* the strip clips overflow-y */
+  }
+
+  /* Toolbar keys inside sheets. */
+  :root[data-odx-theme="jarvis"] :is(.modal-content, #research-pane, #theme-popup) :is(
+      .memory-toolbar-btn, .theme-io-btn, .gallery-toolbar-action, .hwfit-gpu-btn,
+      .research-cat, .research-add-btn, .research-start-btn, .research-library-link,
+      .research-settings-toggle, .cal-btn, .admin-btn-add, .admin-btn-sm, #cookbook-download-card-toggle) {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  :root[data-odx-theme="jarvis"] :is(.modal-content, #research-pane) :is(.gallery-chip, .memory-cat-chip) {
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+  :root[data-odx-theme="jarvis"] .modal-content .modal-footer :is(button, .btn) { min-height: 44px; }
+  /* Gallery: at 16px the one-row toolbar truncated to "Search phot" /
+     "All sourc". Search takes its own row; filters + Select share the next. */
+  :root[data-odx-theme="jarvis"] .gallery-toolbar { flex-wrap: wrap !important; row-gap: 6px; }
+  :root[data-odx-theme="jarvis"] .gallery-toolbar .gallery-search-wrap { flex: 1 1 100% !important; }
+  :root[data-odx-theme="jarvis"] .gallery-toolbar :is(.gallery-model-filter, .gallery-sort) { flex: 1 1 0 !important; max-width: none !important; }
+  /* The upstream 1–3px "top:" nudges were tuned for 24px keys beside 30px
+     fields; at one shared 44px height they only misalign the row. */
+  :root[data-odx-theme="jarvis"] :is(.modal-content, #research-pane) :is(.memory-toolbar-btn, .memory-sort-select, .gallery-toolbar-action, .gallery-search-wrap) {
+    top: 0 !important;
+  }
+
+  /* Form fields: 44px, 16px text — iOS only zooms on focus below 16px. */
+  :root[data-odx-theme="jarvis"] :is(.modal-content, #research-pane, #theme-popup) :is(
+      select,
+      textarea,
+      input:is(:not([type]), [type="text"], [type="search"], [type="email"], [type="url"], [type="number"], [type="password"], [type="date"], [type="time"], [type="datetime-local"])) {
+    font-size: 16px !important;
+  }
+  :root[data-odx-theme="jarvis"] :is(.modal-content, #research-pane, #theme-popup) :is(
+      select,
+      input:is(:not([type]), [type="text"], [type="search"], [type="email"], [type="url"], [type="number"], [type="password"], [type="date"], [type="time"], [type="datetime-local"])) {
+    min-height: 44px;
+  }
+}
+@supports (animation-timeline: scroll(self inline)) {
+  @media (max-width: 768px) and (pointer: coarse) {
+    :root[data-odx-theme="jarvis"] :is(.cookbook-tabs, .memory-tabs, .admin-tabs, .lib-tabs, .gallery-tabs, .preset-tabs, .settings-sidebar) {
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--jv-fade-l), #000 calc(100% - var(--jv-fade-r)), transparent 100%);
+              mask-image: linear-gradient(90deg, transparent 0, #000 var(--jv-fade-l), #000 calc(100% - var(--jv-fade-r)), transparent 100%);
+      animation: jv-strip-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+}
+
 /* ── Accessibility gates ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }
@@ -249,11 +337,20 @@
   :root[data-odx-theme="jarvis"] .voice-mode-fab { background: var(--jv-panel) !important; }
 }
 @media (prefers-contrast: more) {
+  /* No fades on tab strips: every tab edge stays full-ink. */
+  :root[data-odx-theme="jarvis"] :is(.cookbook-tabs, .memory-tabs, .admin-tabs, .lib-tabs, .gallery-tabs, .preset-tabs, .settings-sidebar) {
+    -webkit-mask-image: none !important;
+            mask-image: none !important;
+  }
   :root[data-odx-theme="jarvis"] .voice-mode-fab { border-color: var(--jv-cyan) !important; }
   :root[data-odx-theme="jarvis"] .incognito-btn { opacity: 1; color: var(--jv-text); }
   :root[data-odx-theme="jarvis"] .modal-content .modal-header :is(.close-btn, .modal-close),
   :root[data-odx-theme="jarvis"] #theme-popup .close-btn { color: var(--jv-text) !important; border-color: var(--jv-cyan) !important; }
 }
 @media (forced-colors: active) {
+  :root[data-odx-theme="jarvis"] :is(.cookbook-tabs, .memory-tabs, .admin-tabs, .lib-tabs, .gallery-tabs, .preset-tabs, .settings-sidebar) {
+    -webkit-mask-image: none !important;
+            mask-image: none !important;
+  }
   :root[data-odx-theme="jarvis"] #sidebar-backdrop.visible { background: Canvas; opacity: 0.6; }
 }

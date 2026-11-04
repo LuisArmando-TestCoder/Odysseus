@@ -151,8 +151,10 @@ serve list, dependencies, servers), the landing page
 width — compact voice core in the top bar, drawer scrim, legible welcome)
 lives in `static/css/jarvis-mobile.css`; part 2 made message tables and
 code blocks scroll instead of breaking mid-word and gave phone sheets a
-tappable close key. Next areas, one per pass: mobile part 3 (tool views and
-sheet bodies at 390px) → a dedicated settings pass. Spec + log: `docs/JARVIS_UI.md`.
+tappable close key; part 3 gave sheet bodies 44px tabs/keys, 16px fields
+(no iOS focus-zoom) and tab strips that fade where there is more to scroll.
+Next areas, one per pass: the dedicated settings pass → mobile part 4
+(settings panel bodies, chat overlays at 390px). Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

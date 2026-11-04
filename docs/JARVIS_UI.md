@@ -58,7 +58,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · part 3 tool views / sheet bodies
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · part 4 settings panel bodies + chat overlays (after area 6)
 
 ## Progress log
 
@@ -479,3 +479,44 @@ blocks), modal sheets at 390px (close keys, safe areas), then settings.
 **Next:** mobile pass part 3 — tool views and sheet bodies at 390px
 (Settings tab strip overflow, Cookbook/Research forms, Library cards), then
 the dedicated settings pass.
+
+### Run 12 — 2026-11-04 · Mobile pass, part 3: sheet bodies on touch
+`static/css/jarvis-mobile.css` §8, gated `(max-width: 768px) and (pointer:
+coarse)` so desktop density (and a narrow desktop window) is unchanged.
+Audit at 390×844 touch, every tool sheet (Cookbook, Research, Library,
+Gallery, Theme, Tasks, Calendar, Settings, Brain, Prompt): toolbar keys were
+24px (Library/Tasks/Brain), selects 24–32px, Cookbook hardware fields 28px,
+every tab strip 32px; form fields at 11–13px (iOS Safari zooms the page on
+focus below 16px); tab strips scroll with a hidden scrollbar, so
+"Integrations", the Brain's "Settings" tab, etc. were cut off with no cue.
+- **44px keys:** tabs (`cookbook/memory/admin/lib/gallery/preset` tabs,
+  settings nav), toolbar keys (`memory-toolbar-btn`, `theme-io-btn`, gallery
+  Select, hwfit GPU keys, research categories/add/start/settings toggle,
+  `cal-btn`, admin add/sm, modal footers, the Cookbook download card
+  header). Filter chips 40px. Upstream 1–3px `top:` nudges zeroed on those
+  rows (they only misalign once everything shares one height).
+  `tron.css` coarse-pointer Cookbook tab/chip minimums raised to match.
+- **Fields:** selects/inputs 44px, all sheet fields 16px text.
+- **Gallery toolbar** wraps: search on its own row, Sources/Sort/Select on
+  the next (at 16px the single row truncated to "Search phot" / "All sourc").
+- **Strips say "more":** snap tab-by-tab, plus a scroll-driven edge mask
+  (`animation-timeline: scroll(self inline)` animating two `@property`
+  lengths): at rest only the right edge fades, mid-scroll both, at the end
+  only the left; a strip that fits has no fade (inactive timeline). No
+  support → no fade. Removed under `prefers-contrast: more` and
+  `forced-colors`. Focus ring inset 3px (strips clip overflow-y).
+- Verified headless (390×844 touch + 1440×900) in jarvis and light: every
+  audited control ≥44px (chips 40); no horizontal page overflow; mask values
+  checked at start/middle/end of the Settings strip; light at 390px
+  identical (≤6 px of antialiasing noise); jarvis desktop differs only by
+  the randomly placed pro-tip and ambient canvas. Style tests (40) pass, same
+  as baseline. Console: only the harness's pre-existing mock error
+  (`userTemplates.map`, `/api/*` returns `{}`).
+- Seen, not fixed: `.preset-tabs` is 5px wider than the sheet at 390px
+  (negative margins, all themes, hidden by the sheet's overflow); Settings
+  panel bodies (endpoint lists, admin cards) not audited at 390px yet —
+  belongs with the settings pass.
+
+**Next:** area 6, the dedicated settings pass (nav rail, panel cards, endpoint
+rows, toggles), including its 390px panel bodies.
+
