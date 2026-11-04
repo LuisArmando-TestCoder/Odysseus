@@ -122,8 +122,14 @@ icon rail, and the `/cases` slash command (aliases `/intel`, `/casefiles`,
 `/watchlist`). `static/js/intelLink.js` polls `GET /api/intel/status` (on load,
 every 5 minutes while visible, and when the tab regains focus) and shows a
 badge with the number of things that want you: cold cases + watches that
-changed in the last 24h + watches failing 3+ times in a row. The tooltip
-summarizes open cases/steps and the case a goal is driving. The summary is
+changed in the last 24h + watches failing 3+ times in a row + selectors that
+became shared between two of your cases in the last 24h (new cross-case
+links) + a goal bound to a case that is **blocked** (not counted twice if
+that case is already going cold). The tooltip summarizes open cases/steps
+and the case goal's state — "goal driving “X”", "goal paused on “X”", or
+"goal blocked on “X”: <reason>" — plus "N new cross-case links"; the JSON
+carries `goal` (`phase`, `case_id`, `title`, `reason`), `new_links` and up to
+three `links` (`value`, case titles). The summary is
 built by `src/intel_status.py` (owner-scoped, never raises — an unreadable
 store is listed under `degraded`). Hide the entry under Settings → Appearance.
 
@@ -158,7 +164,7 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes (each with `also_in`), typed + co-mention edges, hubs, isolated, `overlap_cases` |
 | GET | `/api/cases/{id}/overlap` | selectors shared with the caller's other cases: per-entity `entities`, ranked `cases` |
 | GET | `/api/cases/{id}/export` | markdown dossier |
-| GET | `/api/intel/status` | badge summary: open cases/steps, cold cases, driven case, watch changes/failures, `attention` |
+| GET | `/api/intel/status` | badge summary: open cases/steps, cold cases, driven case, case-goal state, new cross-case links, watch changes/failures, `attention` |
 | GET/POST | `/api/watchlist` | list / add |
 | DELETE | `/api/watchlist/{id}` | remove |
 | POST | `/api/watchlist/{id}/active` · `/check` | pause/resume · check now |

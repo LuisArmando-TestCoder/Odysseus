@@ -52,8 +52,7 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   reported once per state and due date. The daily brief gets a "Deadlines"
   section (overdue + next 48h; 30+ day backlog summarized). See
   `docs/deadlines.md`.
-- Next: one-tap Resume from the notification; surface the goal state in the
-  Intel Board badge; "snooze / mark done" actions on deadline notifications;
+- Next: one-tap Resume from the notification; "snooze / mark done" actions on deadline notifications;
   deadlines from calendar events and email ("reply by Friday").
 
 ## Service Health (shipped)
@@ -128,8 +127,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   `format_recent_overlaps`): selectors that became shared between your cases
   in the last 24h are listed as `value — Case A ↔ Case B` (closed-only links
   and old links re-mentioned are skipped).
-- Next: one-click "Drive with goal" from a cold-case notification; count new
-  cross-case links in the Intel Board badge.
+- **Badge: cross-case links + case-goal state** (`intel_status`): selectors
+  that became shared between your cases in the last 24h and a case-bound goal
+  that is blocked now count in the Intel Board badge; the tooltip names the
+  goal's state ("goal blocked on “X”: reason" / paused / driving) and new
+  links, and the JSON adds `goal`, `new_links`, `links`.
+- Next: one-click "Drive with goal" / "Resume goal" from a cold-case or
+  blocked-goal notification; show the blocked reason with a Resume button on
+  `/cases`.
 
 ## Jarvis UI (in progress)
 
