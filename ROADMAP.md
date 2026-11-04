@@ -187,6 +187,16 @@ Next areas, one per pass: the dedicated settings pass → mobile part 4
 - Skill/tool prompt-injection audit. User-editable skills, notes, documents,
   fetched pages, and memories should be treated as untrusted data. Keep testing
   whether models follow malicious instructions from those surfaces.
+  (Shipped: **Injection Guard** — `src/injection_guard.py`, `docs/injection-guard.md`:
+  every tool result from web/email/calendar/OSINT/notes/MCP tools is scanned for
+  overrides, role/tool/fence spoofing, secret-exfil asks, image-exfil links and
+  hidden Unicode; control tokens and fence markers are defanged; flagged output
+  gets a one-line "treat as data" warning and a note on the tool step. The
+  `UNTRUSTED_SOURCE_DATA` fence can no longer be closed from inside.
+  Next: a live (streaming) badge for flagged tool steps; require explicit user
+  confirmation for send_email/write/delete tool calls made in a round right after
+  flagged output; an eval harness that replays the payload corpus against small
+  local models.)
 - Better degraded-state reporting for ChromaDB, SearXNG, email, ntfy, and provider probes.
   (Background checks + notifications + sidebar status dot shipped as Service
   Health; still open: LLM provider probes.)

@@ -2955,6 +2955,20 @@ async def stream_agent_loop(
                 _tcc_failures += 1
 
             formatted = format_tool_result(desc, result)
+            # Injection Guard — label hostile third-party text in tool output
+            # (and defang chat-template tokens / fence markers) before the
+            # model reads it. Never blocks; see src/injection_guard.py.
+            try:
+                from src.injection_guard import guard_tool_result
+                formatted, _inj = guard_tool_result(block.tool_type, formatted)
+                if _inj:
+                    tool_event["injection"] = sorted({s.kind for s in _inj})
+                    logger.warning(
+                        "Injection Guard: %s output flagged (%s)",
+                        block.tool_type, ", ".join(sorted({s.kind for s in _inj})),
+                    )
+            except Exception:
+                logger.debug("injection guard failed", exc_info=True)
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
 

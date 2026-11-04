@@ -26,6 +26,10 @@ UNTRUSTED_CONTEXT_HEADER = (
 def untrusted_context_message(label: str, content: Any) -> Dict[str, Any]:
     """Return an LLM message that keeps retrieved/source text out of system role."""
     text = "" if content is None else str(content)
+    # Content must not be able to close the fence early or smuggle
+    # chat-template control tokens / invisible instructions.
+    from src.injection_guard import fence_safe
+    text = fence_safe(text)
     return {
         "role": "user",
         "content": (

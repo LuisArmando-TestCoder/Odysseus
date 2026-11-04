@@ -2211,6 +2211,15 @@ export function addMessage(role, content, modelName, metadata, _target) {
               g.textContent = 'guard: blocked write to an unread file — read it first';
               _tc.appendChild(g);
             }
+            // Injection Guard verdict (src/injection_guard.py): this output held
+            // text trying to steer the assistant; it reached the model labelled.
+            if (_tc && Array.isArray(ev.injection) && ev.injection.length) {
+              const g = document.createElement('div');
+              g.className = 'agent-guard-note agent-injection-note';
+              g.textContent = '⚠ injection guard: suspicious instructions in this output (' +
+                ev.injection.map(k => String(k).replace(/_/g, ' ')).join(', ') + ') — treated as data';
+              _tc.appendChild(g);
+            }
             // Click handling is delegated globally \u2014 see chat.js init.
             threadWrap.appendChild(node);
           }
