@@ -1,7 +1,7 @@
 """Pin the always-listening wake phrase in static/js/voiceWake.js.
 
 While Advanced Voice Mode is off, a browser STT loop listens to a constant
-stream; "advanced voice mode" anywhere in it fires onWake() once and the
+stream; the assistant's name ("Alfred") anywhere in it fires onWake() once and the
 listener shuts down. When voice mode is deactivated, resume() listens again.
 The recognised stream is bounded (rolling WAKE_WINDOW chars).
 
@@ -58,54 +58,60 @@ def _run(body: str):
     return json.loads(proc.stdout.strip())
 
 
-def test_phrase_detected_anywhere_and_variants():
+def test_name_detected_anywhere_and_variants():
     out = _run("""
     console.log(JSON.stringify([
-      hasWake('ok so turn on advanced voice mode please'),
-      hasWake('Advanced Voice Mode!'),
-      hasWake('advance voice mode'),
-      hasWake('advanced voicemode'),
-      hasWake('advanced voice'),
-      hasWake('voice mode advanced'),
-      hasWake('the disadvanced voice modem'),
+      hasWake('ok so Alfred are you there'),
+      hasWake('ALFRED!'),
+      hasWake('oye alfred, ayudame'),
+      hasWake('hey alfredo'),            // Spanish STT spelling
+      hasWake('al fred'),                // split by STT
+      hasWake('elfred'),
+      hasWake('阿尔弗雷德'),               // Mandarin
+      hasWake('阿 爾 弗 雷 德 在吗'),        // Mandarin, traditional + spaced
+      hasWake('advanced voice mode'),    // the old phrase no longer wakes
+      hasWake('fred is here'),
+      hasWake('alfa red'),
+      hasWake('a friend'),
+      hasWake('altered'),
     ]));""")
-    assert out == [True, True, True, True, False, False, False]
+    assert out == [True] * 8 + [False] * 5
 
 
-def test_window_is_bounded_and_catches_split_phrase():
+def test_window_is_bounded_and_catches_split_name():
     out = _run("""
     const w = createWakeWindow(40);
     const a = w.commit('blah '.repeat(500));
     const len = w.text.length;
-    const b = w.commit('turn on advanced');
-    const c = w.commit('voice mode');
+    const b = w.commit('hey al');
+    const c = w.commit('fred');
     console.log(JSON.stringify([a, len <= 40, b, c]));""")
     assert out == [False, True, False, True]
 
 
 def test_fires_once_then_shuts_down_then_resumes():
     out = _run("""
-    const w = make(); w.setEnabled(true); tick(2000);
+    const w = make(); w.setEnabled(true); tick(3000);
     const r1 = live(); r1.say('hello there');
     const before = wakes;
-    r1.say('hey alfred advanced voice mode now');
+    r1.say('hey alfred are you there');
     const afterFire = [wakes, w.state, r1.aborted, live() === undefined];
-    r1.say('advanced voice mode');          // stale recogniser: ignored
+    r1.say('alfred');          // stale recogniser: ignored
     tick(60000);                            // no restart while voice mode runs
     const stillOff = live() === undefined && wakes === 1;
     w.resume();                             // voice mode deactivated
-    const r2 = live(); tick(2000);
-    r2.say('advanced voice mode');
+    const r2 = live(); tick(3000);
+    r2.say('alfred');
     console.log(JSON.stringify([before, ...afterFire, stillOff, !!r2 && r2 !== r1, wakes, w.state]));""")
     assert out == [0, 1, "paused", True, True, True, True, 2, "paused"]
 
 
 def test_interim_results_trigger_fast():
     out = _run("""
-    const w = make(); w.setEnabled(true); tick(2000);
-    live().say('advanced voice mo', false);
+    const w = make(); w.setEnabled(true); tick(3000);
+    live().say('hey alf', false);
     const a = wakes;
-    live().say('advanced voice mode', false);
+    live().say('hey alfred', false);
     console.log(JSON.stringify([a, wakes]));""")
     assert out == [0, 1]
 
@@ -123,13 +129,13 @@ def test_constant_stream_restarts_after_browser_ends_session():
 
 def test_grace_window_ignores_stale_phrase_right_after_resume():
     out = _run("""
-    const w = make(); w.setEnabled(true); tick(2000);
-    live().say('advanced voice mode');      // wake #1
+    const w = make(); w.setEnabled(true); tick(3000);
+    live().say('alfred');      // wake #1
     w.resume();
-    live().say('advanced voice mode');      // trailing echo within grace
+    live().say('alfred');      // trailing echo within grace
     const a = wakes;
-    tick(2000);
-    live().say('advanced voice mode');
+    tick(3000);
+    live().say('alfred');
     console.log(JSON.stringify([a, wakes]));""")
     assert out == [1, 2]
 
@@ -154,20 +160,14 @@ def test_disable_and_unsupported():
     assert out == ["off", True, "unsupported", False]
 
 
-def test_fuzzy_misheard_and_spanish_forms():
+def test_wake_name_follows_setting():
     out = _run("""
-    console.log(JSON.stringify([
-      hasWake('advance boys mode'),
-      hasWake('advanced voice mood'),
-      hasWake('advanzed voice mode'),
-      hasWake('Advanced Voice Mod.'),
-      hasWake('activa el modo de voz avanzado'),
-      hasWake('modo voz avanzada'),
-      hasWake('advanced users mode'),
-      hasWake('add voice mode'),
-      hasWake('advanced voice is great'),
-    ]));""")
-    assert out == [True, True, True, True, True, True, False, False, False]
+    const a = hasWake('jarvis');
+    setWakeName('Jarvis');
+    const b = [hasWake('hey jarvis'), hasWake('hey jarviz'), hasWake('alfred')];
+    setWakeName('Alfred');
+    console.log(JSON.stringify([a, ...b, hasWake('alfred'), getWakeName()]));""")
+    assert out == [False, True, True, False, True, "alfred"]
 
 
 def test_recogniser_defaults_to_english_and_reports_errors():
@@ -176,7 +176,7 @@ def test_recogniser_defaults_to_english_and_reports_errors():
     const lang = live().lang;
     for (let i = 0; i < 3; i++) { const r = live(); r.onerror({ error: 'network' }); r.started = false; r.onend(); tick(10000); }
     const errState = w.state;
-    tick(2000); live().say('hello');        // stream healthy again
+    tick(3000); live().say('hello');        // stream healthy again
     console.log(JSON.stringify([lang, errState, w.state, w.diag.lastError, w.diag.heard.at(-1)]));""")
     assert out == ["en-US", "error", "listening", "network", "hello"]
 
@@ -190,7 +190,7 @@ def test_switches_to_server_stt_after_network_errors():
     const afterOne = w.engine;                 // one blip: keep trying the browser
     live().onerror({ error: 'network' });     // second in a row → switch
     const r = live();
-    tick(2000); r.say('advanced voice mode');
+    tick(3000); r.say('alfred');
     console.log(JSON.stringify([...first, afterOne, w.engine, !!r.server, wakes, w.state]));""")
     assert out == ["browser", False, "browser", "server", True, 1, "paused"]
 
@@ -210,3 +210,27 @@ def test_no_browser_engine_uses_server_directly():
     const w = make({ Recognition: null, Fallback: ServerRec }); w.setEnabled(true);
     console.log(JSON.stringify([w.engine, !!live()?.server, w.state]));""")
     assert out == ["server", True, "listening"]
+
+
+def test_name_in_every_language():
+    out = _run("""
+    console.log(JSON.stringify([
+      hasWake('Alfred, ativa o modo de voz'),   // pt
+      hasWake('Alfred, tu es là ?'),            // fr
+      hasWake('Alfred, ci sei?'),               // it
+      hasWake('阿尔弗雷德，你好'),                  // zh
+      hasWake('Diay Alfred, ¿qué hacemos?'),    // es-CR
+      hasWake('ativar o modo de voz'),          // old directives no longer wake
+      hasWake('启用语音模式'),
+    ]));""")
+    assert out == [True, True, True, True, True, False, False]
+
+
+def test_window_keeps_mandarin():
+    out = _run("""
+    const w = createWakeWindow(40);
+    const a = w.commit('好的 请问');
+    const b = w.commit('阿尔弗');
+    const c = w.commit('雷德');
+    console.log(JSON.stringify([a, b, c]));""")
+    assert out == [False, False, True]

@@ -21,7 +21,7 @@
 import * as vectors from './voice_vectors.js';
 import streamRouter from './streamRouter.js';
 import wakeLock from './wakeLock.js';
-import { createWakeListener } from './voiceWake.js';
+import { createWakeListener, setWakeName } from './voiceWake.js';
 import { makeServerRecognition } from './voiceWakeServer.js';
 import { createWakeTranscript } from './wakeTranscript.js';
 import { createLedger } from './voice-delta.js';
@@ -75,7 +75,7 @@ const _voiceInjectedTexts = new Set();   // user-bubble texts dispatched by voic
 let _awaiting = null;         // {id, sid, sawBusy, since}
 let _opts = {
   review: false, speak: true,
-  // Always listen for "advanced voice mode" while voice mode is off (voiceWake.js).
+  // Always listen for the assistant's name ("Alfred") while voice mode is off (voiceWake.js).
   wake: true,
   // Speak the chat agent's interim output while it works? Off by default: in
   // practice it read out search-result titles ("an article about Schäuble…")
@@ -85,7 +85,7 @@ let _opts = {
 
 // ── Wake phrase ─────────────────────────────────────────────────────────────
 // While voice mode is off, a browser STT loop listens to the constant stream
-// for "advanced voice mode" anywhere in it. On a hit it shuts itself down and
+// for the assistant's name ("Alfred") anywhere in it. On a hit it shuts itself down and
 // opens voice mode; when voice mode ends it starts listening again.
 let _wake = null;
 let _wt = null;               // ambient transcript strip beside the launcher
@@ -96,7 +96,7 @@ function _wakeIndicator(s) {
   if (fab) {
     fab.dataset.wake = s;
     fab.title = s === 'listening'
-      ? 'Advanced Voice Mode — listening for “advanced voice mode”'
+      ? `Advanced Voice Mode — say “${_titleName(_assistantName)}” to start`
       : s === 'error' ? 'Advanced Voice Mode — wake phrase not hearing (see console: __odyWake.diag)'
       : s === 'denied' ? 'Advanced Voice Mode — wake phrase needs microphone permission'
       : 'Advanced Voice Mode';
@@ -107,16 +107,22 @@ function _wakeIndicator(s) {
 
 function _onWake() {
   _wt?.wake();
-  console.info('[wake] heard "advanced voice mode" — activating');
+  console.info(`[wake] heard "${_titleName(_assistantName)}" — activating`);
   openVoiceMode({ autostart: true });
-  _systemLine('Wake phrase heard — “advanced voice mode”.', 'info');
+  _systemLine(`Wake word heard — “${_titleName(_assistantName)}”.`, 'info');
 }
 
 function _initWake() {
   if (_wake) return;
-  // Recogniser language for the wake phrase: English by default (the phrase
-  // is English); override with localStorage['odysseus-wake-lang'] = 'es-CR'.
+  // Recogniser language for the wake word. "Alfred" is a name, so any
+  // recogniser hears it; English by default, or the browser's own language
+  // when it is pt / fr / it / zh (a Mandarin recogniser writes 阿尔弗雷德).
+  // Override with localStorage['odysseus-wake-lang'] = 'es-CR' | 'fr-FR' | …
   let lang = 'en-US';
+  try {
+    const nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+    if (/^(pt|fr|it|zh)\b/i.test(nav)) lang = nav;
+  } catch (e) { /* ignore */ }
   try { lang = localStorage.getItem('odysseus-wake-lang') || lang; } catch (e) { /* ignore */ }
   // Server STT fallback: used when Chrome's speech service is unreachable
   // (error "network"), or always with localStorage['odysseus-wake-engine']='server'.
@@ -811,7 +817,7 @@ function _buildHUD() {
       <button class="vx-dock-btn vx-primary" data-act="core" title="Connect / end (Space)" aria-label="Connect or end call">${ICON.power}</button>
       <button class="vx-dock-btn" data-act="force" title="Forge & send now (Enter)" aria-label="Send now">${ICON.bolt}</button>
       <label class="vx-toggle" title="Speak chat results back to you"><input type="checkbox" data-opt="speak" checked><span class="vx-sw"></span>${ICON.speak}<em>Speak results</em></label>
-      <label class="vx-toggle" title="When voice mode is off, keep listening for “advanced voice mode” to turn it on"><input type="checkbox" data-opt="wake" checked><span class="vx-sw"></span>${ICON.mic}<em>Wake phrase</em></label>
+      <label class="vx-toggle" title="When voice mode is off, keep listening for “${_titleName(_assistantName)}” to turn it on"><input type="checkbox" data-opt="wake" checked><span class="vx-sw"></span>${ICON.mic}<em>Wake word</em></label>
     </div>
   </footer>`;
   return el;
@@ -3497,7 +3503,7 @@ async function stopVoice(keepError = false) {
   _caption('', '');
   // Flush whatever was said last through the pipeline.
   if (_pending.some(t => t.speaker === 'You')) _schedulePipeline(50);
-  // Voice mode is off — listen for "advanced voice mode" again.
+  // Voice mode is off — listen for "Alfred" again.
   _wakeResume();
 }
 
@@ -3586,6 +3592,8 @@ async function _refreshStatus() {
     if (s.assistant_name) {
       _assistantName = String(s.assistant_name).toUpperCase();
       const t = $('.vx-title'); if (t) t.textContent = _assistantName;
+      setWakeName(s.assistant_name);   // the wake word is the assistant's name
+      _wakeIndicator(_wake?.state || 'off');
     }
     const set = (k, ok, title) => {
       const b = $(`.vx-badge[data-k="${k}"]`);

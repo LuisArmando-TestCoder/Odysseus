@@ -2,7 +2,7 @@
 //
 // Everything the always-on listener hears (while Advanced Voice Mode is off)
 // streams into a slim glass strip beside the Voice launcher: live interim
-// words, then the settled sentence, with the wake phrase lit when it lands.
+// words, then the settled sentence, with the wake word lit when it lands.
 // It surfaces on speech and fades out after a few quiet seconds — never a
 // panel that sits in the way. Click it for the recent history.
 //
@@ -13,7 +13,8 @@ const MAX_LINES = 40;
 const TAIL_CHARS = 220;
 const SEP = '\u00a0\u00b7\u00a0';   // non-breaking: flex items drop plain edge spaces
 const LINGER_MS = 6500;
-const WAKE_HL = /\b(advance[ds]?\s+voice\s*modes?|modo\s+(?:de\s+)?voz\s+avanzad[oa])\b/i;
+// The wake word (the assistant's name) and how STT tends to spell it.
+const WAKE_HL = /\b(?:a[lr]l?\s?fre[dt]\w?|el\s?fred\w?)\b|[阿艾]?[尔爾]?弗雷德/i;
 
 const ICON_CHEV = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>';
 
@@ -47,7 +48,7 @@ export function createWakeTranscript({ fabSelector = '#voice-mode-fab' } = {}) {
       </header>
       <ol class="wt-list" role="log" aria-live="off"></ol>
       <p class="wt-empty">Nothing heard yet.</p>
-      <footer class="wt-foot">Heard while voice mode is off · kept in this tab only · say <b>“advanced voice mode”</b> to engage</footer>
+      <footer class="wt-foot">Heard while voice mode is off · kept in this tab only · say <b>“Alfred”</b> to engage</footer>
     </section>
     <button type="button" class="wt-bar" aria-expanded="false" aria-controls="wt-panel" title="What the wake listener is hearing — click for history">
       <span class="wt-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>

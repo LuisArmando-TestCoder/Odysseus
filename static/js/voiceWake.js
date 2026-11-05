@@ -1,12 +1,12 @@
-// voiceWake.js — always-listening wake phrase for Advanced Voice Mode.
+// voiceWake.js — always-listening wake word ("Alfred") for Advanced Voice Mode.
 //
 // A cheap browser speech-to-text loop (Web Speech API, continuous + interim
-// results) listens to a constant stream of words. The moment "advanced voice
-// mode" appears ANYWHERE in that stream it fires onWake() once and shuts
+// results) listens to a constant stream of words. The moment the assistant's
+// name ("Alfred") appears ANYWHERE in that stream it fires onWake() once and shuts
 // itself down, handing the mic to GPT-Live. When Advanced Voice Mode is
 // deactivated, the caller resumes it and it listens again.
 //
-//   idle chat ──► [wake: listening] ──"…advanced voice mode…"──► onWake()
+//   idle chat ──► [wake: listening] ──"…Alfred…"──► onWake()
 //                       ▲                                           │
 //                       └──── resume() ◄── voice mode ends ◄── pause()
 //
@@ -15,16 +15,28 @@
 // hours-long listen never grows memory. No imports — the test suite inlines it.
 
 export const WAKE_WINDOW = 160;
-const RESUME_GRACE_MS = 1200;     // ignore late results right after resume
+const RESUME_GRACE_MS = 2500;     // ignore late results right after resume (\"gracias, Alfred\" as voice mode closes)
 const BACKOFF_MIN_MS = 250;
 const BACKOFF_MAX_MS = 8000;
 
-// "advanced voice mode" + the ways STT tends to spell it, and the Spanish
-// "modo de voz avanzado". Exact forms first; a fuzzy per-word check catches
-// accented / misheard versions ("advance boys mode", "advanced voice mood").
-const WAKE_RE = /\badvance[ds]?\s+voice\s*modes?\b|\bmodo\s+(de\s+)?voz\s+avanzad[oa]\b/;
-const VOICE_ALIASES = new Set(['voice', 'voices', 'voic', 'vois', 'voise', 'boys', 'boice', 'boise', 'choice', 'voz']);
-const MODE_ALIASES = new Set(['mode', 'modes', 'mod', 'mood', 'mold', 'modo', 'mote', 'moe', 'node']);
+// The wake word is the assistant's NAME ("Alfred" by default; follows the
+// voice_assistant_name setting via setWakeName). Said anywhere in the stream,
+// in any language, it opens voice mode. STT spells a name many ways, so:
+//   • exact word                         alfred
+//   • one edit away, same first sound   alfredo, alfret, elfred, alfreds
+//   • split in two                      "al fred", "el fred", "all fred"
+//   • Mandarin transliteration          阿尔弗雷德 / 阿爾弗雷德 / 艾尔弗雷德
+const CJK_NAMES = {
+  alfred: ['阿尔弗雷德', '阿爾弗雷德', '艾尔弗雷德', '艾爾弗雷德', '阿弗雷德'],
+};
+let WAKE_NAME = 'alfred';
+
+export function setWakeName(name) {
+  const n = normalizeWake(name).replace(/ /g, '');
+  if (n.length >= 3) WAKE_NAME = n;
+  return WAKE_NAME;
+}
+export function getWakeName() { return WAKE_NAME; }
 
 export function editDistance(a, b) {
   if (a === b) return 0;
@@ -41,15 +53,23 @@ export function editDistance(a, b) {
   return prev[n];
 }
 
-const _isAdvanced = (w) => w.length >= 6 && /^[ae]/.test(w) && editDistance(w, 'advanced') <= 3;
-const _isVoice = (w) => VOICE_ALIASES.has(w) || (w.length >= 4 && editDistance(w, 'voice') <= 1);
-const _isMode = (w) => MODE_ALIASES.has(w) || (w.length >= 3 && editDistance(w, 'mode') <= 1);
+const _vowel = (c) => /[aeiou]/.test(c);
+function _isName(w, name = WAKE_NAME) {
+  if (w === name) return true;
+  if (name.length < 5 || w.length < name.length - 1) return false;   // short names: exact only
+  const sameStart = w[0] === name[0] || (_vowel(w[0]) && _vowel(name[0]));
+  return sameStart && w[1] === name[1] && editDistance(w, name) <= 1;
+}
 
 function _matchNorm(norm) {
-  if (WAKE_RE.test(norm)) return true;
-  const w = norm.replace(/voicemode/g, 'voice mode').split(' ');
-  for (let i = 0; i + 2 < w.length; i++) {
-    if (_isAdvanced(w[i]) && _isVoice(w[i + 1]) && _isMode(w[i + 2])) return true;
+  const name = WAKE_NAME;
+  const glued = norm.replace(/([\u3400-\u9fff\uf900-\ufaff]) (?=[\u3400-\u9fff\uf900-\ufaff])/g, '$1');
+  for (const c of CJK_NAMES[name] || []) if (glued.includes(c)) return true;
+  const w = norm.split(' ');
+  for (let i = 0; i < w.length; i++) {
+    if (_isName(w[i], name)) return true;
+    // "al fred": a short first piece glued to the rest of the name.
+    if (i + 1 < w.length && w[i].length <= 3 && _isName(w[i] + w[i + 1], name)) return true;
   }
   return false;
 }
@@ -57,8 +77,11 @@ function _matchNorm(norm) {
 export function normalizeWake(text) {
   return String(text || '')
     .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    // Keep CJK (Mandarin wake phrase); everything else non-alphanumeric → space.
+    .replace(/[^a-z0-9\u3400-\u9fff\uf900-\ufaff]+/g, ' ')
+    // STT sometimes spaces Chinese characters apart: glue CJK runs back together.
+    .replace(/([\u3400-\u9fff\uf900-\ufaff]) (?=[\u3400-\u9fff\uf900-\ufaff])/g, '$1')
     .trim();
 }
 
@@ -152,7 +175,7 @@ export function createWakeListener(opts = {}) {
     win.reset();
     held = true;
     diag.wakes++;
-    log('wake phrase detected → activating Advanced Voice Mode');
+    log('wake word "' + WAKE_NAME + '" heard → activating Advanced Voice Mode');
     setState('paused');
     try { opts.onWake?.(); } catch (e) { console.error('[wake] onWake failed', e); }
   }
@@ -175,8 +198,8 @@ export function createWakeListener(opts = {}) {
       r.continuous = true;
       r.interimResults = true;
       r.maxAlternatives = 1;
-      // The wake phrase is English, so recognise English regardless of the
-      // browser's UI language (a Spanish recogniser never spells it right).
+      // Recogniser language: English unless the caller picks one (voice.js
+      // follows the browser for pt / fr / it / zh, or the user's override).
       r.lang = opts.lang || 'en-US';
       diag.lang = r.lang;
     } catch (e) { setState('unsupported'); return; }
@@ -234,7 +257,7 @@ export function createWakeListener(opts = {}) {
       rec = r;
       armedAt = now();
       if (state !== 'error') setState('listening');
-      if (diag.restarts === 0 && diag.wakes === 0) log('listening for "advanced voice mode" (lang ' + r.lang + ')');
+      if (diag.restarts === 0 && diag.wakes === 0) log('listening for "' + WAKE_NAME + '" (lang ' + r.lang + ')');
     } catch (e) {
       rec = null;
       scheduleRestart();
@@ -275,4 +298,4 @@ export function createWakeListener(opts = {}) {
   };
 }
 
-export default { createWakeListener, hasWake, normalizeWake, createWakeWindow, editDistance, WAKE_WINDOW };
+export default { createWakeListener, hasWake, normalizeWake, createWakeWindow, editDistance, setWakeName, getWakeName, WAKE_WINDOW };
