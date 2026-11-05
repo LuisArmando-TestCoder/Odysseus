@@ -58,7 +58,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · part 5 chat overlays
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · part 6 voice overlay controls
 
 ## Progress log
 
@@ -627,3 +627,38 @@ metric (sheet band, controls < 44px, elements past the viewport):
 
 **Next:** mobile pass part 5 — chat overlays at 390px (slash menu, model
 picker, message action bar, toasts, the voice overlay's controls).
+
+### Run 16 — 2026-11-05 · Mobile pass, part 5: chat overlays
+`static/css/jarvis-mobile.css` §10 (phones) + `tron.css` §5 (jarvis, all
+widths). Audit at 390×844 touch with a scripted hit-size metric on the
+message action bar, its ··· menu, the slash popup, the model picker and the
+undo toast:
+- **Selectors that never matched.** §5's popover rule listed
+  `.slash-autocomplete`, but the popup's class is
+  `.slash-autocomplete-popup` — it was never squared/lit. Added it and
+  `.msg-overflow-menu` (was the rounded 8px glass from messages-hyper).
+  Popover rows are square with the cyan rail on the active row; slash
+  category labels are mono `--tr-dim`.
+- **Slash usage hint yields** (all widths): it was `flex-shrink: 0`, so
+  `/goal`'s long example squeezed its help to nothing and ran past the
+  popup edge. Now ellipsised at ≤45 %; on phones it drops to its own line
+  under the help text.
+- **44px on touch:** message actions 21–38×32 → 44×44; ··· menu rows,
+  slash rows, model rows 32/27/30 → 44; model search 32px at ~11px type →
+  44px at 16px (no iOS focus-zoom); add key 30 → 44; fav dot 30×30 → 44×44;
+  toast Undo 52×32 → 64×44, × 15×20 → 44×44 (it was flex-shrinking to 32
+  inside the full-width toast — now `flex: 0 0 auto`). Sub-44 controls in
+  these overlays: 13 → 0. Model list gets `min(360px, 50dvh)` on phones.
+- **Toast:** jarvis had no toast styling and the base rule's
+  `var(--accent)` rail is invalid here, so it had no rail. Now a square
+  glass strip lit by a 2px cyan left edge; errors amber (alert colour);
+  Undo is a mono cyan hairline key. On phones it spans the top gutter
+  (12px each side, below the safe-area inset).
+- Verified headless (mocked `/api/*`, nonce injected): jarvis 390 touch +
+  1440, light 390 + 1440 — light's hit-size metrics identical before/after,
+  jarvis 1440 changes only the popover/toast styling. No console errors.
+  CSS tests 11/11 pass, same as baseline.
+
+**Next:** mobile pass part 6 — the voice overlay's controls at 390px
+(`voice-mode.css`/`voice-hyper.css`; another task is editing voice-mode
+locally, so coordinate), then a whole-app contrast / reduced-motion audit.

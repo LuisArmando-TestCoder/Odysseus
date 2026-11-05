@@ -164,8 +164,12 @@ column, drew select chevrons, squared endpoint/user rows with mono status
 chips (cyan live, amber attention) and stacks rows on phones. Mobile part 4
 audited all twelve Settings panels on phones: the sheet body now fills the
 sheet (no dead band), every field/key/toggle hits 44px on touch, and the
-Search and Add Models rows wrap instead of running off the card. Next:
-mobile part 5 (chat overlays at 390px). Spec + log: `docs/JARVIS_UI.md`.
+Search and Add Models rows wrap instead of running off the card. Mobile
+part 5 made the chat overlays touchable: message actions, the ··· menu,
+slash-command rows, the model picker and the undo toast all hit 44px on
+phones, slash usage hints no longer clip, and the toast is a jarvis glass
+strip. Next: the voice overlay's controls at 390px, then a whole-app
+contrast/reduced-motion audit. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

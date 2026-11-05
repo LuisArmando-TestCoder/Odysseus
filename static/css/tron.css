@@ -215,7 +215,7 @@
 :root[data-odx-theme="jarvis"] .modal-content { --c: 16px; --fill: var(--tr-fill-solid); }
 :root[data-odx-theme="jarvis"] .modal-header { border-bottom-color: var(--tr-ln-dim) !important; }
 :root[data-odx-theme="jarvis"] :is(.es-popover, .agent-diff-popover) { --c: 10px; --fill: var(--tr-fill-solid); }
-:root[data-odx-theme="jarvis"] :is(.dropdown, .sort-dropdown, .export-dropdown, .overflow-menu, .context-menu, .model-picker-menu, .slash-autocomplete) {
+:root[data-odx-theme="jarvis"] :is(.dropdown, .sort-dropdown, .export-dropdown, .overflow-menu, .context-menu, .model-picker-menu, .slash-autocomplete-popup, .msg-overflow-menu) {
   border-radius: 0 !important;
   border: 1px solid var(--tr-ln) !important;
   background: var(--tr-fill-solid) !important;
@@ -226,6 +226,43 @@
   background: color-mix(in srgb, var(--tr-cyan) 10%, transparent) !important;
   box-shadow: inset 2px 0 0 var(--tr-cyan) !important;
 }
+/* Popover rows: square, with the same cyan rail on the active row. */
+:root[data-odx-theme="jarvis"] :is(.msg-overflow-item, .model-picker-list .model-switch-item) { border-radius: 0 !important; }
+:root[data-odx-theme="jarvis"] :is(.msg-overflow-item:hover, .slash-ac-row-sel, .model-picker-list .model-switch-item.kb-active) {
+  background: color-mix(in srgb, var(--tr-cyan) 10%, transparent) !important;
+  box-shadow: inset 2px 0 0 var(--tr-cyan) !important;
+}
+:root[data-odx-theme="jarvis"] .slash-ac-cat { font-family: var(--jv-mono); color: var(--tr-dim); opacity: 1; letter-spacing: 0.14em; }
+/* Usage hint yields to the help text (it was flex-shrink:0, so /goal's long
+   example squeezed its help to nothing and ran past the popup's edge). */
+:root[data-odx-theme="jarvis"] .slash-ac-usage {
+  color: var(--tr-dim); opacity: 0.8;
+  flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis;
+}
+:root[data-odx-theme="jarvis"] .slash-ac-help { flex: 1 1 auto; min-width: 6em; }
+/* Toast: a glass strip lit from its left edge (the base rule's --accent
+   border is invalid under jarvis, so it had no rail at all). Errors go amber
+   — the alert colour — not red. Undo/dismiss keys carry inline styles, hence
+   !important. */
+:root[data-odx-theme="jarvis"] #toast {
+  border-radius: 0;
+  background: var(--tr-fill-solid);
+  border: 1px solid var(--tr-ln-dim);
+  border-left: 2px solid var(--tr-cyan);
+  color: var(--tr-ink);
+  box-shadow: 0 18px 40px -16px #000, inset 0 1px 0 color-mix(in srgb, var(--tr-cyan) 22%, transparent);
+}
+:root[data-odx-theme="jarvis"] #toast.error { border-color: color-mix(in srgb, var(--jv-amber) 40%, transparent); border-left-color: var(--jv-amber); color: var(--jv-amber); }
+:root[data-odx-theme="jarvis"] #toast > span > button {
+  border-radius: 0 !important;
+  border-color: var(--tr-ln) !important;
+  color: var(--tr-cyan-hi) !important;
+  font-family: var(--jv-mono) !important;
+  text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px !important;
+}
+:root[data-odx-theme="jarvis"] #toast > span > button:hover { background: color-mix(in srgb, var(--tr-cyan) 12%, transparent) !important; }
+:root[data-odx-theme="jarvis"] #toast > button[aria-label="Dismiss"] { border-radius: 0 !important; color: var(--tr-dim) !important; opacity: 1 !important; }
+:root[data-odx-theme="jarvis"] #toast > button[aria-label="Dismiss"]:hover { color: var(--tr-ink) !important; }
 :root[data-odx-theme="jarvis"] .admin-card { --c: 10px; }
 
 /* ── 6 · Controls everywhere outside voice mode ────────────────────────── */

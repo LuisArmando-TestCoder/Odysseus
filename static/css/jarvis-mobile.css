@@ -395,6 +395,49 @@
   }
 }
 
+/* ── 10 · Chat overlays on phones ────────────────────────────────────────
+   Audited at 390×844 touch (Run 16): message action bar, its ··· menu, the
+   slash-command popup, the model picker and the undo toast. Found:
+   · message actions were 21–38 × 32px; ··· menu rows 32px;
+   · slash rows were 27px, and the usage hint stayed on the row — it squeezed
+     the help text to "Add or l…" and ran past the popup's right edge;
+   · model rows ~30px, the search field 32px at ~11px type (iOS zooms the
+     page on focus under 16px), the add key 30×30;
+   · the toast's Undo key was 52×32 and its × 15×20. */
+@media (max-width: 768px) {
+  /* Slash popup: usage hint drops to its own line under the help text. */
+  :root[data-odx-theme="jarvis"] .slash-ac-row { flex-wrap: wrap; white-space: normal; row-gap: 2px; }
+  :root[data-odx-theme="jarvis"] .slash-ac-help { white-space: nowrap; min-width: 0; flex-basis: 0; }
+  :root[data-odx-theme="jarvis"] .slash-ac-usage {
+    flex: 1 1 100%; min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Toast: spans the top gutter, clear of the notch. */
+  :root[data-odx-theme="jarvis"] #toast {
+    left: 12px; right: 12px; max-width: none;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+  :root[data-odx-theme="jarvis"] #toast > span:not(.toast-checkmark):not(:has(button)) { flex: 1 1 auto; min-width: 0; }
+  :root[data-odx-theme="jarvis"] .model-picker-list { max-height: min(360px, 50dvh); }
+}
+@media (max-width: 768px) and (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] .msg-actions :is(.msg-action-btn, .footer-copy-btn) {
+    min-width: 44px; min-height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    touch-action: manipulation;
+  }
+  :root[data-odx-theme="jarvis"] .msg-overflow-item { min-height: 44px; font-size: 14px; padding: 8px 12px; }
+  :root[data-odx-theme="jarvis"] .slash-ac-row { min-height: 44px; align-content: center; padding: 6px 12px; }
+  :root[data-odx-theme="jarvis"] .model-picker-search-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  :root[data-odx-theme="jarvis"] .model-picker-menu input[type="text"] { min-height: 44px; font-size: 16px; }
+  :root[data-odx-theme="jarvis"] .model-picker-action-btn { width: 44px; height: 44px; }
+  :root[data-odx-theme="jarvis"] .model-picker-list .model-switch-item { min-height: 44px; font-size: 14px; padding-block: 0; }
+  :root[data-odx-theme="jarvis"] .model-picker-list .mp-fav-dot { width: 44px; height: 44px; margin-block: 0; }
+  :root[data-odx-theme="jarvis"] #toast > span > button { min-height: 44px !important; min-width: 64px; justify-content: center; }
+  :root[data-odx-theme="jarvis"] #toast > button[aria-label="Dismiss"] { width: 44px !important; height: 44px !important; margin-left: 4px !important; flex: 0 0 auto; }
+  :root[data-odx-theme="jarvis"] #toast > span:has(> button) { flex: 0 0 auto; }
+  :root[data-odx-theme="jarvis"] #toast:has(> button) { padding-block: 0; padding-right: 0; }
+}
+
 /* ── Accessibility gates ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }
