@@ -88,15 +88,21 @@ DEFAULT_SETTINGS = {
     "research_max_tokens": 16384,
     "research_extraction_timeout_seconds": 90,
     "research_extraction_concurrency": 3,
-    # Hard wall-clock cap on a single deep-research run. The previous 600s
-    # (10 min) default cut off slow local / edge LLMs mid-synthesis; 900s
-    # (15 min) is comfortable for most local setups while still bounding
-    # runaway jobs. Set to 0 to disable the cap entirely (unlimited) — only
-    # for very long deep-research runs, since a stalled job then runs an
-    # unbounded model/API bill. Other values are bounded to [60, 86400].
-    # Tune via Settings or by editing data/settings.json.
-    "research_run_timeout_seconds": 900,
-    "research_max_time_seconds": 900,
+    # Long-horizon research (2026-11-05): no wall-clock cap by default.
+    # A run continues while it makes progress and ends on the AI's own stop
+    # decision or max_rounds. It is only stopped if it STALLS (no progress
+    # for research_stall_timeout_seconds; 0 disables). Every
+    # research_checkin_seconds a progress digest is recorded (exposed in
+    # /status as last_checkin) and pushed through the reminder channel
+    # (research_checkin_push: "auto" = browser/ntfy only, "all" = also email,
+    # "off"). research_run_timeout_seconds > 0 restores a wall-clock cap
+    # (bounded to [60s, 7 days]); research_max_time_seconds > 0 restores the
+    # between-rounds time budget.
+    "research_run_timeout_seconds": 0,
+    "research_max_time_seconds": 0,
+    "research_stall_timeout_seconds": 900,
+    "research_checkin_seconds": 600,
+    "research_checkin_push": "auto",
     "agent_max_tool_calls": 0,
     "agent_input_token_budget": 6000,
     # Ceiling on the *auto-derived* input budget that #1230 introduced. Has

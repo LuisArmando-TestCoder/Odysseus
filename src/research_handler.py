@@ -30,6 +30,28 @@ def _bounded_int(value, *, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, n))
 
 
+class _ResearchLimit(Exception):
+    """Raised by the run supervisor when a research run must be stopped
+    (optional wall-clock cap reached, or no progress for too long)."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _setting_seconds(key: str, default: int, minimum: int, maximum: int) -> int:
+    """Read a seconds setting. 0 (or negative) means disabled and returns 0;
+    any other value is bounded to [minimum, maximum]."""
+    from src.settings import get_setting
+    try:
+        raw = int(get_setting(key, default))
+    except (TypeError, ValueError):
+        raw = default
+    if raw <= 0:
+        return 0
+    return _bounded_int(raw, default=default, minimum=minimum, maximum=maximum)
+
+
 def _format_probe_failure(model: str, exc: Exception) -> str:
     """Turn a failed research model probe into a user-facing message."""
     detail = getattr(exc, "detail", None)
@@ -232,37 +254,33 @@ class ResearchHandler:
         max_rounds is the safety cap; the AI's _should_stop decision (after
         min_rounds) terminates the loop earlier in normal operation.
         """
-        # Resolve the hard wall-clock timeout from settings when the caller
-        # didn't pin one. Local / edge models routinely need more than the
-        # old 600s default to finish a deep-research synthesis. A setting of
-        # 0 disables the cap entirely (unlimited run); any other value is
-        # bounded to [60, 86400] so a misconfigured settings.json can't
-        # explode into a multi-day hang.
+        # Long-horizon policy: research is NOT bounded by wall-clock time by
+        # default. A run keeps going for as long as it is making progress
+        # (it still ends when the AI decides it is done, or at max_rounds).
+        # What stops a run is a STALL: no progress event for
+        # research_stall_timeout_seconds (a hung LLM/search call). While it
+        # runs, a check-in digest is recorded every research_checkin_seconds
+        # and pushed through the reminder channel, so the user (on the web,
+        # on the phone, or through any bridge polling /status) can keep an
+        # eye on it. research_run_timeout_seconds > 0 restores an optional
+        # wall-clock cap (bounded to [60, 7 days]).
+        from src.settings import get_setting
         if hard_timeout is None:
-            from src.settings import get_setting
-            try:
-                raw_timeout = int(get_setting("research_run_timeout_seconds", 900))
-            except (TypeError, ValueError):
-                raw_timeout = 900
-            if raw_timeout <= 0:
-                hard_timeout = None  # 0 = no wall-clock cap (asyncio.wait_for timeout=None)
-            else:
-                hard_timeout = _bounded_int(
-                    raw_timeout,
-                    default=900,
-                    minimum=60,
-                    maximum=86400,
-                )
+            hard_timeout = _setting_seconds(
+                "research_run_timeout_seconds", 0, 60, 7 * 86400) or None
+        stall_timeout = _setting_seconds(
+            "research_stall_timeout_seconds", 900, 120, 86400)
+        checkin_every = _setting_seconds(
+            "research_checkin_seconds", 600, 60, 86400)
 
-        # Research's own per-run time budget. The old 300s (5 min) default cut
-        # long investigations short; read a setting instead. 0 = unlimited
-        # (only hard_timeout caps it).
+        # Research's own per-run time budget (checked between rounds).
+        # 0 = unlimited. Previously a setting of 0 silently fell back to the
+        # caller's 300s default.
         try:
-            _mt = int(get_setting("research_max_time_seconds", 1800))
+            _mt = int(get_setting("research_max_time_seconds", 0) or 0)
         except (TypeError, ValueError):
-            _mt = 1800
-        if _mt > 0:
-            max_time = _mt
+            _mt = 0
+        max_time = _mt if _mt > 0 else 0
 
         # Cancel any existing research for this session
         if session_id in self._active_tasks:
@@ -278,6 +296,13 @@ class ResearchHandler:
             "progress": {},
             "result": None,
             "started_at": time.time(),
+            "last_progress_at": time.time(),
+            "checkins": [],
+            "limits": {
+                "wall_clock_seconds": hard_timeout or 0,
+                "stall_seconds": stall_timeout,
+                "checkin_seconds": checkin_every,
+            },
             "category": category,
             # SECURITY: track ownership so all reads / saves can filter by user.
             "owner": owner or "",
@@ -287,6 +312,7 @@ class ResearchHandler:
 
         def on_progress(event):
             entry["progress"] = event
+            entry["last_progress_at"] = time.time()
 
         _completed = False
 
@@ -298,11 +324,43 @@ class ResearchHandler:
             if on_complete:
                 on_complete(*args, **kwargs)
 
-        async def _run():
-            # Hard wall-clock timeout — saves partial results if an LLM call hangs
-            # hard_timeout passed from start_research()
+        async def _supervise(coro):
+            """Await the research coroutine while watching it. Raises
+            _ResearchLimit on a stall (or on the optional wall-clock cap),
+            and records/pushes a check-in every `checkin_every` seconds."""
+            inner = asyncio.ensure_future(coro)
+            started = entry["started_at"]
+            next_checkin = (started + checkin_every) if checkin_every else None
             try:
-                result = await asyncio.wait_for(
+                while True:
+                    done, _ = await asyncio.wait({inner}, timeout=5)
+                    if done:
+                        return inner.result()
+                    now = time.time()
+                    if hard_timeout and now - started > hard_timeout:
+                        raise _ResearchLimit(f"hit the {hard_timeout}s time limit")
+                    idle = now - entry.get("last_progress_at", started)
+                    if stall_timeout and idle > stall_timeout:
+                        raise _ResearchLimit(
+                            f"stalled (no progress for {int(idle // 60)} min)")
+                    if next_checkin and now >= next_checkin:
+                        next_checkin = now + checkin_every
+                        self._checkin(session_id, entry)
+            finally:
+                if not inner.done():
+                    _r = entry.get("researcher")
+                    if _r:
+                        try:
+                            _r.cancel()
+                        except Exception:
+                            pass
+                    inner.cancel()
+
+        async def _run():
+            # Supervised run — saves partial results if it stalls or hits an
+            # optional wall-clock cap.
+            try:
+                result = await _supervise(
                     self.call_research_service(
                         query, llm_endpoint, llm_model,
                         max_time=max_time,
@@ -318,11 +376,11 @@ class ResearchHandler:
                         extraction_timeout=extraction_timeout,
                         extraction_concurrency=extraction_concurrency,
                     ),
-                    timeout=hard_timeout,
                 )
                 entry["result"] = result
                 entry["status"] = "done"
                 self._save_result(session_id, entry)
+                self._notify_finished(session_id, entry, "finished")
                 # Persist to DB via callback (ensures result survives even if SSE disconnected)
                 try:
                     sources = entry.get("sources", [])
@@ -331,8 +389,9 @@ class ResearchHandler:
                     _guarded_complete(session_id, result, sources, findings)
                 except Exception as cb_err:
                     logger.error(f"on_complete callback failed: {cb_err}")
-            except asyncio.TimeoutError:
-                logger.error(f"Research hard timeout ({hard_timeout}s) for session {session_id}")
+            except _ResearchLimit as limit:
+                _elapsed = time.time() - entry["started_at"]
+                logger.error(f"Research stopped ({limit.reason}) after {_elapsed:.0f}s for session {session_id}")
                 researcher = entry.get("researcher")
                 partial = getattr(researcher, "evolving_report", "") if researcher else ""
                 if not partial and researcher and researcher.findings:
@@ -344,9 +403,10 @@ class ResearchHandler:
                     )
                 if partial:
                     entry["result"] = (
-                        self._format_research_report(query, partial, researcher.get_stats(), hard_timeout)
-                        + f"\n\n> ⚠️ Research hit the {hard_timeout}s time limit — showing the partial "
-                          "results gathered so far (saved to this chat)."
+                        self._format_research_report(query, partial, researcher.get_stats(), _elapsed)
+                        + f"\n\n> ⚠️ Research {limit.reason} — showing the partial "
+                          "results gathered so far (saved to this chat). Ask to continue and it "
+                          "picks up from these sources."
                     )
                     entry["status"] = "done"
                     self._save_result(session_id, entry)
@@ -357,11 +417,12 @@ class ResearchHandler:
                     except Exception as e:
                         logger.warning(f"on_complete callback failed in timeout branch: {e}")
                 else:
-                    entry["result"] = (f"Research timed out after {hard_timeout}s before any sources "
+                    entry["result"] = (f"Research {limit.reason} before any sources "
                                        "could be gathered. You can retry, or ask a more specific question.")
                     entry["status"] = "error"
                     _guarded_complete(session_id, entry["result"], [], [])
-                on_progress({"phase": "error", "message": f"Research timed out after {hard_timeout}s — partial results saved"})
+                on_progress({"phase": "error", "message": f"Research {limit.reason} — partial results saved"})
+                self._notify_finished(session_id, entry, limit.reason)
             except asyncio.CancelledError:
                 entry["status"] = "cancelled"
                 raise
@@ -384,7 +445,12 @@ class ResearchHandler:
                 "progress": entry["progress"],
                 "query": entry["query"],
                 "started_at": entry["started_at"],
+                "elapsed": round(time.time() - entry["started_at"], 1),
+                "last_progress_age": round(time.time() - entry.get("last_progress_at", entry["started_at"]), 1),
+                "limits": entry.get("limits", {}),
             }
+            if entry.get("checkins"):
+                result["last_checkin"] = entry["checkins"][-1]
             if avg is not None:
                 result["avg_duration"] = round(avg, 1)
             return result
@@ -396,16 +462,15 @@ class ResearchHandler:
                 if data.get("consumed"):
                     return None
                 status = data.get("status", "done")
-                # Stale "running" snapshot guard: a checkpoint whose
-                # checkpoint_at is older than ~2 minutes (or whose started_at
-                # is older than the hard timeout) means the task no longer
-                # exists (server restart / crash). Report it as timed-out so
-                # the SSE loop doesn't wait forever on a dead task.
+                # Stale "running" snapshot guard: this branch only runs when
+                # the task is NOT in memory, so a "running" snapshot whose
+                # last checkpoint is older than ~2 minutes means the task no
+                # longer exists (server restart / crash). Report it as an
+                # error so the SSE loop doesn't wait forever on a dead task.
+                # (No started_at cap: long runs are legitimate.)
                 if status == "running":
-                    _ckpt = data.get("checkpoint_at", 0)
-                    _started = data.get("started_at", 0)
-                    _stale = (_ckpt and (time.time() - _ckpt) > 120) or \
-                             (_started and (time.time() - _started) > 900)
+                    _last = data.get("checkpoint_at") or data.get("started_at") or 0
+                    _stale = bool(_last) and (time.time() - _last) > 120
                     if _stale:
                         status = "error"
                 return {
@@ -417,6 +482,86 @@ class ResearchHandler:
             except Exception:
                 pass
         return None
+
+    # ------------------------------------------------------------------
+    # Check-ins — "constant checking" for long-horizon runs
+    # ------------------------------------------------------------------
+
+    def _checkin(self, session_id: str, entry: dict) -> dict:
+        """Record a progress digest for a running research and push it
+        through the user's reminder channel. No LLM call — cheap and safe
+        to run every few minutes for hours."""
+        r = entry.get("researcher")
+        findings = list(getattr(r, "findings", None) or [])
+        elapsed = int(time.time() - entry["started_at"])
+        latest = []
+        for f in findings[-3:]:
+            t = (f.get("title") or f.get("url") or "").strip() if isinstance(f, dict) else ""
+            if t:
+                latest.append(t[:90])
+        digest = {
+            "at": time.time(),
+            "n": len(entry.get("checkins") or []) + 1,
+            "elapsed": elapsed,
+            "round": getattr(r, "round_count", 0) if r else 0,
+            "sources": len(getattr(r, "urls_fetched", None) or ()) if r else 0,
+            "findings": len(findings),
+            "phase": (entry.get("progress") or {}).get("phase", ""),
+            "idle": int(time.time() - entry.get("last_progress_at", entry["started_at"])),
+            "latest": latest,
+        }
+        mins = max(1, elapsed // 60)
+        text = (f"Still researching ({mins} min): round {digest['round']}, "
+                f"{digest['sources']} sources read, {digest['findings']} findings")
+        if digest["phase"]:
+            text += f", now {digest['phase']}"
+        text += "."
+        if latest:
+            text += " Latest: " + "; ".join(latest)
+        digest["text"] = text
+        entry.setdefault("checkins", []).append(digest)
+        entry["checkins"] = entry["checkins"][-50:]
+        logger.info(f"Research check-in {session_id}: {text}")
+        self._push(entry, f"Research check-in #{digest['n']}",
+                   text, f"research-{session_id}-checkin-{digest['n']}")
+        return digest
+
+    def _notify_finished(self, session_id: str, entry: dict, how: str):
+        """Tell the user a long run ended (only if it ran past one check-in
+        interval or 3 minutes — short runs are watched live anyway)."""
+        elapsed = time.time() - entry["started_at"]
+        if elapsed < 180:
+            return
+        mins = int(elapsed // 60)
+        q = (entry.get("query") or "")[:120]
+        self._push(entry, f"Research {how} after {mins} min",
+                   f"{q}\nOpen the chat to read the report.",
+                   f"research-{session_id}-done")
+
+    def _push(self, entry: dict, title: str, body: str, note_id: str):
+        """Fire-and-forget push via the configured reminder channel
+        (browser / ntfy). Email is skipped for check-ins to avoid inbox spam
+        unless research_checkin_push is set to "all"."""
+        from src.settings import get_setting
+        mode = str(get_setting("research_checkin_push", "auto") or "auto").lower()
+        if mode in ("off", "false", "0", "none"):
+            return
+        channel = str(get_setting("reminder_channel", "browser") or "browser").lower()
+        if channel == "email" and mode != "all" and "checkin" in note_id:
+            return
+        try:
+            from routes.note_routes import dispatch_reminder
+            loop = asyncio.get_running_loop()
+            loop.create_task(dispatch_reminder(
+                title=title, note_body=body, note_id=note_id,
+                owner=entry.get("owner") or "",
+            ))
+        except Exception as e:
+            logger.debug(f"research push failed: {e}")
+
+    def get_checkins(self, session_id: str) -> list:
+        entry = self._active_tasks.get(session_id)
+        return list(entry.get("checkins") or []) if entry else []
 
     def cancel_research(self, session_id: str) -> bool:
         """Cancel running research for a session."""

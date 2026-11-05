@@ -1691,7 +1691,7 @@ class TaskScheduler:
             llm_model=model,
             llm_headers=headers,
             max_rounds=8,
-            max_time=int(get_setting("research_max_time_seconds", 900) or 900),  # Layer 0 / F0.5
+            max_time=int(get_setting("research_max_time_seconds", 0) or 0),  # 0 = no time budget
             max_report_tokens=max_tokens,
             extraction_timeout=extraction_timeout,
             extraction_concurrency=extraction_concurrency,

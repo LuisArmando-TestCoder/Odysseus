@@ -752,6 +752,10 @@ class DeepResearcher:
                 pass
 
     def _time_exceeded(self) -> bool:
+        # max_time <= 0 means no time budget (long-horizon runs); the loop
+        # still ends on the AI's stop decision or max_rounds.
+        if not self.max_time or self.max_time <= 0:
+            return False
         return (time.time() - self._start_time) > self.max_time
 
     # _strip_think_tags removed — use research_utils.strip_thinking()
