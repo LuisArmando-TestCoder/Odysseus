@@ -977,3 +977,23 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
   }
   .voice-mode-fab .voice-mode-label { color: #fff; }
 }
+
+/* Wake phrase armed: a small breathing dot on the launcher while the
+   always-on listener waits for "advanced voice mode" (voiceWake.js). */
+.voice-mode-fab[data-wake="listening"]::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vf-acc);
+  box-shadow: 0 0 8px var(--vf-acc);
+  animation: vf-wake 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes vf-wake { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .voice-mode-fab[data-wake="listening"]::after { animation: none; opacity: .8; }
+}

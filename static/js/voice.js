@@ -21,6 +21,7 @@
 import * as vectors from './voice_vectors.js';
 import streamRouter from './streamRouter.js';
 import wakeLock from './wakeLock.js';
+import { createWakeListener } from './voiceWake.js';
 import { createLedger } from './voice-delta.js';
 
 // Every sentence delivered to GPT-Live, spoken or silent (see voice-delta.js):
@@ -72,11 +73,49 @@ const _voiceInjectedTexts = new Set();   // user-bubble texts dispatched by voic
 let _awaiting = null;         // {id, sid, sawBusy, since}
 let _opts = {
   review: false, speak: true,
+  // Always listen for "advanced voice mode" while voice mode is off (voiceWake.js).
+  wake: true,
   // Speak the chat agent's interim output while it works? Off by default: in
   // practice it read out search-result titles ("an article about Schäuble…")
   // and talked over the user. The finished answer is always spoken.
   narrate: (() => { try { return localStorage.getItem('odysseus-voice-narrate') === '1'; } catch (e) { return false; } })(),
 };
+
+// ── Wake phrase ─────────────────────────────────────────────────────────────
+// While voice mode is off, a browser STT loop listens to the constant stream
+// for "advanced voice mode" anywhere in it. On a hit it shuts itself down and
+// opens voice mode; when voice mode ends it starts listening again.
+let _wake = null;
+
+function _wakeIndicator(s) {
+  const fab = document.getElementById('voice-mode-fab');
+  if (fab) {
+    fab.dataset.wake = s;
+    fab.title = s === 'listening'
+      ? 'Advanced Voice Mode — listening for “advanced voice mode”'
+      : 'Advanced Voice Mode';
+  }
+  const t = _root?.querySelector('[data-opt="wake"]')?.closest('.vx-toggle');
+  if (t) t.dataset.wake = s;
+}
+
+function _onWake() {
+  console.info('[wake] heard "advanced voice mode" — activating');
+  openVoiceMode({ autostart: true });
+  _systemLine('Wake phrase heard — “advanced voice mode”.', 'info');
+}
+
+function _initWake() {
+  if (_wake) return;
+  _wake = createWakeListener({ onWake: _onWake, onState: _wakeIndicator });
+  window.__odyWake = _wake;   // console: __odyWake.state
+  if (_active || _connecting) _wake.pause();
+  _wake.setEnabled(!!_opts.wake);
+  if (_opts.wake && !_wake.supported) console.info('[wake] Web Speech API unavailable — wake phrase disabled');
+}
+
+function _wakePause() { _wake?.pause(); }
+function _wakeResume() { if (!_active && !_connecting) _wake?.resume(); }
 
 // ── Floor control ───────────────────────────────────────────────────────────
 // The user owns the floor while speaking and right after. Nothing we inject
@@ -738,6 +777,7 @@ function _buildHUD() {
       <button class="vx-dock-btn vx-primary" data-act="core" title="Connect / end (Space)" aria-label="Connect or end call">${ICON.power}</button>
       <button class="vx-dock-btn" data-act="force" title="Forge & send now (Enter)" aria-label="Send now">${ICON.bolt}</button>
       <label class="vx-toggle" title="Speak chat results back to you"><input type="checkbox" data-opt="speak" checked><span class="vx-sw"></span>${ICON.speak}<em>Speak results</em></label>
+      <label class="vx-toggle" title="When voice mode is off, keep listening for “advanced voice mode” to turn it on"><input type="checkbox" data-opt="wake" checked><span class="vx-sw"></span>${ICON.mic}<em>Wake phrase</em></label>
     </div>
   </footer>`;
   return el;
@@ -2934,6 +2974,7 @@ async function _acquireMic() {
 async function startVoice() {
   if (_active || _connecting) return;
   _connecting = true;
+  _wakePause();   // GPT-Live owns the mic now
   _silentSince = 0; _silentWarned = false;   // re-arm the silent-mic watchdog each call
   _setState('connecting');
   // Turning on voice must persist a real chat session (even with no messages),
@@ -2960,6 +3001,7 @@ async function startVoice() {
       _setSub('Microphone error: ' + (msg || name || 'unknown'));
     }
     _systemLine('Microphone unavailable — ' + (msg || name || 'unknown'), 'warn');
+    _wakeResume();
     return;
   }
 
@@ -3041,11 +3083,13 @@ async function startVoice() {
     _setState('error');
     _setSub(e.message || 'Connection failed');
     _systemLine('Link failed — ' + (e.message || e), 'warn');
+    _wakeResume();
     return;
   }
 
   _connecting = false;
   _active = true;
+  _wakePause();   // a slow handshake may land after the listener resumed
   _muted = false;
   wakeLock.acquire('voice');
   _callStart = Date.now();
@@ -3097,6 +3141,8 @@ async function stopVoice(keepError = false) {
   _caption('', '');
   // Flush whatever was said last through the pipeline.
   if (_pending.some(t => t.speaker === 'You')) _schedulePipeline(50);
+  // Voice mode is off — listen for "advanced voice mode" again.
+  _wakeResume();
 }
 
 function _toggleMute() {
@@ -3267,6 +3313,11 @@ function _bind() {
     inp.addEventListener('change', () => {
       _opts[inp.dataset.opt] = inp.checked;
       try { localStorage.setItem('odysseus-voice-opts', JSON.stringify(_opts)); } catch (e) { /* ignore */ }
+      if (inp.dataset.opt === 'wake') {
+        _initWake();
+        if (_active || _connecting) _wake.pause();
+        _wake.setEnabled(inp.checked);
+      }
       if (inp.dataset.opt === 'review' && !inp.checked) {
         _queue.forEach(q => { if (q.status === 'review') q.status = 'queued'; });
         _renderQueue(); _ensureDispatcher();
@@ -3284,6 +3335,7 @@ function _bind() {
   };
   document.addEventListener('keydown', _keyHandler, true);
   _initScrollDownButtons();
+  if (_wake) _wakeIndicator(_wake.state);
 }
 
 async function _resetMemory() {
@@ -3390,6 +3442,8 @@ export async function toggleVoice() {
 }
 
 export function initVoice() {
+  try { Object.assign(_opts, JSON.parse(localStorage.getItem('odysseus-voice-opts') || '{}')); } catch (e) { /* ignore */ }
+  _initWake();
   if ('speechSynthesis' in window) {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
