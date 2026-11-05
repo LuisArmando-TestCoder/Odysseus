@@ -10,6 +10,10 @@ bad version). These routes let the UI show the state and let an admin act:
   GET  /api/update/idle      is the server busy? loopback-only, no auth —
                              the supervisor asks before restarting
   POST /api/update/check     admin: check now (no changes)
+  POST /api/update/nudge     any signed-in user: "a browser just (re)opened the
+                             app" — runs the normal background update when the
+                             last check is stale (throttled; the install mode
+                             still decides whether anything is applied)
   POST /api/update/apply     admin: install the available update now
   POST /api/update/restart   admin: restart the server now (needs the supervisor)
   POST /api/update/rollback  admin: go back to the previous version
@@ -87,6 +91,7 @@ def _status_payload(admin: bool) -> Dict[str, Any]:
     out["head"] = (st.get("head") or "")[:12]
     out["supervised"] = bool(st.get("supervisor"))
     out["restart_requested"] = bool(st.get("restart_requested"))
+    out["updating"] = updater.update_running()
     # The code on disk is newer than what this process runs -> restart needed.
     out["restart_needed"] = bool(_BOOT_SHA and st.get("head") and st.get("head") != _BOOT_SHA)
     out["boot_sha"] = (_BOOT_SHA or "")[:12]
@@ -104,6 +109,8 @@ def _status_payload(admin: bool) -> Dict[str, Any]:
 
 
 _BOOT_SHA: Optional[str] = None
+_NUDGE_MIN_S = int(os.environ.get("ODYSSEUS_UPDATE_NUDGE_MIN_S", "300") or 300)
+_last_nudge = 0.0
 
 
 def setup_update_routes(research_handler=None) -> APIRouter:
@@ -151,6 +158,29 @@ def setup_update_routes(research_handler=None) -> APIRouter:
         except subprocess.TimeoutExpired:
             raise HTTPException(504, "Update check timed out (offline?)")
         return _status_payload(True)
+
+    @router.post("/api/update/nudge")
+    async def update_nudge(request: Request):
+        # Opening / refocusing the app is a natural moment to pull updates in.
+        # Cheap and idempotent: a stale check (> _NUDGE_MIN_S) starts the same
+        # detached updater run the hourly schedule does; anything fresher, or a
+        # run already in progress, is a no-op. Applying + restarting is still
+        # governed by the install mode, CI gate and the supervisor's quiet-moment
+        # restart, so a nudge can never force anything.
+        global _last_nudge
+        now = time.time()
+        st = await asyncio.to_thread(updater.load_state)
+        stale = now - float(st.get("last_check") or 0) >= _NUDGE_MIN_S
+        started = False
+        if (stale and now - _last_nudge >= _NUDGE_MIN_S
+                and updater._truthy(updater.read_settings().get("ODYSSEUS_AUTO_UPDATE"), True)
+                and not await asyncio.to_thread(updater.update_running)):
+            _last_nudge = now
+            _spawn()
+            started = True
+        payload = await asyncio.to_thread(_status_payload, _is_admin(request))
+        payload["checking"] = started
+        return payload
 
     @router.post("/api/update/apply")
     async def update_apply(request: Request):

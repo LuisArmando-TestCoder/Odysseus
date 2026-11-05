@@ -225,6 +225,53 @@ def test_dev_clone_only_checks_unless_forced(rig):
     assert rig.head() == new
 
 
+def test_follow_mode_fast_forwards_and_requests_restart(rig):
+    rig.mark("follow")
+    new = rig.publish("follow change", {"mod.py": "X = 30\n"})
+    assert rig.run().returncode == 0
+    assert rig.head() == new
+    assert rig.state()["last_result"] == "updated"
+    assert rig.restart_flag()["sha"] == new
+
+
+def test_follow_mode_updates_around_uncommitted_edits_without_stashing(rig):
+    rig.mark("follow")
+    (rig.inst / "notes.txt").write_text("my draft\n")
+    new = rig.publish("touches mod only", {"mod.py": "X = 31\n"})
+    assert rig.run().returncode == 0
+    assert rig.head() == new
+    assert (rig.inst / "notes.txt").read_text() == "my draft\n"
+    assert g(rig.inst, "stash", "list").stdout.strip() == ""
+
+
+def test_follow_mode_waits_when_update_touches_edited_file(rig):
+    rig.mark("follow")
+    old = rig.head()
+    (rig.inst / "mod.py").write_text("X = 'mine'\n")
+    rig.publish("touches mod", {"mod.py": "X = 32\n"})
+    r = rig.run()
+    assert r.returncode == 2
+    assert rig.head() == old
+    assert (rig.inst / "mod.py").read_text() == "X = 'mine'\n"
+    st = rig.state()
+    assert st["last_result"] == "blocked_local_edits" and "mod.py" in st["error"]
+    assert g(rig.inst, "stash", "list").stdout.strip() == ""
+
+
+def test_follow_mode_leaves_unpushed_and_diverged_work_alone(rig):
+    rig.mark("follow")
+    (rig.inst / "mine.txt").write_text("x")
+    g(rig.inst, "add", "mine.txt")
+    g(rig.inst, "commit", "-q", "-m", "unpushed")
+    mine = rig.head()
+    assert rig.run().returncode == 0
+    assert rig.head() == mine and rig.state()["last_result"] == "ahead"
+    rig.publish("upstream moves too", {"mod.py": "X = 33\n"})
+    assert rig.run().returncode == 1
+    assert rig.head() == mine and rig.state()["last_result"] == "diverged"
+    assert "odysseus/backup-" not in g(rig.inst, "branch").stdout
+
+
 def test_auto_update_off_only_checks(rig):
     rig.mark("managed")
     old = rig.head()

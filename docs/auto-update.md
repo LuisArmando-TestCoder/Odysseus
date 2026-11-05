@@ -107,11 +107,53 @@ Odysseus runs (`ODYSSEUS_ALLOW_SLEEP=1` to opt out).
 | mode | who | behaviour |
 |---|---|---|
 | `managed` | installed by the installer | fully autonomous, follows the branch even across force-pushes (after a backup) |
+| `follow` | a developer clone that should stay current | fast-forwards to every new commit and restarts into it, but never rewrites local work: no stash (uncommitted edits stay on disk; an update that changes one of those files waits, and the app says which), unpushed commits are left alone, diverged history is reported and never reset |
 | `dev` | a developer clone | only checks and reports; never moves the checkout unless forced |
 | *(none)* | installs from before this system | fast-forward only; the first scheduled run upgrades them to `managed` |
 
 Existing installs that registered the old daily 03:30 job are moved to the new
 hourly schedule by the updater itself on its next run (`SCHEDULE_VERSION`).
+
+### Restarting from a terminal: `Odysseus.command`
+
+`Odysseus.command` (double-click on macOS, or `bash Odysseus.command`) runs the
+same supervisor as the shortcuts, with live logs in the window. Every open is a
+clean restart onto the latest code:
+
+1. **Terminate**: the running supervisor and server get SIGTERM and shut down
+   cleanly. The supervisor finishes any update step it is in first.
+2. **Search**: it finds anything left over: the recorded PIDs, whatever
+   listens on the port, and any `uvicorn app:app` / `installer/launch.py`
+   whose working directory is this project (an older launcher, a hand-started
+   server, a force quit). Unrelated processes are never touched.
+3. **Kill**: whatever is still alive after 30 s gets SIGKILL, never while an
+   updater is moving the checkout (it waits for that to finish). Then it
+   waits until the port is actually free.
+4. **Update**: `updater.py --on-launch` pulls what's new (gated, checked,
+   rolled back on failure). The window prints `old → new` and the commit list.
+5. **Start**: the supervisor starts the server, health-checks it, and keeps
+   checking for updates while it runs.
+
+`bash Odysseus.command stop | status | update | logs`. A restart doesn't open
+a new browser tab (the open one reconnects by itself); set
+`ODYSSEUS_OPEN_ON_RESTART=1` to change that.
+
+### In the browser
+
+- **Opening or refocusing the app pulls updates in.** The page calls
+  `POST /api/update/nudge`. When the last check is older than 5 minutes
+  (`ODYSSEUS_UPDATE_NUDGE_MIN_S`), the server starts the normal background
+  update run. The install mode, CI gate and quiet-moment restart still decide
+  what happens, so a nudge can't force anything.
+- **Restarts are followed live.** A light `/api/health` heartbeat (every 20 s,
+  every 4 s while an update is under way) notices when the server goes away
+  and shows *Restarting into the update…* instead of a page that silently
+  fails.
+- **The page comes back on the new code by itself.** When the server returns
+  running different code than the page was loaded from, it shows *Updated to
+  abc1234 · N changes* and reloads after a short countdown. It never reloads
+  while you're typing or a dialog is open. Unsent text in the composer is
+  carried across the reload. *Later* defers it until you click *Reload*.
 
 ### Settings (`.env` or environment)
 
@@ -124,6 +166,8 @@ hourly schedule by the updater itself on its next run (`SCHEDULE_VERSION`).
 | `ODYSSEUS_UPDATE_RESTART_MAX_WAIT` | `1800` | seconds to wait for a quiet moment before restarting anyway |
 | `ODYSSEUS_HEALTH_TIMEOUT` | `300` | seconds a new version gets to answer `/api/health` |
 | `ODYSSEUS_ALLOW_SLEEP` | off | `1` = don't keep the computer awake |
+| `ODYSSEUS_UPDATE_NUDGE_MIN_S` | `300` | a browser opening the app starts an update check when the last one is older than this |
+| `ODYSSEUS_OPEN_ON_RESTART` | off | `1` = `Odysseus.command` opens a new tab even on a restart |
 
 ### Commands
 
@@ -143,7 +187,8 @@ Logs: `logs/self-update.log` (updater), `logs/launcher.log` (supervisor),
 ### API
 
 `GET /api/update/status` (signed-in users; admin-only fields hidden for
-others), `GET /api/update/idle` (loopback only, no auth — the supervisor's
+others), `POST /api/update/nudge` (signed-in users; throttled background
+check+install, see *In the browser*), `GET /api/update/idle` (loopback only, no auth — the supervisor's
 probe), admin: `POST /api/update/check | apply | restart | rollback`.
 
 ## For maintainers: keeping `main` safe to ship

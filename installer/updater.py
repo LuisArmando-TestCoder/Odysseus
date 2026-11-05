@@ -25,6 +25,13 @@ Install modes (``data/install.json`` -> ``mode``):
 
   managed  installed by the executable. Fully autonomous: follows the branch
            even across force-pushes or diverged history (after a backup).
+  follow   a developer clone that keeps itself current. Fast-forwards to
+           whatever lands on the branch, but never rewrites anything local:
+           no stash (uncommitted edits stay on disk; an update that touches
+           the same files waits until they are committed), unpushed commits
+           are left alone (nothing to install while only ahead), and diverged
+           history is reported, never reset. CI gate and bad-commit memory
+           apply as usual. The supervisor restarts into the new code.
   dev      a developer clone. Only checks and reports; never moves the
            checkout unless ``--force`` is given.
   (none)   legacy install from before this file existed: fast-forward only.
@@ -219,7 +226,7 @@ def save_marker(marker: Dict) -> None:
 
 def install_mode() -> str:
     mode = (load_marker().get("mode") or "").strip().lower()
-    return mode if mode in ("managed", "dev") else "legacy"
+    return mode if mode in ("managed", "follow", "dev") else "legacy"
 
 
 def mark_install(mode: str = "managed", **extra) -> Dict:
@@ -585,7 +592,7 @@ def _move_to(branch: str, target: str, mode: str) -> None:
     if mode == "managed":
         git("checkout", "-q", "-B", branch, target, check=True, timeout=300)
         git("branch", "-q", f"--set-upstream-to=origin/{branch}", branch)
-    else:  # legacy: fast-forward only, on the branch itself
+    else:  # legacy / follow / forced dev: fast-forward only, on the branch itself
         if current_branch() != branch:
             raise UpdateError(f"checked out on '{current_branch()}', not '{branch}' — not touching it")
         git("merge", "-q", "--ff-only", target, check=True, timeout=300)
@@ -756,6 +763,13 @@ def run_update(check_only: bool = False, force: bool = False, scheduled: bool = 
             log(f"tip {remote[:9]} failed here before — waiting for a newer commit")
             return 2
 
+        if mode != "managed" and not st["behind"] and is_ancestor(remote, head):
+            # Only local commits that aren't pushed yet: nothing to install.
+            st["last_result"] = "ahead"
+            st["available"] = None
+            log(f"{st['ahead']} local commit(s) not on origin/{branch} yet — nothing to install")
+            return 0
+
         if check_only:
             if st["behind"]:
                 st["last_result"] = "available"
@@ -795,13 +809,31 @@ def run_update(check_only: bool = False, force: bool = False, scheduled: bool = 
         diverged = not is_ancestor(head, remote)
         if diverged and mode != "managed":
             st["last_result"] = "diverged"
-            log("history diverged from origin — legacy install, not touching it "
-                "(re-run the installer to enable full auto-update)")
+            if mode == "follow":
+                st["error"] = (f"your branch and origin/{branch} both have new commits — "
+                               "pull or rebase, then updates resume by themselves")
+                log(f"history diverged from origin/{branch} (local and remote both have new commits) — "
+                    "not touching it; pull/rebase by hand and updates resume on their own")
+            else:
+                log("history diverged from origin — legacy install, not touching it "
+                    "(re-run the installer to enable full auto-update)")
             return 1
 
         old = head
         stash_ref = None
-        if tracked_dirty():
+        if mode == "follow" and tracked_dirty():
+            # A developer's working tree: never stash it out from under an open
+            # editor. git fast-forwards around uncommitted edits by itself and
+            # refuses only when the update changes one of those same files.
+            overlap = sorted(set(git_out("diff", "--name-only", "HEAD").splitlines())
+                             & set(git_out("diff", "--name-only", head, remote).splitlines()))
+            if overlap:
+                st["last_result"] = "blocked_local_edits"
+                st["error"] = ("uncommitted edits in files this update changes: "
+                               + ", ".join(overlap[:8]) + (" …" if len(overlap) > 8 else ""))
+                log("waiting: " + st["error"] + " — commit or stash them and the update installs itself")
+                return 2
+        elif tracked_dirty():
             stash_ref = _stash_push(f"odysseus-auto-update {time.strftime('%Y%m%d%H%M%S')}")
             if not stash_ref:
                 st["last_result"] = "error"
