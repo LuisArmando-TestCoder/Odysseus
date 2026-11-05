@@ -1,0 +1,61 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Advanced Voice Mode · "XENO" visual layer (pairs with js/voiceXeno.js)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Scanner canvas, layered over the WebGL orb. Inherits the
+   wrap's `canvas { position:absolute; inset:0 }` rule. */
+.vx .vx-xeno {
+  pointer-events: none;
+  will-change: transform;
+  mix-blend-mode: screen;
+}
+
+/* Boot: one scan line runs down the console as the HUD opens. */
+.vx-xscan {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  overflow: hidden;
+}
+.vx-xscan::before,
+.vx-xscan::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+}
+/* the beam */
+.vx-xscan::before {
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--vx-r), var(--vx-g), var(--vx-b), .95) 20%, #fff 50%, rgba(var(--vx-r), var(--vx-g), var(--vx-b), .95) 80%, transparent);
+  box-shadow: 0 0 18px 4px rgba(var(--vx-r), var(--vx-g), var(--vx-b), .55);
+  animation: vx-xscan-beam 1s cubic-bezier(.55, .05, .35, 1) forwards;
+}
+/* the freshly scanned band: a fading wash with fine scan lines */
+.vx-xscan::after {
+  top: 0;
+  height: 18vh;
+  background:
+    repeating-linear-gradient(0deg, rgba(var(--vx-r), var(--vx-g), var(--vx-b), .10) 0 1px, transparent 1px 4px),
+    linear-gradient(0deg, rgba(var(--vx-r), var(--vx-g), var(--vx-b), .16), transparent);
+  translate: 0 -100%;
+  animation: vx-xscan-band 1s cubic-bezier(.55, .05, .35, 1) forwards;
+}
+@keyframes vx-xscan-beam {
+  from { translate: 0 0; opacity: 1; }
+  85%  { opacity: 1; }
+  to   { translate: 0 100vh; opacity: 0; }
+}
+@keyframes vx-xscan-band {
+  from { translate: 0 -100%; opacity: 1; }
+  85%  { opacity: .8; }
+  to   { translate: 0 calc(100vh - 100%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx .vx-xeno, .vx-xscan { display: none !important; }
+}
+@media (forced-colors: active) {
+  .vx .vx-xeno, .vx-xscan { display: none !important; }
+}

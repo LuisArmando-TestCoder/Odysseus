@@ -216,6 +216,8 @@ let _lastUserFinalAt = 0;    // last finished user turn (its forge may still be 
 let _lastUserTextAt = 0;      // last transcript text from the user (delta or final)
 let _vadStartAt = 0, _noWordsT = 0;   // "heard you, but no words came through" watchdog
 let _unsentText = '';         // user speech the pipeline has not (yet) turned into a send
+let _unsentSince = 0;         // when the oldest still-unsent speech was spoken
+let _keptT = 0;               // deferred "Kept in the voice conversation" check
 let _pipeSlowT = 0;           // pipeline taking too long to decide
 let _progSig = '', _progAt = 0, _stallLevel = 0;   // chat output stall watchdog
 
@@ -227,6 +229,9 @@ let _tmpBands = new Uint8Array(BANDS);   // reused every frame — no per-frame 
 let _t0 = performance.now();
 let _col = STATE_COLORS.idle.slice();
 let _lvl = 0, _out = 0, _think = 0, _thinkTarget = 0;
+// Live, allocation-free signal for the visual layer (voiceXeno.js): mic level,
+// output level, thinking, accent colour (0..1 floats) and the FFT bands.
+const _sig = (window.__vxSignal = { lvl: 0, out: 0, think: 0, col: null, fft: null, t: 0 });
 let _scale = 1, _scaleAt = 0, _lastFrameAt = 0;
 let _bgCanvas = null, _bgGl = null, _bgProg = null, _bgTex = null, _bgU = {};
 let _orbRect = null, _orbResizeBound = false, _measureAt = 0;
@@ -624,6 +629,7 @@ function _loop() {
     _silentSince = 0;
   }
   _think += (_thinkTarget - _think) * 0.06;
+  _sig.lvl = _lvl; _sig.out = _out; _sig.think = _think; _sig.col = _col; _sig.fft = _fftBytes; _sig.t = now;
 
   if (_active && !_muted) {
     const next = _out > 0.07 ? 'speaking' : (_lvl > 0.11 ? 'user' : 'listening');
@@ -1531,8 +1537,11 @@ async function _runPipeline(force = false, settle = false) {
   if (!turns.length && !force && !settle) return;
   _pipeBusy = true;
   const said = turns.filter(t => t.speaker === 'You').map(t => t.text).join(' ').trim();
-  if (said) _unsentText = (_unsentText ? _unsentText + ' ' : '') + said;
-  if (force) _dismissNotice('unsent');
+  if (said) {
+    if (!_unsentText) _unsentSince = _lastUserFinalAt || Date.now();
+    _unsentText = (_unsentText ? _unsentText + ' ' : '') + said;
+  }
+  if (force) _cancelKept();
   clearTimeout(_pipeSlowT);
   _pipeSlowT = setTimeout(() => {
     if (!_pipeBusy || !_active) return;
@@ -1592,6 +1601,34 @@ async function _runPipeline(force = false, settle = false) {
   }
 }
 
+function _cancelKept() {
+  clearTimeout(_keptT); _keptT = 0;
+  _unsentText = ''; _unsentSince = 0;
+  _dismissNotice('unsent');
+}
+
+const _KEPT_SETTLE_MS = 4500;
+function _armKept() {
+  clearTimeout(_keptT);
+  _keptT = setTimeout(_checkKept, _KEPT_SETTLE_MS);
+}
+
+function _checkKept() {
+  _keptT = 0;
+  if (!_unsentText) return;
+  // A send that happened after this speech was spoken already included it.
+  if (_lastForgeAt && _unsentSince && _lastForgeAt >= _unsentSince) { _cancelKept(); return; }
+  // Still talking, or more speech is on its way through the pipeline: wait.
+  const stillTalking = _userTurnOpen || _pending.some(t => t.speaker === 'You') ||
+    _pipeBusy || _pipeRerun || (Date.now() - (_lastUserFinalAt || 0)) < _KEPT_SETTLE_MS;
+  if (stillTalking) { _keptT = setTimeout(_checkKept, 1500); return; }
+  const said = _excerpt(_unsentText, 110);
+  _unsentText = ''; _unsentSince = 0;
+  _notify('unsent', { kind: 'info', title: 'Kept in the voice conversation',
+    detail: `“${said}” was not sent to the chat.`, ttl: 14000,
+    actions: [{ label: 'Send it anyway', primary: true, run: _forceSend }] });
+}
+
 function _onPipeEvent(ev) {
   switch (ev.type) {
     case 'hello': {
@@ -1614,12 +1651,12 @@ function _onPipeEvent(ev) {
     case 'stop_talking': _stopTalking(); break;
     case 'interrupt': _interruptTask(); break;
     case 'memory': _renderMemory(ev.memory); break;
-    case 'forged': _unsentText = ''; _dismissNotice('unsent'); _enqueue(ev); break;
+    case 'forged': _cancelKept(); _enqueue(ev); break;
     case 'answer_from_context':
       // The answer was already in the chat/memory — speak it directly instead
       // of re-asking the chat agent.
       if (ev.answer) {
-        _unsentText = ''; _dismissNotice('unsent');
+        _cancelKept();
         _systemLine('Answered from context — no chat round-trip.', 'done');
         _queueSpeak(ev.answer, true);
       }
@@ -1680,9 +1717,11 @@ function _onPipeEvent(ev) {
             detail: (said ? `“${said}” — ` : '') + 'the rewrite didn’t match what you said.', ttl: 16000, actions: [sendAnyway], os: true });
           _unsentText = '';
         } else if (ev.reason === 'not-directed-to-chat' || ev.reason === 'below-threshold') {
-          if (said) _notify('unsent', { kind: 'info', title: 'Kept in the voice conversation',
-            detail: `“${said}” was not sent to the chat.`, ttl: 14000, actions: [sendAnyway] });
-          _unsentText = '';
+          // Don't judge a fragment while the user is still talking: keep the
+          // text pending and only report it once speech has settled and no
+          // later run forged it (the forger reads the whole transcript, so a
+          // later send covers this speech too).
+          if (said) _armKept(); else _unsentText = '';
         } else if (ev.reason !== 'not-ready') {
           // answered-from-context, about-conversation, no-new-speech, … —
           // handled by the voice itself; nothing pending any more.

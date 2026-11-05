@@ -1,0 +1,255 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Whimsy layer
+   Micro-interactions for the chat and Advanced Voice Mode: spring physics,
+   cursor-aware light, particles (drawn by js/whimsy.js on one shared canvas),
+   SVG-stroke style border comets and state shockwaves.
+
+   Everything is gated on html.wh-on, which whimsy.js only sets when the user
+   has not asked for reduced motion and has not turned the layer off
+   (Alt+Shift+W, or localStorage['odysseus-whimsy'] = 'off').
+   Loaded last so it can layer on top of the HUD themes without fighting them:
+   it animates the individual `translate` / `scale` properties, which compose
+   with — instead of replacing — the themes' own `transform`s.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --wh-acc: var(--accent-primary, var(--red, #4fd8ff));
+  --wh-acc-hi: color-mix(in srgb, var(--wh-acc) 55%, #fff);
+  /* Springs, sampled from a damped oscillator (see whimsy.js → Spring). */
+  --wh-spring: cubic-bezier(.2, 1.3, .4, 1);
+  --wh-spring-soft: cubic-bezier(.2, 1.1, .3, 1);
+}
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    /* ζ≈0.42 — a lively bounce for pops and confirmations */
+    --wh-spring: linear(0, .0585, .2064, .4039, .6161, .8154, .9832, 1.1089, 1.1896, 1.2281, 1.2312, 1.2077, 1.1672, 1.1188, 1.0698, 1.0258, .9905, .9655, .9509, .9455, .9476, .955, .9655, .9771, .9881, .9977, 1.0049, 1.0098, 1.0122, 1.0127, 1.0116, 1.0096, 1.007, 1.0043, 1.0018, .9998, 1);
+    /* ζ≈0.62 — a settled landing for things that enter the page */
+    --wh-spring-soft: linear(0, .0652, .218, .4062, .5935, .7575, .8876, .9811, 1.0408, 1.0725, 1.0833, 1.0799, 1.0681, 1.0527, 1.0369, 1.0227, 1.0112, 1.0029, .9974, .9943, .9931, .9932, .9941, .9953, .9967, .9979, .9989, .9996, 1);
+  }
+}
+
+@property --wh-ang {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* ── Shared particle canvas ─────────────────────────────────────────────── */
+.wh-fx {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 2147483000;
+  contain: strict;
+}
+/* voice-mode.css skips rendering of every body child except the HUD while it
+   is open; the particle layer has to stay live on top of it. */
+html.vx-open body > .wh-fx { content-visibility: visible !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHAT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Composer: a light that follows the cursor around its border ────────── */
+.wh-spot {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity .45s ease;
+}
+html.wh-on .chat-input-bar:hover > .wh-spot,
+html.wh-on .chat-input-bar:focus-within > .wh-spot,
+html.wh-on .chat-input-bar.wh-streaming > .wh-spot { opacity: 1; }
+
+/* inner wash */
+.wh-spot::before,
+.wh-spot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.wh-spot::before {
+  background:
+    radial-gradient(260px circle at var(--wx, 50%) var(--wy, 50%),
+      color-mix(in srgb, var(--wh-acc) 16%, transparent), transparent 70%);
+}
+/* border ring — masked down to the 1.5px edge */
+.wh-spot::after {
+  padding: 1.5px;
+  background:
+    radial-gradient(180px circle at var(--wx, 50%) var(--wy, 50%),
+      var(--wh-acc-hi), color-mix(in srgb, var(--wh-acc) 50%, transparent) 30%, transparent 65%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* While a reply streams: a comet orbits the composer's edge, like an SVG
+   stroke-dashoffset loop — "I'm on it" without a spinner. */
+html.wh-on .chat-input-bar.wh-streaming > .wh-spot::after {
+  background: conic-gradient(from var(--wh-ang),
+    transparent 0 62%,
+    color-mix(in srgb, var(--wh-acc) 35%, transparent) 80%,
+    var(--wh-acc) 93%,
+    #fff 97%,
+    transparent 100%);
+  filter: drop-shadow(0 0 6px var(--wh-acc));
+  animation: wh-orbit 1.6s linear infinite;
+}
+html.wh-on .chat-input-bar.wh-streaming > .wh-spot::before {
+  background: radial-gradient(120% 140% at 50% 120%,
+    color-mix(in srgb, var(--wh-acc) 12%, transparent), transparent 60%);
+  animation: wh-breathe 2.4s ease-in-out infinite;
+}
+@keyframes wh-orbit { to { --wh-ang: 360deg; } }
+@keyframes wh-breathe { 50% { opacity: .45; } }
+
+/* ── Messages arrive with weight ────────────────────────────────────────── */
+html.wh-on .chat-history .msg.wh-enter-user {
+  transform-origin: 100% 100%;
+  animation: wh-user-in .62s var(--wh-spring-soft) .26s both !important;
+}
+@keyframes wh-user-in {
+  from { opacity: 0; translate: 0 16px; scale: .88; }
+  30%  { opacity: 1; }
+  to   { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+/* The reply materialises top-down, like a hologram resolving. */
+html.wh-on .chat-history .msg.wh-enter-ai {
+  animation: wh-ai-in .7s cubic-bezier(.16, 1, .3, 1) both !important;
+}
+@keyframes wh-ai-in {
+  from { opacity: 0; translate: 0 8px; clip-path: inset(0 0 100% 0 round 14px); filter: blur(4px) brightness(1.6); }
+  60%  { filter: blur(0) brightness(1.15); }
+  to   { opacity: 1; translate: 0 0; clip-path: inset(0 0 0 0 round 14px); filter: none; }
+}
+
+/* Reply finished: one bright sweep across the bubble. */
+.wh-sweep {
+  position: fixed;
+  pointer-events: none;
+  z-index: 40;
+  background: linear-gradient(105deg,
+    transparent 38%,
+    color-mix(in srgb, var(--wh-acc) 22%, transparent) 47%,
+    color-mix(in srgb, #fff 26%, transparent) 50%,
+    color-mix(in srgb, var(--wh-acc) 22%, transparent) 53%,
+    transparent 62%) no-repeat;
+  background-size: 260% 100%;
+  mix-blend-mode: screen;
+  animation: wh-sweep 1.05s cubic-bezier(.4, 0, .2, 1) forwards;
+}
+@keyframes wh-sweep {
+  from { background-position: 120% 0; opacity: 1; }
+  80%  { opacity: 1; }
+  to   { background-position: -30% 0; opacity: 0; }
+}
+
+/* ── Cursor-tracking glint on hovered bubbles ───────────────────────────── */
+.wh-glint {
+  position: fixed;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0;
+  transition: opacity .35s ease;
+  background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in srgb, var(--wh-acc) 15%, transparent), transparent 70%);
+  mix-blend-mode: screen;
+}
+.wh-glint::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in srgb, var(--wh-acc) 60%, #fff), color-mix(in srgb, var(--wh-acc) 40%, transparent) 35%, transparent 70%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+html.wh-on .wh-glint.on { opacity: 1; }
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+/* Spring-driven translate/scale are written inline by whimsy.js; this keeps
+   the compositor ready for them on the controls that use them. */
+html.wh-on :is(.send-btn, .input-icon-btn, .voice-mode-fab, .vx-dock-btn) { will-change: translate, scale; }
+
+/* A copy / toggle confirmation pops on a bouncy spring. */
+html.wh-on .wh-pop { animation: wh-pop .55s var(--wh-spring); }
+@keyframes wh-pop { from { scale: .72; } to { scale: 1; } }
+
+/* The voice launcher's inner rings are its "eyes": whimsy.js slides them
+   toward the cursor. Keep their motion in SVG user units. */
+.voice-mode-fab .vx-fab-orb :is(circle, path) { transform-box: view-box; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADVANCED VOICE MODE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The orb leans toward the cursor; its label floats on a nearer plane. */
+html.wh-on .vx #vx-canvas { will-change: transform; }
+html.wh-on .vx .vx-orb-label { will-change: translate; }
+
+/* State flash — a soft halo behind the orb in the new state colour. */
+.wh-halo {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(circle,
+    rgba(var(--vx-r, 80), var(--vx-g, 200), var(--vx-b, 255), .32) 0%,
+    rgba(var(--vx-r, 80), var(--vx-g, 200), var(--vx-b, 255), 0) 62%);
+  animation: wh-halo .9s cubic-bezier(.16, 1, .3, 1) forwards;
+}
+@keyframes wh-halo {
+  from { opacity: 0; scale: .7; }
+  25%  { opacity: 1; }
+  to   { opacity: 0; scale: 1.35; }
+}
+
+/* Errors: the orb flinches. */
+html.wh-on .vx-orb-wrap.wh-shake { animation: wh-shake .48s cubic-bezier(.36, .07, .19, .97) both !important; }
+@keyframes wh-shake {
+  10%, 90% { translate: -1px 0; }
+  20%, 80% { translate: 3px 0; }
+  30%, 50%, 70% { translate: -6px 0; }
+  40%, 60% { translate: 6px 0; }
+}
+
+/* Forged message cards and chat-feed rows land on a spring. */
+html.wh-on .vx .vx-card.wh-land { animation: wh-card-land .7s var(--wh-spring-soft) both !important; }
+@keyframes wh-card-land {
+  from { opacity: 0; translate: 0 22px; scale: .9; }
+  to   { opacity: 1; translate: 0 0; scale: 1; }
+}
+html.wh-on .vx .vx-cmsg.wh-land { animation: wh-row-land .55s var(--wh-spring-soft) both; }
+@keyframes wh-row-land {
+  from { opacity: 0; translate: -14px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+/* the row that just received a comet glows briefly */
+html.wh-on .vx .wh-hit { animation: wh-hit .9s ease-out; }
+@keyframes wh-hit {
+  from { box-shadow: 0 0 0 1px rgba(var(--vx-r, 80), var(--vx-g, 200), var(--vx-b, 255), .7), 0 0 22px rgba(var(--vx-r, 80), var(--vx-g, 200), var(--vx-b, 255), .35); }
+  to   { box-shadow: 0 0 0 1px transparent, 0 0 0 transparent; }
+}
+
+/* ── Accessibility ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .wh-fx, .wh-halo, .wh-sweep { display: none !important; }
+  .chat-input-bar.wh-streaming > .wh-spot::after { animation: none !important; }
+}
+@media (forced-colors: active) {
+  .wh-fx, .wh-spot, .wh-glint, .wh-sweep, .wh-halo { display: none !important; }
+}
