@@ -435,6 +435,76 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   5. CONTRAST FLOOR (Run 18 · whole-app audit)
+   A scripted sweep (every text node + placeholder, every tool window and
+   settings tab, 1440 + 390) found the remaining sub-AA text was all "dim by
+   opacity": base rules fade secondary text to 30–60 % of --fg, which on the
+   jarvis canvas lands at 1.5–4.3 : 1. Jarvis has real tones for that job,
+   so here secondary text gets --jv-text-faint (5.7 : 1 on void, ≥ 5 : 1 on
+   panels) at full opacity. Inline `style="opacity:…"` from markup/JS needs
+   !important. Not touched on purpose: cards dimmed because their feature
+   is OFF (e.g. Reminders → AI Synthesis) and reset buttons dimmed while
+   there is nothing to reset — inactive UI is exempt and the dim carries
+   meaning.
+   ─────────────────────────────────────────────────────────────────────────── */
+/* Placeholders — Chrome's default #757575 (4.3 : 1) and the composer's
+   32 % ghost (2.5 : 1). Transparent placeholders (calendar title/quick-add
+   draw their own hint) are left alone. */
+:root[data-odx-theme="jarvis"] :is(input, textarea):not(.cal-hero-title, .cal-quickadd-input)::placeholder,
+:root[data-odx-theme="jarvis"] .chat-input-bar textarea#message::placeholder {
+  color: var(--jv-text-faint);
+  opacity: 1;
+}
+
+/* Counters ("0", "0 memories", "0 photos") — inline opacity .6 + #888,
+   and the Brain heading's at 7.2px. Mono data, never below 10px. */
+:root[data-odx-theme="jarvis"] .memory-count {
+  opacity: 1 !important;
+  color: var(--jv-text-faint);
+  font-family: var(--jv-mono);
+  font-variant-numeric: tabular-nums;
+}
+:root[data-odx-theme="jarvis"] #memory-count-h2 { font-size: 10px !important; letter-spacing: 0.06em; }
+:root[data-odx-theme="jarvis"] .memory-tab.active .memory-count { color: var(--jv-text-dim); }
+
+/* Empty / loading states and hints */
+:root[data-odx-theme="jarvis"] :is(.memory-empty, .gallery-empty),
+:root[data-odx-theme="jarvis"] #tasks-list > div[style*="opacity"],
+:root[data-odx-theme="jarvis"] :is(.hwfit-loading, .hwfit-loading > div),
+:root[data-odx-theme="jarvis"] #research-no-past-hint,
+:root[data-odx-theme="jarvis"] [data-settings-panel="shortcuts"] p[style*="opacity"],
+:root[data-odx-theme="jarvis"] :is(#integrations-list, #unified-integrations-list) > div[style*="opacity"] {
+  opacity: 1 !important;
+  color: var(--jv-text-faint) !important;
+}
+:root[data-odx-theme="jarvis"] .tasks-clock { opacity: 1; color: var(--jv-text-faint); }
+
+/* Micro-labels that faded by opacity → the jarvis label tone */
+:root[data-odx-theme="jarvis"] :is(.compare-section-label, .research-setting-label, .shortcut-category, .adm-ep-section-head) {
+  opacity: 1;
+  color: var(--jv-text-faint);
+}
+:root[data-odx-theme="jarvis"] .adm-section-toggle { opacity: 1; }
+:root[data-odx-theme="jarvis"] .vis-hint { color: var(--jv-text-faint); }
+:root[data-odx-theme="jarvis"] .admin-card h2 > span[style*="opacity"] { opacity: 1 !important; color: var(--jv-text-faint); }
+
+/* Small controls whose resting state was a ghost */
+:root[data-odx-theme="jarvis"] .goal-new-btn kbd { opacity: 1; color: var(--jv-text-faint); font-family: var(--jv-mono); }
+:root[data-odx-theme="jarvis"] .chat-input-bar .mode-toggle-btn:not(.active) { color: var(--jv-text-dim); }
+:root[data-odx-theme="jarvis"] .chat-input-bar .mode-toggle-btn:not(.active):hover { color: var(--jv-text); }
+:root[data-odx-theme="jarvis"] .hwfit-help-chip { color: var(--jv-text-dim); }
+:root[data-odx-theme="jarvis"] .modal-header .theme-opacity-toggle { color: var(--jv-text-dim); opacity: 1; }
+/* Compare's off-state toggles (Shuffle, Blind, Save…) and unselected mode
+   tabs sat at 35 % — read as disabled. Off = dim text on a hairline; on keeps its colour + rail. */
+:root[data-odx-theme="jarvis"] :is(.compare-blind-toggle, .compare-save-toggle, .compare-dice-toggle, .compare-reset-toggle, .compare-mode-tab):not(.active) {
+  opacity: 1;
+  color: var(--jv-text-faint);
+}
+:root[data-odx-theme="jarvis"] :is(.compare-blind-toggle, .compare-save-toggle, .compare-dice-toggle, .compare-reset-toggle, .compare-mode-tab):not(.active):hover {
+  color: var(--jv-text);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
    3. ACCESSIBILITY GATES
    ─────────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

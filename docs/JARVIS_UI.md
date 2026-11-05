@@ -59,7 +59,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
 13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · ✅ part 6 voice overlay controls
-14. Whole-app contrast / reduced-motion audit
+14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · part 2 chat content + voice overlay
 
 ## Progress log
 
@@ -700,3 +700,47 @@ with a scripted hit-size metric over every visible control in `#vx-root`:
 **Next:** whole-app contrast / reduced-motion audit (jarvis): scripted
 AA check of text tokens across every view, then every animation under
 `prefers-reduced-motion`.
+
+### Run 18 — 2026-11-05 · Whole-app audit, part 1: contrast floor + reduced motion
+`static/css/jarvis.css` §5 "Contrast floor" (jarvis-scoped, before the
+accessibility gates). Method: a scripted WCAG check over every visible
+text node and every empty input's `::placeholder` — foreground composited
+with the ancestor opacity chain over the composited ancestor backgrounds,
+hit-tested with `elementFromPoint` so covered text is skipped — on the
+home screen, all 11 sidebar tool windows and all 9 settings tabs, at
+1440×900 and 390×844 touch.
+- **Finding:** every sub-AA string was "dim by opacity" — base rules fade
+  secondary text to 30–60 % of `--fg` (1.5–4.3 : 1 on the jarvis canvas).
+  Now they use `--jv-text-faint` (5.7 : 1 on void, ≥ 5 : 1 on panels) at
+  full opacity; inline `style="opacity:…"` needed `!important`.
+- **Fixed (jarvis 1440: 31 failures → 6, all six intentional):**
+  placeholders everywhere (Chrome's #757575 = 4.3 : 1; composer ghost
+  2.5 : 1) except calendar's transparent ones; `.memory-count` counters
+  (2.6 : 1, Brain's heading counter was 7.2px → 10px mono); empty/loading
+  states (Brain, Gallery, Tasks inline, Cookbook, Integrations); Tasks
+  clock (1.96 : 1); Research past-hint; micro-labels (Compare "Mode:",
+  Research "Rounds", shortcut categories, Add-Models Local/API heads,
+  "(Endpoints)", Appearance `.vis-hint`); `/goal` kbd; composer's idle
+  AGENT/CHAT half; Cookbook `?` chips; window "Peek" toggle; Compare's
+  off toggles and unselected type tabs (35 % read as disabled; now dim
+  text on a hairline, the selected one keeps its colour + rail).
+- **Left on purpose:** cards dimmed because their feature is OFF
+  (Reminders → AI Synthesis) and reset keys dimmed while there is nothing
+  to reset (Appearance "Reset All", Shortcuts ↩) — inactive UI is exempt
+  and the dim carries state. Research "Start" was a false positive
+  (dark text on a cyan gradient the probe can't composite).
+- **Reduced motion:** a `document.getAnimations()` probe over the same
+  views found 0 running infinite / >400 ms animations under
+  `prefers-reduced-motion: reduce` (9 without it, e.g. aurora drift, FAB
+  sweep) — already compliant, nothing to change.
+- Verified headless (mocked `/api/*`, nonce injected): jarvis before/after
+  at 1440 + 390 (Tasks, Brain, Compare, Research, Settings → Shortcuts) —
+  no layout shift; light 1440 + 390 (Compare, Brain, Settings) identical
+  (≤ 8/255 per-channel noise only). No console errors beyond aborted
+  external fonts. CSS/JS tests 26/26 pass.
+
+**Next:** audit part 2 — the same contrast probe inside chat content
+(seeded message bubbles, tool/agent cards, code blocks, edit summaries)
+and the voice overlay, then gradient-clipped headings (the probe skips
+`background-clip: text`).
+

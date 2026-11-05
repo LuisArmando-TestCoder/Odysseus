@@ -171,8 +171,14 @@ phones, slash usage hints no longer clip, and the toast is a jarvis glass
 strip. Mobile part 6 made the voice overlay touchable on phones (every
 key, toggle and dock button 44px; the dock no longer squeezes) and fixed
 the core's tap target in every theme (a global button height had left only
-a 32px strip of the orb clickable). Next: a whole-app contrast /
-reduced-motion audit. Spec + log: `docs/JARVIS_UI.md`.
+a 32px strip of the orb clickable). The whole-app contrast audit (run 18)
+swept every text node and placeholder across all tool windows and settings
+tabs at 1440 and 390: sub-AA secondary text (counters, empty states,
+placeholders, micro-labels, Compare's off toggles) now uses the jarvis
+faint tone at full opacity (≥ 5 : 1); under reduced motion no animation
+runs in any view. Next: the same audit inside chat content (bubbles,
+tool cards, agent activity) and the voice overlay. Spec + log:
+`docs/JARVIS_UI.md`.
 
 ## High Priority
 
