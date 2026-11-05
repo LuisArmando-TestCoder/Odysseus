@@ -43,7 +43,7 @@ const make = (extra = {}) => createWakeListener({
   Recognition: FakeRec, now: () => T,
   setTimer: (fn, ms) => { const t = { fn, at: T + ms }; timers.push(t); return t; },
   clearTimer: (t) => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); },
-  onWake: () => wakes++, onState: (s) => states.push(s), ...extra,
+  onWake: () => wakes++, onState: (s) => states.push(s), log: () => {}, ...extra,
 });
 """
 
@@ -152,3 +152,61 @@ def test_disable_and_unsupported():
     const u = createWakeListener({ Recognition: null }); u.setEnabled(true);
     console.log(JSON.stringify([...off, u.state, u.supported]));""")
     assert out == ["off", True, "unsupported", False]
+
+
+def test_fuzzy_misheard_and_spanish_forms():
+    out = _run("""
+    console.log(JSON.stringify([
+      hasWake('advance boys mode'),
+      hasWake('advanced voice mood'),
+      hasWake('advanzed voice mode'),
+      hasWake('Advanced Voice Mod.'),
+      hasWake('activa el modo de voz avanzado'),
+      hasWake('modo voz avanzada'),
+      hasWake('advanced users mode'),
+      hasWake('add voice mode'),
+      hasWake('advanced voice is great'),
+    ]));""")
+    assert out == [True, True, True, True, True, True, False, False, False]
+
+
+def test_recogniser_defaults_to_english_and_reports_errors():
+    out = _run("""
+    const w = make({ log: () => {} }); w.setEnabled(true);
+    const lang = live().lang;
+    for (let i = 0; i < 3; i++) { const r = live(); r.onerror({ error: 'network' }); r.started = false; r.onend(); tick(10000); }
+    const errState = w.state;
+    tick(2000); live().say('hello');        // stream healthy again
+    console.log(JSON.stringify([lang, errState, w.state, w.diag.lastError, w.diag.heard.at(-1)]));""")
+    assert out == ["en-US", "error", "listening", "network", "hello"]
+
+
+def test_switches_to_server_stt_after_network_errors():
+    out = _run("""
+    class ServerRec extends FakeRec { constructor() { super(); this.server = true; } }
+    const w = make({ Fallback: ServerRec }); w.setEnabled(true);
+    const first = [w.engine, !!live().server];
+    live().onerror({ error: 'network' }); const r1 = live(); r1.started = false; r1.onend(); tick(1000);
+    const afterOne = w.engine;                 // one blip: keep trying the browser
+    live().onerror({ error: 'network' });     // second in a row → switch
+    const r = live();
+    tick(2000); r.say('advanced voice mode');
+    console.log(JSON.stringify([...first, afterOne, w.engine, !!r.server, wakes, w.state]));""")
+    assert out == ["browser", False, "browser", "server", True, 1, "paused"]
+
+
+def test_brave_style_service_not_allowed_switches_immediately():
+    out = _run("""
+    class ServerRec extends FakeRec { constructor() { super(); this.server = true; } }
+    const w = make({ Fallback: ServerRec }); w.setEnabled(true);
+    live().onerror({ error: 'service-not-allowed' });
+    console.log(JSON.stringify([w.engine, !!live()?.server, w.state]));""")
+    assert out == ["server", True, "listening"]
+
+
+def test_no_browser_engine_uses_server_directly():
+    out = _run("""
+    class ServerRec extends FakeRec { constructor() { super(); this.server = true; } }
+    const w = make({ Recognition: null, Fallback: ServerRec }); w.setEnabled(true);
+    console.log(JSON.stringify([w.engine, !!live()?.server, w.state]));""")
+    assert out == ["server", True, "listening"]

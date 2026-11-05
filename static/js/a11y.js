@@ -18,7 +18,7 @@
   'use strict';
 
   // Click-as-button rows we want reachable by keyboard.
-  var ROW_SELECTOR = ['#sidebar .list-item', '#user-bar-profile'].join(',');
+  var ROW_SELECTOR = ['#sidebar .list-item', '#user-bar-profile', '#sidebar-brand-btn', '#email-section-title'].join(',');
 
   // Native interactive descendants. If a row contains one of these we must
   // NOT give the row role="button" — a button inside a button is invalid

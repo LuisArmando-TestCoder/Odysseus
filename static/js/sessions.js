@@ -267,6 +267,8 @@ function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
 
   sub.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', () => { sub.style.display = 'none'; });
+  // Lets sidebarA11y.js open/close the submenu from the keyboard.
+  moveItem._submenu = sub;
   document.body.appendChild(sub);
 
   return moveItem;
@@ -276,7 +278,7 @@ function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
 function createSessionItem(s) {
   const div = document.createElement('div');
   div.className = 'list-item session-item';
-  div.setAttribute('role', 'option');
+  div.setAttribute('role', 'treeitem');
   div.setAttribute('tabindex', '-1');
   div.setAttribute('data-session-id', s.id);
   // Special-session sentinel — true for the legacy OpenClaw row, which
@@ -372,6 +374,7 @@ function createSessionItem(s) {
       input.type = 'text';
       input.value = s.name || '';
       input.className = 'session-rename-input';
+      input.setAttribute('aria-label', 'Chat name');
       span.replaceWith(input);
       input.focus();
       input.select();
@@ -459,6 +462,10 @@ function createSessionItem(s) {
   menuBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
   menuBtn.title = 'Session actions';
   menuBtn.className = 'hamburger session-menu-btn';
+  menuBtn.type = 'button';
+  menuBtn.tabIndex = -1;
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.setAttribute('aria-expanded', 'false');
 
   // Create dropdown menu
   const dropdown = document.createElement('div');
@@ -649,6 +656,7 @@ function createSessionItem(s) {
     input.type = 'text';
     input.value = s.name || '';
     input.className = 'session-rename-input';
+    input.setAttribute('aria-label', 'Chat name');
     span.replaceWith(input);
     input.focus();
     input.select();
@@ -2350,23 +2358,13 @@ export function setCurrentSessionId(id) {
 
 // Session list keyboard navigation: arrows to move, Delete to delete
 async function _onSessionListKeydown(e) {
+  // Typing in the inline rename box must never reach the row shortcuts —
+  // Backspace there used to pop the "Delete this session?" confirm.
+  if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
   const item = e.target.closest('.list-item[data-session-id]');
   if (!item) return;
-
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    // Get all visible session items across all containers
-    const allItems = Array.from(document.querySelectorAll('#session-list .list-item[data-session-id]'));
-    const idx = allItems.indexOf(item);
-    if (idx < 0) return;
-    const next = e.key === 'ArrowDown' ? allItems[idx + 1] : allItems[idx - 1];
-    if (next) {
-      next.focus();
-      const sid = next.dataset.sessionId;
-      if (sid) selectSession(sid);
-    }
-    return;
-  }
+  // Arrow / Home / End / type-ahead navigation lives in sidebarA11y.js
+  // (WAI-ARIA tree pattern): arrows move focus only, Enter opens the chat.
 
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();

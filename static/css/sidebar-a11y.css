@@ -1,0 +1,361 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Sidebar — accessible HUD layer
+   Loaded LAST so it can sit on top of sidebar-hyper / jarvis / tron / mobile.
+   Pairs with static/js/sidebarA11y.js, which supplies the ARIA state these
+   selectors key off ([aria-expanded], [aria-selected], [role=menuitem] …).
+
+   Design intent — "targeting reticle":
+     • Keyboard focus is drawn as HUD corner brackets that lock onto the
+       element, plus a crisp 2px ring for guaranteed visibility (WCAG 2.4.11/13).
+     • The selected chat carries a luminous rail; focus and selection never
+       look alike, so you always know "where I am" vs "what's open".
+     • Micro-labels are lifted to ≥ 4.5:1, hit targets to ≥ 24px (2.5.8).
+     • Hover-only controls also reveal on focus, on touch, and on the open chat.
+     • Honors reduced motion, increased contrast and Windows forced colors.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --sb-ring: var(--accent-primary, var(--red, #5c9ec7));
+  --sb-ring-halo: color-mix(in srgb, var(--sb-ring) 28%, transparent);
+  --sb-ink: var(--fg);
+  --sb-ink-2: color-mix(in srgb, var(--fg) 82%, var(--bg, #000));
+  --sb-ink-3: color-mix(in srgb, var(--fg) 70%, var(--bg, #000));
+  --sb-hair: color-mix(in srgb, var(--fg) 10%, transparent);
+  --sb-ease: cubic-bezier(.2, .8, .2, 1);
+  --sb-fast: 140ms;
+  --sb-base: 220ms;
+  --sb-bracket: 7px;
+}
+
+/* ── Skip link ─────────────────────────────────────────────────────────── */
+.sb-skip-link {
+  position: fixed;
+  top: 10px; left: 10px;
+  z-index: 10000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--panel, #111);
+  color: var(--sb-ink);
+  border: 1px solid var(--sb-ring);
+  box-shadow: 0 0 0 4px var(--sb-ring-halo), 0 12px 32px rgba(0, 0, 0, .45);
+  font: 600 13px/1.2 var(--jv-ui, inherit);
+  letter-spacing: .02em;
+  text-decoration: none;
+  transform: translateY(-160%);
+  transition: transform var(--sb-base) var(--sb-ease);
+}
+.sb-skip-link:focus,
+.sb-skip-link:focus-visible { transform: translateY(0); outline: none; }
+
+/* ── Focus: reticle brackets + ring ───────────────────────────────────── */
+.sidebar :is(button, [role="button"], [role="link"], [role="treeitem"], [role="checkbox"], [role="separator"], select, input, a):focus-visible,
+.icon-rail .icon-rail-btn:focus-visible,
+.dropdown [role^="menuitem"]:focus-visible,
+.session-folder-submenu [role^="menuitem"]:focus-visible {
+  outline: 2px solid var(--sb-ring) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 5px var(--sb-ring-halo) !important;
+  position: relative;
+  z-index: 1;
+}
+
+/* Rows draw the ring inside so it never clips against the scroll edge. */
+.sidebar :is(.list-item, .session-folder-header, .session-show-more-btn):focus-visible,
+.dropdown [role^="menuitem"]:focus-visible {
+  outline-offset: -2px !important;
+  box-shadow: inset 0 0 0 4px var(--sb-ring-halo) !important;
+  border-radius: 6px;
+}
+
+/* Corner brackets lock on with a tiny "acquire" animation. */
+.sidebar :is([role="treeitem"], .list-item[role="button"], .list-item[role="link"])::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: 6px;
+  opacity: 0;
+  transform: scale(1.04);
+  background:
+    linear-gradient(var(--sb-ring), var(--sb-ring)) top left / var(--sb-bracket) 2px,
+    linear-gradient(var(--sb-ring), var(--sb-ring)) top left / 2px var(--sb-bracket),
+    linear-gradient(var(--sb-ring), var(--sb-ring)) top right / var(--sb-bracket) 2px,
+    linear-gradient(var(--sb-ring), var(--sb-ring)) top right / 2px var(--sb-bracket),
+    linear-gradient(var(--sb-ring), var(--sb-ring)) bottom left / var(--sb-bracket) 2px,
+    linear-gradient(var(--sb-ring), var(--sb-ring)) bottom left / 2px var(--sb-bracket),
+    linear-gradient(var(--sb-ring), var(--sb-ring)) bottom right / var(--sb-bracket) 2px,
+    linear-gradient(var(--sb-ring), var(--sb-ring)) bottom right / 2px var(--sb-bracket);
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px var(--sb-ring-halo));
+  transition: opacity var(--sb-fast) var(--sb-ease), transform var(--sb-base) var(--sb-ease);
+}
+.sidebar :is([role="treeitem"], .list-item[role="button"], .list-item[role="link"]):focus-visible::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.sidebar .session-folder-header { position: relative; }
+
+/* Mouse users don't get a stuck ring after clicking. */
+.sidebar :is(.list-item, .session-folder-header):focus:not(:focus-visible) { outline: none; }
+
+/* ── Selected chat ≠ focused chat ─────────────────────────────────────── */
+.sidebar .session-item[aria-selected="true"] {
+  color: var(--sb-ink) !important;
+  font-weight: 560;
+}
+.sidebar .session-item[aria-selected="true"] .session-star,
+.sidebar .session-item[aria-selected="true"] .provider-logo { opacity: .9 !important; }
+
+/* ── Rows: comfortable targets, legible ink ───────────────────────────── */
+.sidebar .list-item {
+  min-height: 32px;
+  color: var(--sb-ink-2);
+}
+.sidebar .list-item:hover { color: var(--sb-ink); }
+.sidebar #tools-section .list-item > svg,
+.sidebar .list-item > .sidebar-action-icon {
+  opacity: .78 !important;
+  transition: opacity var(--sb-fast) var(--sb-ease), transform var(--sb-base) var(--sb-ease);
+}
+.sidebar #tools-section .list-item:is(:hover, :focus-visible) > svg {
+  opacity: 1 !important;
+  transform: translateX(1px);
+}
+
+/* Section labels: still HUD micro-type, now ≥ 4.5:1 and a touch larger. */
+.sidebar .section-title {
+  color: var(--sb-ink-3) !important;
+  font-size: 10.5px !important;
+}
+.sidebar .section-title .section-icon { opacity: 1 !important; }
+
+/* Meta + cost badges were ~2.8:1; lift to readable. */
+.sidebar .session-cost,
+.sidebar .session-meta {
+  color: var(--sb-ink-3) !important;
+  font-size: 10px !important;
+}
+
+/* ── Hover-only controls also appear on focus, selection and touch ───── */
+.sidebar .list-item:is(:focus-visible, :focus-within, [aria-selected="true"]) .hamburger,
+.sidebar .list-item .hamburger[aria-expanded="true"] {
+  opacity: 1;
+  width: 24px;
+  min-width: 24px;
+  padding: 0 4px !important;
+}
+@media (hover: none) {
+  .sidebar .list-item .hamburger { opacity: .7; width: 32px; min-width: 32px; }
+}
+.sidebar .session-menu-btn {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+.sidebar .session-menu-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+#sessions-section .section-header-flex:focus-within .chats-manage-btn { opacity: 1; }
+.sidebar .session-folder-header:is(:hover, :focus-visible, :focus-within) .folder-delete-btn { opacity: .6; }
+
+/* ── Header icon buttons: 24px minimum target ─────────────────────────── */
+.sidebar .section-header-btn,
+.sidebar .list-item-plus-btn {
+  min-width: 24px !important;
+  min-height: 24px !important;
+  box-sizing: border-box;
+  border-radius: 6px;
+  opacity: .62;
+}
+.sidebar .section-header-btn:is(:hover, :focus-visible, [aria-expanded="true"]),
+.sidebar .list-item-plus-btn:is(:hover, :focus-visible) { opacity: 1; }
+.sidebar .section-header-btn[aria-expanded="true"] {
+  color: var(--sb-ring);
+  background: color-mix(in srgb, var(--sb-ring) 12%, transparent);
+}
+.sidebar .folder-delete-btn { min-width: 24px; min-height: 24px; border-radius: 6px; }
+.sidebar .user-bar-btn { min-width: 32px; min-height: 32px; }
+.sidebar .sidebar-hamburger { min-width: 32px; min-height: 32px; }
+
+/* ── Folder headers: real disclosure chevron + count pill ─────────────── */
+.sidebar .session-folder-header {
+  min-height: 30px;
+  color: var(--sb-ink-3);
+  border-radius: 6px;
+}
+.sidebar .session-folder-header[aria-expanded] .folder-toggle {
+  font-size: 0 !important;
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 14px;
+}
+.sidebar .session-folder-header[aria-expanded] .folder-toggle::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.75px solid currentColor;
+  border-bottom: 1.75px solid currentColor;
+  transform: translate(-1px, 0) rotate(-45deg);
+  transition: transform var(--sb-base) var(--sb-ease);
+}
+.sidebar .session-folder-header[aria-expanded="true"] .folder-toggle::before {
+  transform: translate(0, -1px) rotate(45deg);
+}
+.sidebar .session-folder-header .folder-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font: 600 10px/1.5 var(--sc-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  opacity: 1 !important;
+  color: var(--sb-ink-3);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--sb-hair);
+}
+.sidebar .session-folder-header:is(:hover, :focus-visible) .folder-count {
+  color: var(--sb-ink);
+  border-color: color-mix(in srgb, var(--sb-ring) 40%, transparent);
+}
+.sidebar .session-folder-header .folder-count ~ .folder-delete-btn { margin-left: 2px; }
+
+/* Tree guide line for nested chats — shows hierarchy without indentation noise. */
+.sidebar .session-folder-content {
+  margin-left: 11px;
+  padding-left: 6px !important;
+  border-left: 1px solid var(--sb-hair);
+}
+.sidebar .session-folder-content:has([aria-selected="true"]) {
+  border-left-color: color-mix(in srgb, var(--sb-ring) 45%, transparent);
+}
+
+/* ── Menus: focus is visible, danger is legible, radios show state ───── */
+.dropdown[role="menu"] [role^="menuitem"] {
+  min-height: 30px;
+  border-radius: 6px;
+  outline: none;
+}
+.dropdown[role="menu"] [role^="menuitem"]:focus-visible {
+  background: color-mix(in srgb, var(--sb-ring) 14%, transparent) !important;
+  color: var(--sb-ink) !important;
+}
+.dropdown[role="menu"] [role^="menuitem"][data-danger="1"]:focus-visible {
+  outline-color: var(--color-error, #ef4444) !important;
+  background: color-mix(in srgb, var(--color-error, #ef4444) 14%, transparent) !important;
+}
+.dropdown[role="menu"] [role="menuitemradio"][aria-checked="true"],
+.dropdown[role="menu"] [role="menuitemcheckbox"][aria-checked="true"] {
+  color: var(--sb-ink);
+  font-weight: 600;
+}
+.dropdown[role="menu"] [role^="menuitem"][aria-expanded="true"] {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+/* ── Icon rail: one tab stop, still crisp focus ───────────────────────── */
+.icon-rail .icon-rail-btn {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+/* ── Splitter: discoverable on focus ──────────────────────────────────── */
+.sidebar .sidebar-resize-handle[role="separator"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: linear-gradient(90deg, transparent 35%, var(--sb-ring) 35% 65%, transparent 65%);
+  opacity: 1;
+}
+
+/* ── Keyboard legend: appears only while navigating the tree by keys ─── */
+.sb-tree-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 6px 4px 2px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--sb-hair);
+  background: color-mix(in srgb, var(--panel, #111) 70%, transparent);
+  color: var(--sb-ink-3);
+  font: 500 10.5px/1.4 var(--jv-ui, inherit);
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding-block: 0;
+  border-width: 0;
+  transition: max-height var(--sb-base) var(--sb-ease), opacity var(--sb-base) var(--sb-ease),
+              padding var(--sb-base) var(--sb-ease);
+}
+#sessions-section:has(#session-list :focus-visible) .sb-tree-legend {
+  max-height: 80px;
+  opacity: 1;
+  padding-block: 7px;
+  border-width: 1px;
+}
+.sb-tree-legend kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  margin-right: 3px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+  border-bottom-width: 2px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--sb-ink);
+  font: 600 10px/1.5 var(--sc-mono, ui-monospace, monospace);
+  text-align: center;
+}
+
+/* ── Notification dots: shape, not just colour ────────────────────────── */
+.sidebar .sidebar-notif-dot[role="img"] {
+  outline: 2px solid color-mix(in srgb, var(--panel, #000) 85%, transparent);
+}
+
+/* ── Increased contrast: drop the holographic texture ─────────────────── */
+@media (prefers-contrast: more) {
+  .sidebar::before,
+  .sidebar::after { display: none !important; }
+  .sidebar {
+    background: var(--panel, #0b0b0b) !important;
+  }
+  .sidebar .list-item,
+  .sidebar .section-title,
+  .sidebar .session-folder-header,
+  .sidebar .session-cost,
+  .sidebar .session-meta { color: var(--fg) !important; }
+  .sidebar .session-item[aria-selected="true"] {
+    outline: 1px solid var(--fg);
+    outline-offset: -1px;
+  }
+}
+
+/* ── Windows High Contrast / forced colors ────────────────────────────── */
+@media (forced-colors: active) {
+  .sidebar::before,
+  .sidebar::after,
+  .sidebar [role="treeitem"]::after { display: none !important; }
+  .sidebar :is(button, [role="button"], [role="treeitem"], [role="checkbox"], [role="separator"]):focus-visible,
+  .icon-rail .icon-rail-btn:focus-visible,
+  .dropdown [role^="menuitem"]:focus-visible {
+    outline: 3px solid Highlight !important;
+    box-shadow: none !important;
+  }
+  .sidebar .session-item[aria-selected="true"] {
+    forced-color-adjust: none;
+    background: SelectedItem !important;
+    color: SelectedItemText !important;
+  }
+  .sidebar .sidebar-notif-dot { forced-color-adjust: none; background: Highlight !important; }
+  .sidebar .session-folder-header .folder-count { border-color: CanvasText; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .sb-skip-link,
+  .sb-tree-legend,
+  .sidebar [role="treeitem"]::after,
+  .sidebar .session-folder-header .folder-toggle::before { transition: none !important; }
+  .sidebar [role="treeitem"]::after { transform: none !important; }
+}

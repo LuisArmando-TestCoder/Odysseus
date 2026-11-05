@@ -22,6 +22,7 @@ import * as vectors from './voice_vectors.js';
 import streamRouter from './streamRouter.js';
 import wakeLock from './wakeLock.js';
 import { createWakeListener } from './voiceWake.js';
+import { makeServerRecognition } from './voiceWakeServer.js';
 import { createLedger } from './voice-delta.js';
 
 // Every sentence delivered to GPT-Live, spoken or silent (see voice-delta.js):
@@ -93,6 +94,8 @@ function _wakeIndicator(s) {
     fab.dataset.wake = s;
     fab.title = s === 'listening'
       ? 'Advanced Voice Mode — listening for “advanced voice mode”'
+      : s === 'error' ? 'Advanced Voice Mode — wake phrase not hearing (see console: __odyWake.diag)'
+      : s === 'denied' ? 'Advanced Voice Mode — wake phrase needs microphone permission'
       : 'Advanced Voice Mode';
   }
   const t = _root?.querySelector('[data-opt="wake"]')?.closest('.vx-toggle');
@@ -107,8 +110,20 @@ function _onWake() {
 
 function _initWake() {
   if (_wake) return;
-  _wake = createWakeListener({ onWake: _onWake, onState: _wakeIndicator });
-  window.__odyWake = _wake;   // console: __odyWake.state
+  // Recogniser language for the wake phrase: English by default (the phrase
+  // is English); override with localStorage['odysseus-wake-lang'] = 'es-CR'.
+  let lang = 'en-US';
+  try { lang = localStorage.getItem('odysseus-wake-lang') || lang; } catch (e) { /* ignore */ }
+  // Server STT fallback: used when Chrome's speech service is unreachable
+  // (error "network"), or always with localStorage['odysseus-wake-engine']='server'.
+  const Fallback = makeServerRecognition({ endpoint: _api('/api/stt/transcribe') });
+  let engine = '';
+  try { engine = localStorage.getItem('odysseus-wake-engine') || ''; } catch (e) { /* ignore */ }
+  _wake = createWakeListener({
+    onWake: _onWake, onState: _wakeIndicator, lang, Fallback,
+    ...(engine === 'server' ? { Recognition: Fallback, Fallback: null, engine: 'server' } : {}),
+  });
+  window.__odyWake = _wake;   // console: __odyWake.diag → state, lang, last heard, errors
   if (_active || _connecting) _wake.pause();
   _wake.setEnabled(!!_opts.wake);
   if (_opts.wake && !_wake.supported) console.info('[wake] Web Speech API unavailable — wake phrase disabled');

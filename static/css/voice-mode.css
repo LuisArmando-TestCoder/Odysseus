@@ -997,3 +997,15 @@ html.vx-open body > *:not(#vx-root):not(#styled-confirm-overlay):not(script):not
 @media (prefers-reduced-motion: reduce) {
   .voice-mode-fab[data-wake="listening"]::after { animation: none; opacity: .8; }
 }
+.voice-mode-fab[data-wake="error"]::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5c66;
+  box-shadow: 0 0 8px #ff5c66;
+  pointer-events: none;
+}
