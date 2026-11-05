@@ -191,5 +191,10 @@
   .vx-dock-btn.vx-primary { width: 56px; height: 56px; }
 }
 
+/* The core's tap target is the whole disc. style.css gives every button
+   height: 32px, which beat the base sheet's inset: 0 and left only a 32px
+   strip across the top of the orb clickable ("Tap the core" missed). */
+.vx .vx-orb-hit { width: 100%; height: 100%; min-height: 0; max-height: none; }
+
 /* The error counter must disappear at zero (base CSS overrode [hidden]) */
 .vx .vx-err-count[hidden] { display: none !important; }

@@ -58,7 +58,8 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 10. ✅ Cookbook / ✅ research / compare
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
-13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · part 6 voice overlay controls
+13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · ✅ part 6 voice overlay controls
+14. Whole-app contrast / reduced-motion audit
 
 ## Progress log
 
@@ -662,3 +663,40 @@ undo toast:
 **Next:** mobile pass part 6 — the voice overlay's controls at 390px
 (`voice-mode.css`/`voice-hyper.css`; another task is editing voice-mode
 locally, so coordinate), then a whole-app contrast / reduced-motion audit.
+
+### Run 17 — 2026-11-05 · Mobile pass, part 6: voice overlay controls
+`static/css/jarvis-mobile.css` §11 (jarvis, ≤768px + coarse pointer) and
+one all-theme bug fix in `static/css/voice-hyper.css`. `voice-mode.css` was
+left alone (another task has local edits there). Audit at 390×844 touch
+with a scripted hit-size metric over every visible control in `#vx-root`:
+- **The core was mostly not tappable (all themes).** `style.css` gives
+  every `button` `height: 32px`, which beat `.vx-orb-hit`'s `inset: 0`, so
+  only a 32px strip across the top of the orb started/ended a call — the
+  orb's centre hit the canvas. `.vx .vx-orb-hit` is now 100 % × 100 %
+  (invisible; verified with `elementFromPoint` at the orb's centre).
+- **44px on touch:** errors/close 38 → 44; scroll-to-bottom 34 → 44 (the
+  transcript one re-lifted to 128px so it clears the taller paste-box row);
+  Add context / Ask 26 → 44; Event log / Copy log 32 → 44; Memory "reset"
+  39×32 → 44 tall (pulled to the panel edge with a negative margin); error
+  pane copy/clear 44; dock toggles 17–20 → 44 tall.
+- **Dock no longer squeezes:** 386px of content in a 370px dock made Mute
+  and Send-now flex-shrink to 42/40px. Keys are `flex: 0 0 auto`, 44px
+  (primary 56px), gap 4px — fits with room at 390px.
+- **Toggle names kept:** upstream hides the toggle words with
+  `display: none` ≤900px, which also strips the checkbox's accessible name;
+  jarvis visually hides them instead.
+- Paste box 13 → 16px type on phones (no iOS focus-zoom).
+- Verified headless (mocked `/api/*`, nonce injected, reduced motion):
+  jarvis 390 touch sub-44 controls 15 → 0, no element past the viewport,
+  no horizontal overflow; jarvis 1440 unchanged (only the animated badge
+  dots differ); light 390 pixel-identical, light 1440 differs only inside
+  the animated orb shader. No console errors beyond aborted external
+  fonts. CSS/JS tests 41/41 pass, same as baseline.
+- Seen, not fixed: light/other themes keep the sub-44 voice controls on
+  phones (out of jarvis scope); the overlay's own rounded glass language
+  still differs from the square Tron panels — left as the voice mode's
+  identity.
+
+**Next:** whole-app contrast / reduced-motion audit (jarvis): scripted
+AA check of text tokens across every view, then every animation under
+`prefers-reduced-motion`.

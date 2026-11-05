@@ -168,8 +168,11 @@ Search and Add Models rows wrap instead of running off the card. Mobile
 part 5 made the chat overlays touchable: message actions, the ··· menu,
 slash-command rows, the model picker and the undo toast all hit 44px on
 phones, slash usage hints no longer clip, and the toast is a jarvis glass
-strip. Next: the voice overlay's controls at 390px, then a whole-app
-contrast/reduced-motion audit. Spec + log: `docs/JARVIS_UI.md`.
+strip. Mobile part 6 made the voice overlay touchable on phones (every
+key, toggle and dock button 44px; the dock no longer squeezes) and fixed
+the core's tap target in every theme (a global button height had left only
+a 32px strip of the orb clickable). Next: a whole-app contrast /
+reduced-motion audit. Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

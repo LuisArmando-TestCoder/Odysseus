@@ -438,6 +438,48 @@
   :root[data-odx-theme="jarvis"] #toast:has(> button) { padding-block: 0; padding-right: 0; }
 }
 
+/* ── 11 · Voice overlay (#vx-root) on phones ─────────────────────────────
+   Audited at 390×844 touch (Run 17). The overlay keeps its own "glass
+   instrument" look (voice-mode.css + voice-hyper.css); this only makes its
+   controls touchable. Found:
+   · top keys (errors, close) 38px; transcript/chat "scroll to bottom" 34px;
+   · Add context / Ask 26px tall, the paste box at 13px type (iOS zooms
+     the page on focus under 16px);
+   · Event log / Copy log and Memory "reset" pinned to 32px by the global
+     button height; dock toggles were 17–20px tall labels;
+   · the dock was 386px of content in a 370px dock, so Mute and Send-now
+     flex-shrank to 42/40px wide. */
+@media (max-width: 768px) and (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] .vx .vx-icon-btn { width: 44px; height: 44px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-err-clear { min-height: 44px; padding: 0 12px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-scroll-down { width: 44px; height: 44px; font-size: 15px; }
+  /* Lifted above the paste box: 8 + 40 + 6 + 44 + 12 = 110 → +18 for the taller key row. */
+  :root[data-odx-theme="jarvis"] .vx .vx-scroll-down[data-scroll-down="vx-transcript"] { bottom: 128px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-inject textarea { font-size: 16px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-inject-acts button { height: 44px; padding: 0 16px; font-size: 13px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-vec-log-btn { height: 44px; padding: 0 16px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-link-btn {
+    height: 44px; min-width: 44px; padding: 0 10px; margin-right: -10px;  /* text stays on the panel edge */
+  }
+  /* Dock: every key 44px and nothing shrinks. Toggles are switch + icon,
+     each a 44px-tall hit row. Upstream hides their words with display:none
+     ≤900px, which also strips the checkbox's accessible name — here they
+     are visually hidden instead, so screen readers still hear "Review",
+     "Speak results", "Wake phrase". */
+  :root[data-odx-theme="jarvis"] .vx .vx-dock { gap: 4px; padding: 6px 8px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-dock > * { flex: 0 0 auto; }
+  :root[data-odx-theme="jarvis"] .vx .vx-dock-btn { width: 44px; height: 44px; border-radius: 14px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-dock-btn.vx-primary { width: 56px; height: 56px; border-radius: 18px; }
+  :root[data-odx-theme="jarvis"] .vx .vx-toggle {
+    position: relative; height: 44px; min-width: 44px; padding: 0 4px; gap: 5px;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-odx-theme="jarvis"] .vx .vx-toggle em {
+    display: inline; position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
 /* ── Accessibility gates ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-odx-theme="jarvis"] #sidebar-backdrop { transition: none !important; }
