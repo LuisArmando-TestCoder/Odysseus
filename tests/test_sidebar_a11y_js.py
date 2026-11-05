@@ -96,3 +96,13 @@ def test_index_wires_the_sidebar_a11y_layer():
     assert 'id="session-list" role="tree"' in html
     assert 'aria-describedby="sb-tree-help"' in html
     assert 'class="sb-skip-link" href="#message"' in html
+
+
+def test_hud_layer_loads_between_theme_and_a11y_and_fixes_goal_card():
+    html = (_REPO / "static" / "index.html").read_text(encoding="utf-8")
+    hud = html.index('/static/css/sidebar-hud.css')
+    assert html.index('/static/css/jarvis-mobile.css') < hud < html.index('/static/css/sidebar-a11y.css')
+    css = (_REPO / "static" / "css" / "sidebar-hud.css").read_text(encoding="utf-8")
+    # The goal card must not shrink inside the scrolling flex column.
+    assert ".sidebar-inner > .goal-card" in css and "flex: 0 0 auto" in css
+    assert (_REPO / "static" / "fonts" / "ChakraPetch-SemiBold.woff2").exists()

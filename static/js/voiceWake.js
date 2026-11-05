@@ -128,6 +128,8 @@ export function createWakeListener(opts = {}) {
     return true;
   }
   const noteHeard = (t) => { diag.heard.push(t); if (diag.heard.length > 8) diag.heard.shift(); };
+  const emitHeard = (t, fin) => { try { opts.onHeard?.(t, fin); } catch (e) { /* ignore */ } };
+  const emitActivity = (ph) => { try { opts.onActivity?.(ph); } catch (e) { /* ignore */ } };
 
   const setState = (s) => {
     if (state === s) return;
@@ -140,7 +142,7 @@ export function createWakeListener(opts = {}) {
     if (restartT) { clearTimer(restartT); restartT = null; }
     const r = rec; rec = null;
     if (r) {
-      r.onresult = r.onerror = r.onend = null;
+      r.onresult = r.onerror = r.onend = r.onspeechstart = r.onspeechend = r.ontranscribing = null;
       try { r.abort(); } catch (e) { try { r.stop(); } catch (e2) { /* ignore */ } }
     }
   }
@@ -184,7 +186,7 @@ export function createWakeListener(opts = {}) {
       backoff = BACKOFF_MIN_MS;            // healthy stream
       errStreak = 0; svcErrors = 0;
       if (state !== 'listening') setState('listening');
-      if (now() - armedAt < RESUME_GRACE_MS) return;
+      const grace = now() - armedAt < RESUME_GRACE_MS;
       let interim = '';
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const res = ev.results[i];
@@ -192,11 +194,14 @@ export function createWakeListener(opts = {}) {
         if (res.isFinal) {
           noteHeard(t.trim());
           if (opts.verbose !== false) log('heard:', JSON.stringify(t.trim()));
-          if (win.commit(t)) { fire(); return; }
+          emitHeard(t, true);
+          if (!grace && win.commit(t)) { fire(); return; }
         }
         else interim += ' ' + t;
       }
-      if (interim && win.peek(interim)) fire();
+      if (interim) emitHeard(interim, false);
+      emitActivity(interim ? 'speech' : 'idle');
+      if (!grace && interim && win.peek(interim)) fire();
     };
     r.onerror = (ev) => {
       if (my !== gen) return;
@@ -215,8 +220,12 @@ export function createWakeListener(opts = {}) {
       // show it — after a few in a row the indicator says it isn't hearing.
       if (++errStreak >= 3) setState('error');
     };
+    r.onspeechstart = () => { if (my === gen) emitActivity('speech'); };
+    r.onspeechend = () => { if (my === gen) emitActivity('idle'); };
+    r.ontranscribing = () => { if (my === gen) emitActivity('transcribing'); };
     r.onend = () => {
       if (my !== gen) return;
+      emitActivity('idle');
       rec = null;
       scheduleRestart();                    // Chrome ends sessions on its own; keep it constant
     };

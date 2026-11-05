@@ -23,6 +23,7 @@ import streamRouter from './streamRouter.js';
 import wakeLock from './wakeLock.js';
 import { createWakeListener } from './voiceWake.js';
 import { makeServerRecognition } from './voiceWakeServer.js';
+import { createWakeTranscript } from './wakeTranscript.js';
 import { createLedger } from './voice-delta.js';
 
 // Every sentence delivered to GPT-Live, spoken or silent (see voice-delta.js):
@@ -87,8 +88,10 @@ let _opts = {
 // for "advanced voice mode" anywhere in it. On a hit it shuts itself down and
 // opens voice mode; when voice mode ends it starts listening again.
 let _wake = null;
+let _wt = null;               // ambient transcript strip beside the launcher
 
 function _wakeIndicator(s) {
+  _wt?.setState(s, _wake?.engine);
   const fab = document.getElementById('voice-mode-fab');
   if (fab) {
     fab.dataset.wake = s;
@@ -103,6 +106,7 @@ function _wakeIndicator(s) {
 }
 
 function _onWake() {
+  _wt?.wake();
   console.info('[wake] heard "advanced voice mode" — activating');
   openVoiceMode({ autostart: true });
   _systemLine('Wake phrase heard — “advanced voice mode”.', 'info');
@@ -119,11 +123,15 @@ function _initWake() {
   const Fallback = makeServerRecognition({ endpoint: _api('/api/stt/transcribe') });
   let engine = '';
   try { engine = localStorage.getItem('odysseus-wake-engine') || ''; } catch (e) { /* ignore */ }
+  try { _wt = createWakeTranscript(); } catch (e) { console.warn('[wake] transcript strip unavailable', e); }
   _wake = createWakeListener({
     onWake: _onWake, onState: _wakeIndicator, lang, Fallback,
+    onHeard: (text, final) => _wt?.heard(text, final),
+    onActivity: (phase) => _wt?.activity(phase),
     ...(engine === 'server' ? { Recognition: Fallback, Fallback: null, engine: 'server' } : {}),
   });
-  window.__odyWake = _wake;   // console: __odyWake.diag → state, lang, last heard, errors
+  window.__odyWake = _wake;
+  window.__odyNotice = (key, opts) => _notify(key, opts);   // console: preview a HUD notice   // console: __odyWake.diag → state, lang, last heard, errors
   if (_active || _connecting) _wake.pause();
   _wake.setEnabled(!!_opts.wake);
   if (_opts.wake && !_wake.supported) console.info('[wake] Web Speech API unavailable — wake phrase disabled');
@@ -205,6 +213,11 @@ let _everWatched = false;
 // ── Proactivity: ALFRED's promises become real chat requests ──────────────
 let _lastForgeAt = 0;        // last time the pipeline forged a request
 let _lastUserFinalAt = 0;    // last finished user turn (its forge may still be on the way)
+let _lastUserTextAt = 0;      // last transcript text from the user (delta or final)
+let _vadStartAt = 0, _noWordsT = 0;   // "heard you, but no words came through" watchdog
+let _unsentText = '';         // user speech the pipeline has not (yet) turned into a send
+let _pipeSlowT = 0;           // pipeline taking too long to decide
+let _progSig = '', _progAt = 0, _stallLevel = 0;   // chat output stall watchdog
 
 // ── Render (WebGL) ──────────────────────────────────────────────────────────
 let _canvas = null, _gl = null, _raf = 0, _prog = null, _tex = null;
@@ -981,6 +994,213 @@ function _clearErrors() {
   _toggleErrors(false);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  NOTICES — never leave the user guessing
+// ═══════════════════════════════════════════════════════════════════════════
+// Silent failure modes used to go unannounced:
+//  ① you spoke, but nothing reached the chat (kept in voice, rejected, the
+//    pipeline hung or failed, or no words were transcribed);
+//  ② a request was sent, but the chat never started answering;
+//  ③ the chat started, then produced nothing for a long time.
+// Each raises a notice card in the HUD with a one-tap fix, a soft chime, an
+// OS notification when the tab is in the background, and (for the serious
+// ones) a short spoken line from the assistant.
+const _notices = new Map();          // key → { el, t, kind }
+let _chimeCtx = null, _lastChimeAt = 0;
+const _NOTICE_ICON = {
+  info: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
+  error: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+};
+
+function _chime(kind) {
+  const now = Date.now();
+  if (now - _lastChimeAt < 1500) return;          // never a burst of beeps
+  _lastChimeAt = now;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    _chimeCtx = _chimeCtx || new AC();
+    if (_chimeCtx.state === 'suspended') _chimeCtx.resume().catch(() => {});
+    const notes = kind === 'error' ? [523, 392] : kind === 'warn' ? [659, 523] : [880];
+    const t0 = _chimeCtx.currentTime + 0.02;
+    notes.forEach((f, i) => {
+      const o = _chimeCtx.createOscillator(), g = _chimeCtx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      const s = t0 + i * 0.14;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(kind === 'info' ? 0.035 : 0.06, s + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.32);
+      o.connect(g).connect(_chimeCtx.destination);
+      o.start(s); o.stop(s + 0.36);
+    });
+  } catch (e) { /* audio is a nicety */ }
+}
+
+function _osNotify(key, title, body) {
+  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(`${_assistantName} · ${title}`, { body: body || '', tag: 'vx-' + key, renotify: true });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (e) { /* ignore */ }
+}
+
+function _askNotifyPermission() {
+  // Called from a user gesture (starting voice) — only asks once, ever.
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'default') return;
+    if (localStorage.getItem('vx-notify-asked')) return;
+    localStorage.setItem('vx-notify-asked', '1');
+    Notification.requestPermission().catch(() => {});
+  } catch (e) { /* ignore */ }
+}
+
+function _noticeBox() {
+  if (!_root) return null;
+  let box = _root.querySelector('.vx-notices');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'vx-notices';
+    box.setAttribute('aria-live', 'assertive');
+    _root.appendChild(box);
+  }
+  return box;
+}
+
+// _notify(key, opts) — one live notice per key; calling again updates it.
+//   kind: info | warn | error   ttl: ms before it fades (0 = until resolved)
+//   actions: [{ label, run, primary }]   speak: line for the assistant to say
+//   os: also raise an OS notification if the tab is hidden   chime: play a tone
+function _notify(key, { kind = 'warn', title = '', detail = '', actions = [], ttl = 12000,
+                       speak = '', os = false, chime = true, line = true } = {}) {
+  const box = _noticeBox();
+  let n = _notices.get(key);
+  const fresh = !n;
+  if (!n) {
+    if (!box) return;
+    const el = document.createElement('div');
+    el.className = 'vx-notice';
+    el.innerHTML = `<span class="vx-notice-ic" aria-hidden="true"></span>
+      <div class="vx-notice-body"><div class="vx-notice-t"></div><div class="vx-notice-d"></div>
+      <div class="vx-notice-acts"></div></div>
+      <button class="vx-notice-x" aria-label="Dismiss" title="Dismiss">×</button>
+      <i class="vx-notice-bar" aria-hidden="true"></i>`;
+    el.querySelector('.vx-notice-x').addEventListener('click', () => _dismissNotice(key));
+    box.prepend(el);
+    while (box.children.length > 3) {          // keep it calm: three at most
+      const old = box.lastElementChild;
+      const k = [..._notices].find(([, v]) => v.el === old)?.[0];
+      if (k) _dismissNotice(k, true); else old.remove();
+    }
+    n = { el, t: 0, kind };
+    _notices.set(key, n);
+    requestAnimationFrame(() => el.classList.add('in'));
+  }
+  const escalated = !fresh && n.kind !== kind && kind === 'error';
+  n.kind = kind;
+  const el = n.el;
+  el.dataset.kind = kind;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  el.querySelector('.vx-notice-ic').innerHTML = _NOTICE_ICON[kind] || _NOTICE_ICON.info;
+  el.querySelector('.vx-notice-t').textContent = title;
+  const d = el.querySelector('.vx-notice-d');
+  d.textContent = detail; d.hidden = !detail;
+  const acts = el.querySelector('.vx-notice-acts');
+  if (fresh || actions.length) {
+    acts.innerHTML = '';
+    actions.forEach(a => {
+      const b = document.createElement('button');
+      b.className = 'vx-notice-btn' + (a.primary ? ' primary' : '');
+      b.textContent = a.label;
+      b.addEventListener('click', () => { _dismissNotice(key); try { a.run?.(); } catch (e) { console.warn(e); } });
+      acts.appendChild(b);
+    });
+    acts.hidden = !actions.length;
+  }
+  clearTimeout(n.t);
+  const bar = el.querySelector('.vx-notice-bar');
+  if (ttl > 0) {
+    bar.style.animation = 'none'; void bar.offsetWidth;
+    bar.style.animation = `vx-notice-ttl ${ttl}ms linear forwards`;
+    n.t = setTimeout(() => _dismissNotice(key), ttl);
+  } else bar.style.animation = 'none';
+  if (fresh || escalated) {
+    if (line) _systemLine(detail ? `${title} — ${detail}` : title, kind === 'info' ? 'info' : 'warn');
+    if (chime) _chime(kind);
+    if (os) _osNotify(key, title, detail);
+    if (speak && _opts.speak && _active && _injectOK && !_quiet) {
+      _sayQueue.push(`[Status — ${speak}] In one short, calm line, tell the user this. Do not ask a question and do not guess at results.`);
+    }
+    if (escalated) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+  }
+}
+
+function _dismissNotice(key, now = false) {
+  const n = _notices.get(key);
+  if (!n) return;
+  _notices.delete(key);
+  clearTimeout(n.t);
+  if (now) { n.el.remove(); return; }
+  n.el.classList.remove('in');
+  n.el.classList.add('out');
+  setTimeout(() => n.el.remove(), 260);
+}
+
+function _clearNotices() { for (const k of [..._notices.keys()]) _dismissNotice(k, true); }
+
+// Re-send the request(s) of a chat turn that never got an answer.
+function _retryItems(items) {
+  items.forEach(q => { q.status = 'queued'; q.note = ''; });
+  _queue = [...items, ..._queue.filter(q => !items.includes(q))];
+  _renderQueue(); _persistQueue();
+  _ensureDispatcher();
+  _dispatchTick(true);
+}
+
+function _stopChatRun() {
+  try { window.chatModule?.abortCurrentRequest?.(); } catch (e) { /* ignore */ }
+}
+
+// Output-stall watchdog for a running chat turn. Progress = any change in the
+// last AI bubble (text, thinking, tool rows) or a new bubble.
+function _watchStall(busy) {
+  if (!busy) {
+    _progSig = ''; _progAt = 0;
+    if (_stallLevel) { _stallLevel = 0; _dismissNotice('stall'); }
+    return;
+  }
+  const msgs = _chatMsgs();
+  const last = msgs[msgs.length - 1];
+  const sig = msgs.length + ':' + (last ? last.textContent.length : 0);
+  const now = Date.now();
+  if (sig !== _progSig || !_progAt) {
+    if (_stallLevel && _progAt) _systemLine('The chat is producing again.', 'done');
+    _progSig = sig; _progAt = now;
+    if (_stallLevel) { _stallLevel = 0; _dismissNotice('stall'); }
+    return;
+  }
+  const quiet = now - _progAt;
+  const fmt = quiet < 120000 ? `${Math.round(quiet / 1000)} s` : `${Math.floor(quiet / 60000)} min ${Math.round((quiet % 60000) / 1000)} s`;
+  const actions = [{ label: 'Stop the run', run: _stopChatRun }, { label: 'Keep waiting', run: () => {}, primary: true }];
+  if (quiet >= 180000) {
+    if (_stallLevel < 2) {
+      _stallLevel = 2;
+      _notify('stall', { kind: 'error', title: 'The chat seems stuck', detail: `No new output for ${fmt}. It may be hung on a tool call.`,
+        actions, ttl: 0, os: true, speak: 'the chat has produced nothing for over three minutes and may be stuck; the user can stop it or keep waiting' });
+    } else if (_notices.has('stall')) {
+      _notify('stall', { kind: 'error', title: 'The chat seems stuck', detail: `No new output for ${fmt}. It may be hung on a tool call.`, ttl: 0 });
+    }
+  } else if (quiet >= 45000) {
+    if (_stallLevel < 1) {
+      _stallLevel = 1;
+      _notify('stall', { kind: 'warn', title: 'The chat has gone quiet', detail: `No new output for ${fmt} — still running.`,
+        actions, ttl: 0, os: true });
+    } else if (_notices.has('stall')) {
+      _notify('stall', { kind: 'warn', title: 'The chat has gone quiet', detail: `No new output for ${fmt} — still running.`, ttl: 0 });
+    }
+  }
+}
+
 function _join(prev, chunk) {
   if (!prev) return chunk;
   if (/^[\s,.!?;:)\]'’]/.test(chunk) || /[\s(\[-]$/.test(prev)) return prev + chunk;
@@ -1079,6 +1299,7 @@ function _userDelta(chunk) {
   if (!_userTurnOpen) { _userTurnOpen = true; _userText = ''; _userBase = 0; _relayArmed = false; }
   _userText = _merge(_userText, chunk);
   _lastUserVoiceAt = Date.now();
+  _lastUserTextAt = Date.now(); clearTimeout(_noWordsT); _dismissNotice('no-words');
   if (_STOP_RE.test(chunk) && (_gptSpeaking() || _sayQueue.length)) _stopTalking();
   // Continuation segments start mid-sentence — drop leading space/punctuation.
   const seg = _userText.slice(_userBase).replace(/^[\s.,;:!?…-]+/, '');
@@ -1097,6 +1318,7 @@ function _userFinal(full) {
   clearTimeout(_userFinalizeT);
   if (full) _transcriptSeen = true;
   const text = ((full != null ? full : _userText) || '').trim();
+  if (text) { _lastUserTextAt = Date.now(); clearTimeout(_noWordsT); _dismissNotice('no-words'); }
   const shown = _userText.slice(0, _userBase);
   const base = _userBase;
   _userTurnOpen = false; _userBase = 0; _userText = '';
@@ -1308,6 +1530,16 @@ async function _runPipeline(force = false, settle = false) {
   const turns = _pending.splice(0, _pending.length);
   if (!turns.length && !force && !settle) return;
   _pipeBusy = true;
+  const said = turns.filter(t => t.speaker === 'You').map(t => t.text).join(' ').trim();
+  if (said) _unsentText = (_unsentText ? _unsentText + ' ' : '') + said;
+  if (force) _dismissNotice('unsent');
+  clearTimeout(_pipeSlowT);
+  _pipeSlowT = setTimeout(() => {
+    if (!_pipeBusy || !_active) return;
+    _notify('pipe-slow', { kind: 'warn', title: 'Still deciding what to send…',
+      detail: 'The voice pipeline has been thinking for 25 s.', ttl: 0,
+      actions: [{ label: 'Send now', primary: true, run: () => { if (_pipeAbort) _pipeAbort.requeue = true; _pipeAbort?.abort(); setTimeout(_forceSend, 60); } }] });
+  }, 25000);
   _thinkTarget = 1;
   _resetStages();
   const ctrl = new AbortController();
@@ -1322,6 +1554,7 @@ async function _runPipeline(force = false, settle = false) {
       body: JSON.stringify({ voice_id: _voiceId, turns, chat_session_id: sid, force, settle, chat_busy: _chatBusy() || !!_awaiting }),
     });
     if (!resp.ok || !resp.body) throw new Error(`pipeline HTTP ${resp.status}`);
+    _dismissNotice('pipe-fail');
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
@@ -1341,10 +1574,17 @@ async function _runPipeline(force = false, settle = false) {
   } catch (e) {
     if (e.name !== 'AbortError') {
       console.warn('voice pipeline failed', e);
-      _systemLine('Pipeline unavailable — ' + (e.message || e), 'warn');
       _pending.unshift(...turns); // don't lose context
+      _notify('pipe-fail', { kind: 'error', title: 'Your words didn’t reach the chat',
+        detail: 'The voice pipeline is unreachable (' + (e.message || e) + ').', ttl: 0, os: true,
+        speak: 'there was a connection problem, so the last request was not sent to the chat yet',
+        actions: [{ label: 'Retry', primary: true, run: () => _schedulePipeline(0, true) }] });
+    } else if (ctrl.requeue) {
+      _pending.unshift(...turns);
     }
   } finally {
+    clearTimeout(_pipeSlowT);
+    _dismissNotice('pipe-slow');
     _pipeBusy = false;
     _pipeAbort = null;
     _thinkTarget = 0;
@@ -1374,11 +1614,12 @@ function _onPipeEvent(ev) {
     case 'stop_talking': _stopTalking(); break;
     case 'interrupt': _interruptTask(); break;
     case 'memory': _renderMemory(ev.memory); break;
-    case 'forged': _enqueue(ev); break;
+    case 'forged': _unsentText = ''; _dismissNotice('unsent'); _enqueue(ev); break;
     case 'answer_from_context':
       // The answer was already in the chat/memory — speak it directly instead
       // of re-asking the chat agent.
       if (ev.answer) {
+        _unsentText = ''; _dismissNotice('unsent');
         _systemLine('Answered from context — no chat round-trip.', 'done');
         _queueSpeak(ev.answer, true);
       }
@@ -1420,12 +1661,34 @@ function _onPipeEvent(ev) {
         clearTimeout(_settleTimer);
         _settleTimer = setTimeout(() => _runPipeline(false, true), 2500);
       }
-      if (ev.reason === 'error' && ev.error) { _systemLine('Pipeline error — ' + ev.error, 'warn'); _vector('system_error', ev.error.slice(0, 90), { criticality: 1 }); }
-      // A duplicate follow-through of ALFRED's own chatter is expected noise — stay quiet.
-      else if (ev.reason === 'duplicate' && ev.duplicate_of && ev.source !== 'commitment') _systemLine(`Already sent a moment ago — “${_excerpt(ev.duplicate_of)}”`, 'info');
-      else if (ev.reason === 'guard-rejected') { _systemLine('Guard rejected the message — it did not make sense or was not faithful to what you said.', 'warn'); _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 }); }
-      else if (ev.reason === 'not-directed-to-chat') { _systemLine('That didn’t look like it was meant for the chat — say it again if you want it sent.', 'info'); }
-      else if (ev.reason === 'decider-error' || ev.reason === 'forger-error') { _systemLine('Pipeline could not decide — say it again or press Enter to force-send.', 'warn'); _vector('system_error', 'Pipeline could not decide', { criticality: 0.8 }); }
+      {
+        const said = _excerpt(_unsentText, 110);
+        const sendAnyway = { label: 'Send it anyway', primary: true, run: _forceSend };
+        if (ev.reason === 'error' || ev.reason === 'decider-error' || ev.reason === 'forger-error') {
+          _vector('system_error', (ev.error || 'Pipeline could not decide').slice(0, 90), { criticality: ev.reason === 'error' ? 1 : 0.8 });
+          _notify('pipe-fail', { kind: 'error', title: 'Couldn’t process what you said',
+            detail: (said ? `“${said}” was not sent. ` : '') + (ev.error ? ev.error.slice(0, 140) : 'The pipeline could not decide.'),
+            ttl: 0, os: true, actions: [sendAnyway],
+            speak: 'something went wrong processing the last request, so it was not sent to the chat; the user can send it anyway' });
+        } else if (ev.reason === 'duplicate' && ev.duplicate_of && ev.source !== 'commitment') {
+          // A duplicate follow-through of the assistant's own chatter is expected noise — stay quiet.
+          _systemLine(`Already sent a moment ago — “${_excerpt(ev.duplicate_of)}”`, 'info');
+          _unsentText = '';
+        } else if (ev.reason === 'guard-rejected') {
+          _vector('guard_error', 'Guard stopped a forged message', { criticality: 0.85 });
+          _notify('unsent', { kind: 'warn', title: 'Not sent — the guard stopped it',
+            detail: (said ? `“${said}” — ` : '') + 'the rewrite didn’t match what you said.', ttl: 16000, actions: [sendAnyway], os: true });
+          _unsentText = '';
+        } else if (ev.reason === 'not-directed-to-chat' || ev.reason === 'below-threshold') {
+          if (said) _notify('unsent', { kind: 'info', title: 'Kept in the voice conversation',
+            detail: `“${said}” was not sent to the chat.`, ttl: 14000, actions: [sendAnyway] });
+          _unsentText = '';
+        } else if (ev.reason !== 'not-ready') {
+          // answered-from-context, about-conversation, no-new-speech, … —
+          // handled by the voice itself; nothing pending any more.
+          _unsentText = '';
+        }
+      }
       break;
   }
 }
@@ -1863,10 +2126,28 @@ function _dispatchTick(manual = false) {
           if (stuck && elapsed > 10000) {
             group.forEach(q => _setItem(q, 'failed', 'The chat did not accept the message — check the chat for a prompt, then Retry.'));
             _awaiting = null;
+            _notify('no-answer', { kind: 'error', title: 'The chat didn’t take your message',
+              detail: `“${_excerpt(item.title, 90)}” is still sitting in the composer.`, ttl: 0, os: true,
+              speak: 'the chat did not accept the request; it is waiting to be retried',
+              actions: [{ label: 'Retry', primary: true, run: () => _retryItems(group) }] });
             return;
           }
         }
         if (elapsed < 8000) return;          // give the stream time to start (agent runs warm up)
+        // No stream was ever seen. A new answer bubble means it was simply fast;
+        // otherwise the chat never answered — wait up to 20 s, then say so.
+        const visibleNow = _awaiting.sid === _currentSid();
+        const answered = visibleNow && _chatMsgs().filter(m => m.classList.contains('msg-ai')).length > (_awaiting.aiCount ?? Infinity);
+        if (!answered && visibleNow) {
+          if (elapsed < 20000) return;
+          group.forEach(q => _setItem(q, 'failed', 'The chat never started answering — Retry.'));
+          _awaiting = null;
+          _notify('no-answer', { kind: 'error', title: 'The chat isn’t answering',
+            detail: `Sent “${_excerpt(item.title, 90)}” 20 s ago — no response started.`, ttl: 0, os: true,
+            speak: 'the request was sent but the chat has not started answering; the user may want to retry',
+            actions: [{ label: 'Retry', primary: true, run: () => _retryItems(group) }] });
+          return;
+        }
       }
       const finished = (_awaiting.sawBusy && !busy) || (!_awaiting.sawBusy && elapsed >= 8000) || elapsed > 600000;
       if (!finished) return;
@@ -1881,6 +2162,7 @@ function _dispatchTick(manual = false) {
         _systemLine(`“${item.title}” finished in another chat.`, 'info');
       } else {
         group.forEach(q => _setItem(q, 'answered'));
+        _dismissNotice('no-answer');
         if (_awaiting.sawBusy) _speakResult(group.length > 1 ? { title: group.map(q => q.title).join(' + ') } : item, lastAi);
       }
       _awaiting = null;
@@ -1935,7 +2217,9 @@ function _dispatchTick(manual = false) {
   batch.forEach(q => { q.note = ''; _setItem(q, 'sending'); });
   if (_sendToChat(text)) {
     batch.forEach(q => _setItem(q, 'sent'));
-    _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text };
+    _awaiting = { id: batch[0].id, ids: batch.map(q => q.id), sid: _currentSid(), sawBusy: false, since: Date.now(), text,
+                  aiCount: _chatMsgs().filter(m => m.classList.contains('msg-ai')).length };
+    _dismissNotice('no-answer');
     _voiceInjectedTexts.add(text.trim());
     _vector('voice_inject', (batch.length === 1 ? batch[0].title : `${batch.length} requests`), { tokens: _estTokens(text), full: text });
     _systemLine(batch.length === 1 ? `Sent to chat → “${_excerpt(batch[0].message)}”` : `Sent ${batch.length} requests to chat in one message`, 'forge');
@@ -1945,6 +2229,10 @@ function _dispatchTick(manual = false) {
       '. It is running now; its result will follow shortly. You may tell the user that the work is underway.', false);
   } else {
     batch.forEach(q => _setItem(q, 'failed', 'The chat composer was not available — Retry when the chat is ready.'));
+    _notify('no-answer', { kind: 'error', title: 'Couldn’t send to the chat',
+      detail: 'The chat composer isn’t available right now.', ttl: 0, os: true,
+      speak: 'the request could not be sent because the chat is not available',
+      actions: [{ label: 'Retry', primary: true, run: () => _retryItems(batch) }] });
   }
 }
 
@@ -2273,6 +2561,7 @@ function _chatTick() {
     }
   }
   _chatWasBusy = busy;
+  _watchStall(busy);
   _costTick = (_costTick + 1) % 10;
   if (_costTick === 0 || sid !== _costSid) { _costSid = sid; _refreshHudCost(); }
   _ingestChat(busy);
@@ -2765,12 +3054,22 @@ function _handleEvent(evt) {
   if (/speech_started|speech\.started|input[^.]*\.started|user[^.]*\.(started|speaking)/.test(t)) {
     if (_aiLine) _aiFinalize();
     _userSpeaking = true; _lastUserVoiceAt = Date.now();
+    _vadStartAt = Date.now(); clearTimeout(_noWordsT);
     // The user took the floor: anything queued as progress chatter is stale.
     _sayQueue = _sayQueue.filter(item => item.startsWith('[Chat agent — FINISHED'));
     return;
   }
   if (/speech_stopped|speech\.stopped|input[^.]*\.(stopped|committed)|user[^.]*\.(stopped|done)/.test(t)) {
     _userSpeaking = false; _lastUserVoiceAt = Date.now();
+    const start = _vadStartAt; _vadStartAt = 0;
+    if (start && Date.now() - start >= 1200 && !_muted) {
+      clearTimeout(_noWordsT);
+      _noWordsT = setTimeout(() => {
+        if (!_active || _muted || _lastUserTextAt >= start || _userText) return;
+        _notify('no-words', { kind: 'warn', title: 'I heard you, but no words came through',
+          detail: 'Nothing was transcribed, so nothing was sent. Say it again — or type it in the box below.', ttl: 11000 });
+      }, 6500);
+    }
     return;
   }
   // Delegated backend work (Responses events nested in the session).
@@ -2989,6 +3288,7 @@ async function _acquireMic() {
 async function startVoice() {
   if (_active || _connecting) return;
   _connecting = true;
+  _askNotifyPermission();   // user gesture — background alerts for stalls / unsent requests
   _wakePause();   // GPT-Live owns the mic now
   _silentSince = 0; _silentWarned = false;   // re-arm the silent-mic watchdog each call
   _setState('connecting');
@@ -3146,6 +3446,8 @@ async function stopVoice(keepError = false) {
   _dcSend({ type: 'session.close' });
   _sayQueue = [];
   clearTimeout(_diagT);
+  clearTimeout(_noWordsT); clearTimeout(_pipeSlowT);
+  _dismissNotice('no-words'); _dismissNotice('pipe-slow');
   _active = false;
   _connecting = false;
   wakeLock.release('voice');

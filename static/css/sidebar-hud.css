@@ -1,0 +1,485 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Sidebar HUD — a ship-terminal panel for the chat side
+   Reference: Star Citizen's mobiGlas / No Man's Sky inventory, read as Jarvis.
+
+   Loaded after the jarvis/tron/mobile layers and BEFORE sidebar-a11y.css (so
+   keyboard focus rings still win). Theme-scoped to the Jarvis theme; only the
+   goal-card layout fix applies to every theme.
+
+   Vocabulary
+     • Module tab    — each section header is a tab strip: a lit segment, a
+                       hairline rail, and tick marks.
+     • Target lock   — the open chat is "locked": a cut-corner plate that
+                       sweeps in from the left with a caret on the edge. Focus
+                       (corner brackets, sidebar-a11y.css) never looks like this.
+     • Sockets       — tool icons sit in cut-corner sockets, like ship systems.
+     • Contract      — the goal card is a mission contract: segmented progress,
+                       cut-corner controls, scrollable log.
+     • Readouts      — numbers (costs, counts) in Chakra Petch, tabular.
+   Spend the boldness on the target lock; everything else stays quiet.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@font-face { font-family: 'Chakra Petch'; font-weight: 500; font-style: normal; font-display: swap; src: url('/static/fonts/ChakraPetch-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Chakra Petch'; font-weight: 600; font-style: normal; font-display: swap; src: url('/static/fonts/ChakraPetch-SemiBold.woff2') format('woff2'); }
+
+/* ── Goal card layout fix (all themes) ───────────────────────────────────
+   .sidebar-inner is a flex column that scrolls. The goal card had
+   overflow:hidden, which lets flexbox shrink it to nothing: opening "Qué ha
+   hecho" clipped the card instead of pushing Chats down. Now the card keeps
+   its natural height (the sidebar scrolls) and its long parts scroll inside. */
+.sidebar-inner > .goal-card {
+  flex: 0 0 auto;
+  min-height: min-content;
+}
+.goal-card .goal-trail-body,
+.goal-card .goal-todo-body {
+  max-height: min(32vh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.goal-card .goal-objective { overflow-wrap: anywhere; }
+/* Rows that goalCard.js hides with [hidden] were forced visible by display:flex. */
+.goal-card [hidden] { display: none !important; }
+.goal-card .goal-current { overflow-wrap: anywhere; }
+
+/* ═══ Jarvis-theme HUD ════════════════════════════════════════════════════ */
+:root[data-odx-theme="jarvis"] {
+  --hud-cyan: var(--jv-cyan, #4fd8ff);
+  --hud-cyan-hi: var(--jv-cyan-hi, #a6ecff);
+  --hud-amber: var(--jv-amber, #ffb347);
+  --hud-ok: var(--jv-ok, #5ef2b3);
+  --hud-hazard: var(--jv-danger, #ff6b6b);
+  --hud-ink: var(--jv-text, #d3e9f5);
+  --hud-ink-2: var(--jv-text-dim, #a9c2d1);
+  --hud-ink-3: color-mix(in srgb, var(--hud-ink) 64%, var(--jv-void, #060b14));
+  --hud-hull: color-mix(in srgb, var(--jv-panel, #0a1424) 94%, #000);
+  --hud-line: color-mix(in srgb, var(--hud-cyan) 22%, transparent);
+  --hud-line-2: color-mix(in srgb, var(--hud-cyan) 45%, transparent);
+  --hud-wash: color-mix(in srgb, var(--hud-cyan) 7%, transparent);
+  --hud-wash-2: color-mix(in srgb, var(--hud-cyan) 15%, transparent);
+  --hud-display: 'Chakra Petch', var(--jv-ui, system-ui), sans-serif;
+  --hud-ease: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* ── Hull ─────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar {
+  background:
+    /* outer-edge spine with tick marks, like a wrist-panel bezel */
+    linear-gradient(var(--hud-line), var(--hud-line)) right 0 top 0 / 1px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--hud-line-2) 0 1px, transparent 1px 24px) right 0 top 0 / 5px 100% no-repeat,
+    radial-gradient(140% 50% at 0% 0%, var(--hud-wash), transparent 70%),
+    var(--hud-hull);
+  border-right: 0;
+}
+/* The ambient flicker competes with the lock animation — retire it. */
+:root[data-odx-theme="jarvis"] #sidebar::after { animation: none; opacity: 0; }
+
+/* ── Header / brand ───────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar .sidebar-header {
+  background: none;
+  border-bottom: 0;
+  position: relative;
+}
+:root[data-odx-theme="jarvis"] #sidebar .sidebar-header::after {
+  content: "";
+  position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px;
+  background:
+    linear-gradient(var(--hud-cyan), var(--hud-cyan)) left 0 bottom 0 / 34px 2px no-repeat,
+    linear-gradient(var(--hud-cyan), var(--hud-cyan)) left 40px bottom 0 / 6px 2px no-repeat,
+    linear-gradient(var(--hud-line), var(--hud-line)) left 0 bottom 0 / 100% 1px no-repeat;
+  filter: drop-shadow(0 0 4px var(--jv-glow, transparent));
+}
+:root[data-odx-theme="jarvis"] #sidebar .sidebar-brand-title {
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: .34em;
+  color: var(--hud-cyan-hi);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--hud-cyan) 45%, transparent);
+}
+
+/* ── Primary actions: New chat is a launch plate, Search a quiet line ─── */
+:root[data-odx-theme="jarvis"] #sidebar #sidebar-new-chat-btn {
+  margin: 4px 2px 2px;
+  min-height: 36px;
+  color: var(--hud-cyan-hi);
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: .06em;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    linear-gradient(135deg, var(--hud-cyan) 0 7px, transparent 7px) top left / 100% 100% no-repeat,
+    linear-gradient(-45deg, transparent 0 9px, var(--hud-wash-2) 9px);
+  outline: 1px solid var(--hud-line-2);
+  outline-offset: -1px;
+  transition: background-color .15s, color .15s;
+}
+:root[data-odx-theme="jarvis"] #sidebar #sidebar-new-chat-btn:hover {
+  color: #fff;
+  background:
+    linear-gradient(135deg, var(--hud-cyan) 0 7px, transparent 7px) top left / 100% 100% no-repeat,
+    linear-gradient(-45deg, transparent 0 9px, color-mix(in srgb, var(--hud-cyan) 26%, transparent) 9px);
+}
+:root[data-odx-theme="jarvis"] #sidebar #sidebar-new-chat-btn .sidebar-action-icon { color: var(--hud-cyan-hi); }
+:root[data-odx-theme="jarvis"] #sidebar #sidebar-search-btn {
+  min-height: 32px;
+  color: var(--hud-ink-2);
+  border-radius: 0;
+}
+:root[data-odx-theme="jarvis"] #sidebar #sidebar-search-btn::before { display: none; }
+
+/* ── Module tabs (section headers) ────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar .section { margin-top: 10px; }
+:root[data-odx-theme="jarvis"] #sidebar .section-header-flex {
+  position: relative;
+  min-height: 28px;
+  padding: 2px 2px 6px 2px;
+  border: 0 !important;
+  border-image: none !important;
+  background:
+    linear-gradient(var(--hud-cyan), var(--hud-cyan)) left 0 bottom 0 / 22px 2px no-repeat,
+    linear-gradient(var(--hud-line), var(--hud-line)) left 26px bottom 0 / calc(100% - 26px) 1px no-repeat,
+    repeating-linear-gradient(90deg, var(--hud-line-2) 0 1px, transparent 1px 8px) right 0 bottom 1px / 41px 4px no-repeat;
+}
+:root[data-odx-theme="jarvis"] #sidebar .section-title {
+  font-family: var(--hud-display) !important;
+  font-weight: 600;
+  font-size: 12px !important;
+  letter-spacing: .2em !important;
+  text-transform: uppercase;
+  color: var(--hud-ink-2) !important;
+}
+:root[data-odx-theme="jarvis"] #sidebar .section-title .section-icon {
+  color: var(--hud-cyan);
+  filter: drop-shadow(0 0 4px var(--jv-glow, transparent));
+}
+
+/* ── Chat rows ────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item {
+  position: relative;
+  min-height: 34px;
+  margin: 1px 0;
+  padding-left: 10px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: var(--hud-ink-2);
+  background: none;
+  box-shadow: none !important;
+  font-family: var(--jv-ui, system-ui);
+  font-size: 13px;
+}
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:hover {
+  color: var(--hud-ink);
+  background: linear-gradient(90deg, var(--hud-wash), transparent 85%);
+}
+/* Hover tick on the left edge, retracted by default. */
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item::before {
+  content: "";
+  display: block !important;
+  position: absolute;
+  left: 0; top: 50%;
+  width: 2px; height: 0;
+  background: var(--hud-cyan);
+  box-shadow: none;
+  transform: translateY(-50%);
+  transition: height .18s var(--hud-ease);
+}
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:hover::before { height: 40%; }
+
+/* Target lock — the open chat. */
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:is([aria-selected="true"], .active-session) {
+  color: #fff;
+  font-weight: 560;
+  /* cut bottom-right corner; drawn, not clipped, so focus brackets survive */
+  background: linear-gradient(-45deg, transparent 0 8px,
+      color-mix(in srgb, var(--hud-cyan) 20%, transparent) 8px,
+      color-mix(in srgb, var(--hud-cyan) 4%, transparent) 100%) left center / 100% 100% no-repeat;
+  animation: hud-lock .42s var(--hud-ease) both;
+}
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:is([aria-selected="true"], .active-session)::before {
+  /* caret pointing into the plate */
+  width: 6px; height: 12px;
+  left: 0;
+  background: var(--hud-cyan);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  filter: drop-shadow(0 0 5px var(--hud-cyan));
+}
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:is([aria-selected="true"], .active-session) .grow {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--hud-cyan) 40%, transparent);
+}
+@keyframes hud-lock {
+  from { background-size: 0% 100%; }
+  to   { background-size: 100% 100%; }
+}
+
+/* Readouts on rows */
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-cost {
+  font-family: var(--hud-display) !important;
+  font-weight: 500;
+  font-size: 11px !important;
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--hud-ink-3) !important;
+  background: none !important;
+  border: 0 !important;
+  padding: 0 2px;
+}
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:is([aria-selected="true"], .active-session) .session-cost { color: var(--hud-cyan-hi) !important; }
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-icon { color: var(--hud-ink-3); }
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-item:is(:hover, [aria-selected="true"]) .session-icon { color: var(--hud-cyan); }
+:root[data-odx-theme="jarvis"] #sidebar #session-list .session-fav { color: var(--hud-amber); }
+
+/* ── Folders: cargo categories ────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar .session-folder-header {
+  min-height: 30px;
+  margin-top: 4px;
+  font-family: var(--jv-ui, system-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--hud-ink-2);
+  border-radius: 0;
+}
+:root[data-odx-theme="jarvis"] #sidebar .session-folder-header:hover { color: var(--hud-ink); background: var(--hud-wash); }
+:root[data-odx-theme="jarvis"] #sidebar .session-folder-header .folder-toggle { color: var(--hud-cyan); }
+:root[data-odx-theme="jarvis"] #sidebar .session-folder-header .folder-count {
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 11px;
+  border-radius: 0;
+  padding: 0 7px;
+  color: var(--hud-cyan-hi);
+  background: linear-gradient(-45deg, transparent 0 4px, var(--hud-wash-2) 4px);
+  border: 0;
+}
+:root[data-odx-theme="jarvis"] #sidebar .session-folder-content {
+  border-left: 0;
+  background: repeating-linear-gradient(180deg, var(--hud-line-2) 0 1px, transparent 1px 6px) left 0 top 0 / 1px 100% no-repeat;
+}
+:root[data-odx-theme="jarvis"] #sidebar .session-folder-content:has([aria-selected="true"]) {
+  background: linear-gradient(var(--hud-cyan), var(--hud-cyan)) left 0 top 0 / 1px 100% no-repeat;
+}
+
+/* ── Tools: systems in sockets ────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar #tools-section .list-item {
+  min-height: 36px;
+  border-radius: 0;
+  color: var(--hud-ink-2);
+}
+:root[data-odx-theme="jarvis"] #sidebar #tools-section .list-item > svg:first-child {
+  box-sizing: content-box;
+  width: 14px; height: 14px;
+  padding: 5px;
+  opacity: 1 !important;
+  color: var(--hud-cyan);
+  background: linear-gradient(-45deg, transparent 0 5px, var(--hud-wash) 5px);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
+  transition: background .15s, color .15s;
+}
+:root[data-odx-theme="jarvis"] #sidebar #tools-section .list-item:hover { color: var(--hud-ink); background: linear-gradient(90deg, var(--hud-wash), transparent 80%); box-shadow: none; }
+:root[data-odx-theme="jarvis"] #sidebar #tools-section .list-item:hover > svg:first-child {
+  color: var(--jv-void, #060b14);
+  background: linear-gradient(-45deg, transparent 0 5px, var(--hud-cyan) 5px);
+  filter: none;
+}
+
+/* ── Models field ─────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar #model-select {
+  border-radius: 0 !important;
+  border: 1px solid var(--hud-line-2) !important;
+  background: linear-gradient(-45deg, transparent 0 6px, color-mix(in srgb, var(--hud-hull) 70%, #000) 6px) !important;
+  color: var(--hud-ink) !important;
+  font-family: var(--jv-ui, system-ui);
+  min-height: 32px;
+}
+:root[data-odx-theme="jarvis"] #sidebar #btn-model-chat {
+  border-radius: 0 !important;
+  font-family: var(--hud-display);
+  font-weight: 600;
+  letter-spacing: .04em;
+  min-height: 32px;
+}
+
+/* ── Pilot plate (user bar) ───────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar .sidebar-user-bar {
+  border-top: 0;
+  background:
+    linear-gradient(var(--hud-line), var(--hud-line)) left 0 top 0 / 100% 1px no-repeat,
+    linear-gradient(var(--hud-cyan), var(--hud-cyan)) left 12px top 0 / 34px 2px no-repeat,
+    linear-gradient(180deg, var(--hud-wash), transparent);
+}
+:root[data-odx-theme="jarvis"] #sidebar .user-bar-avatar {
+  border: 0 !important;
+  border-radius: 0 !important;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  background: linear-gradient(135deg, var(--hud-cyan), color-mix(in srgb, var(--hud-cyan) 35%, #000)) !important;
+  box-shadow: none !important;
+}
+:root[data-odx-theme="jarvis"] #sidebar .user-bar-name {
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: .12em;
+  color: var(--hud-ink);
+}
+
+/* ── Goal card: mission contract ──────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar .goal-card-title {
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: .18em;
+  color: var(--hud-ink-2);
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-badge {
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  padding: 2px 8px;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-objective {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hud-ink);
+}
+/* Segmented progress — ticks, not a pill. */
+:root[data-odx-theme="jarvis"] #sidebar .goal-progress-bar {
+  height: 7px !important;
+  background: color-mix(in srgb, var(--hud-ink) 10%, transparent) !important;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px);
+          mask: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px);
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-progress-fill {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hud-cyan) 55%, var(--hud-ok)), var(--hud-cyan)) !important;
+  box-shadow: none !important;
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-rounds {
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--hud-cyan-hi);
+  font-variant-numeric: tabular-nums;
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-trail summary,
+:root[data-odx-theme="jarvis"] #sidebar .goal-todo summary {
+  min-height: 26px;
+  align-items: center;
+  font-family: var(--hud-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: var(--hud-ink-2);
+}
+:root[data-odx-theme="jarvis"] #sidebar :is(.goal-trail, .goal-todo) summary {
+  display: flex;
+  gap: 6px;
+  padding: 2px 10px 2px 8px;
+  border-radius: 0 !important;
+  background: linear-gradient(-45deg, transparent 0 6px, var(--hud-wash) 6px) !important;
+  list-style: none;
+}
+:root[data-odx-theme="jarvis"] #sidebar :is(.goal-trail, .goal-todo) summary::-webkit-details-marker { display: none; }
+:root[data-odx-theme="jarvis"] #sidebar :is(.goal-trail, .goal-todo) summary::before {
+  content: "";
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .18s var(--hud-ease);
+}
+:root[data-odx-theme="jarvis"] #sidebar :is(.goal-trail, .goal-todo)[open] summary::before { transform: rotate(90deg); }
+:root[data-odx-theme="jarvis"] #sidebar .goal-trail[open] summary,
+:root[data-odx-theme="jarvis"] #sidebar .goal-todo[open] summary { color: var(--hud-cyan-hi); }
+:root[data-odx-theme="jarvis"] #sidebar .goal-trail-body {
+  border-left: 2px solid var(--hud-line-2);
+  background: color-mix(in srgb, #000 30%, transparent) !important;
+  color: var(--hud-ink-2) !important;
+  font-family: var(--jv-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-actions { gap: 6px; }
+:root[data-odx-theme="jarvis"] #sidebar .goal-btn {
+  min-width: 32px; min-height: 30px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: var(--hud-cyan-hi);
+  background: linear-gradient(-45deg, transparent 0 6px, var(--hud-wash-2) 6px) !important;
+}
+:root[data-odx-theme="jarvis"] #sidebar .goal-btn:hover {
+  color: var(--jv-void, #060b14);
+  background: linear-gradient(-45deg, transparent 0 6px, var(--hud-cyan) 6px) !important;
+}
+
+/* ── Menus: holo panels ───────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] :is(.session-dropdown-menu, .session-folder-submenu, #session-sort-dropdown, #model-sort-dropdown) {
+  border-radius: 0 !important;
+  border: 1px solid var(--hud-line-2) !important;
+  background:
+    linear-gradient(var(--hud-cyan), var(--hud-cyan)) left 0 top 0 / 28px 2px no-repeat,
+    color-mix(in srgb, var(--hud-hull) 94%, transparent) !important;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, .7), 0 0 0 1px rgba(0, 0, 0, .4) !important;
+  backdrop-filter: blur(14px);
+  padding: 4px !important;
+}
+:root[data-odx-theme="jarvis"] :is(.session-dropdown-menu, .session-folder-submenu, #session-sort-dropdown, #model-sort-dropdown) [role^="menuitem"] {
+  border-radius: 0 !important;
+  font-family: var(--jv-ui, system-ui);
+  color: var(--hud-ink-2);
+}
+:root[data-odx-theme="jarvis"] :is(.session-dropdown-menu, .session-folder-submenu, #session-sort-dropdown, #model-sort-dropdown) [role^="menuitem"]:hover {
+  color: var(--hud-ink);
+  background: linear-gradient(90deg, var(--hud-wash-2), transparent) !important;
+}
+:root[data-odx-theme="jarvis"] :is(.session-dropdown-menu) .dropdown-item-danger { color: var(--hud-hazard) !important; }
+:root[data-odx-theme="jarvis"] :is(.session-dropdown-menu) .dropdown-shortcut {
+  font-family: var(--hud-display);
+  font-size: 10.5px;
+  color: var(--hud-ink-3);
+}
+
+/* ── Icon rail ────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #icon-rail .icon-rail-btn {
+  border-radius: 0 !important;
+  border: 0 !important;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+}
+:root[data-odx-theme="jarvis"] #icon-rail .icon-rail-btn:hover { background: var(--hud-wash-2); }
+:root[data-odx-theme="jarvis"] #icon-rail .icon-rail-btn:focus-visible { clip-path: none; }
+
+/* ── Key legend reads as a HUD hint strip ─────────────────────────────── */
+:root[data-odx-theme="jarvis"] #sidebar .sb-tree-legend {
+  border-radius: 0;
+  border-color: var(--hud-line);
+  background: color-mix(in srgb, #000 25%, transparent);
+}
+:root[data-odx-theme="jarvis"] #sidebar .sb-tree-legend kbd {
+  font-family: var(--hud-display);
+  border-radius: 0;
+  border-color: var(--hud-line-2);
+  color: var(--hud-cyan-hi);
+}
+
+/* ── Motion + contrast preferences ────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-odx-theme="jarvis"] #sidebar #session-list .session-item { animation: none !important; }
+  :root[data-odx-theme="jarvis"] #sidebar #session-list .session-item::before { transition: none; }
+}
+@media (forced-colors: active) {
+  :root[data-odx-theme="jarvis"] #sidebar #sidebar-new-chat-btn { outline: 1px solid ButtonText; }
+  :root[data-odx-theme="jarvis"] #sidebar #session-list .session-item[aria-selected="true"]::before { background: Highlight; }
+  :root[data-odx-theme="jarvis"] #sidebar .goal-progress-bar { -webkit-mask: none; mask: none; border: 1px solid CanvasText; }
+}
+
+/* The details wrapper carried its own rounded chrome from older layers. */
+:root[data-odx-theme="jarvis"] #sidebar .goal-card :is(.goal-trail, .goal-todo) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: none !important;
+}

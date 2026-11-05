@@ -29,11 +29,13 @@ export function makeServerRecognition({
       this.maxAlternatives = 1;
       this.lang = 'en-US';
       this.onresult = this.onerror = this.onend = null;
+      this.onspeechstart = this.onspeechend = this.ontranscribing = null;
       this._on = false;
     }
 
     _emitError(error, message = '') { try { this.onerror?.({ error, message }); } catch (e) { /* ignore */ } }
     _emitEnd() { try { this.onend?.(); } catch (e) { /* ignore */ } }
+    _emit(name) { try { this[name]?.(); } catch (e) { /* ignore */ } }
 
     start() {
       if (this._on) return;
@@ -117,17 +119,20 @@ export function makeServerRecognition({
       if (!this._speaking) {
         // Track the room's noise floor only while quiet.
         this._floor = this._floor * 0.95 + Math.min(rms, 0.05) * 0.05;
-        if (loud) { this._speaking = true; this._speechMs = frameMs; this._quietMs = 0; }
+        if (loud) { this._speaking = true; this._speechMs = frameMs; this._quietMs = 0; this._announced = false; }
         else if (performance.now() - this._recStart > IDLE_RECYCLE_MS) this._cut(false);
         return;
       }
       if (loud) { this._speechMs += frameMs; this._quietMs = 0; }
       else this._quietMs += frameMs;
+      // Announce speech once it's clearly a voice, not a click.
+      if (!this._announced && this._speechMs >= MIN_SPEECH_MS) { this._announced = true; this._emit('onspeechstart'); }
       const elapsed = performance.now() - this._recStart;
       if (this._quietMs >= END_SILENCE_MS || elapsed >= MAX_UTTER_MS) {
         const real = this._speechMs >= MIN_SPEECH_MS;
         this._speaking = false; this._speechMs = 0; this._quietMs = 0;
         this._cut(real);
+        if (real) this._emit('ontranscribing');
       }
     }
 
@@ -151,6 +156,7 @@ export function makeServerRecognition({
         .catch((e) => this._emitError('network', e?.message || 'fetch failed'))
         .finally(() => {
           this._inflight = 0;
+          if (!this._waiting && !this._speaking) this._emit('onspeechend');
           const next = this._waiting; this._waiting = null;
           if (next && this._on) this._submit(next);
         });
