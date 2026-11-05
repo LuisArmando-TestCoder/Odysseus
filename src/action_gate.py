@@ -121,6 +121,102 @@ def gated_reason(tool: str, content: str) -> Optional[str]:
     if mcp and _MCP_WRITE_VERB.match(tool):
         # Third-party MCP tool whose name says it changes something.
         return f"use the external tool “{tool}”"
+    if tool in URL_TOOLS or mcp:
+        # A "read" can still leak: fetching attacker.example/?d=<your data>
+        # sends the data out. Hold fetches whose URL carries a payload.
+        return exfil_url_reason(content)
+    return None
+
+
+# ── URL exfiltration ───────────────────────────────────────────────────────
+# Fetch-style tools whose URL argument goes out to an arbitrary host.
+URL_TOOLS = frozenset({"web_fetch", "download_pdf", "scrapebadger"})
+
+_URL_RE = re.compile(r"""https?://[^\s"'<>`]+""", re.I)
+_BARE_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/?#][^\s]*)?$")
+_SECRET_RE = re.compile(
+    r"(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|"
+    r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}|-----BEGIN)"
+)
+# A long unbroken run of base64/hex-ish characters with letters and digits.
+_BLOB_RE = re.compile(r"[A-Za-z0-9+/=_-]{48,}")
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+MAX_QUERY_CHARS = 200
+MAX_PARAMS = 12
+MAX_PATH_BLOB = 64
+
+
+def _candidate_urls(content: str) -> List[str]:
+    """URLs a fetch-style call would contact: JSON ``url``/``params.url`` and
+    any http(s) URL in the text, plus a bare first-line domain."""
+    urls: List[str] = []
+    a = _args(content)
+    for v in (a.get("url"), (a.get("params") or {}).get("url") if isinstance(a.get("params"), dict) else None):
+        if isinstance(v, str) and v.strip():
+            urls.append(v.strip())
+    urls.extend(_URL_RE.findall(content or ""))
+    if not urls:
+        first = (content or "").strip().split("\n", 1)[0].strip()
+        if _BARE_HOST_RE.match(first):
+            urls.append("https://" + first)
+    seen, out = set(), []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _has_letters_and_digits(s: str) -> bool:
+    return any(c.isdigit() for c in s) and any(c.isalpha() for c in s)
+
+
+def url_payload_signals(url: str) -> List[str]:
+    """Why this URL looks like it carries data out (empty list = looks like
+    an ordinary page/search URL). Deterministic, no network."""
+    from urllib.parse import parse_qsl, unquote, urlsplit
+    try:
+        parts = urlsplit(url if "://" in url else "https://" + url)
+    except ValueError:
+        return ["a malformed URL"]
+    query, frag, path = parts.query or "", parts.fragment or "", parts.path or ""
+    sigs: List[str] = []
+    decoded_all = unquote(" ".join((path, query, frag)).replace("+", " "))
+    if parts.username or parts.password:
+        sigs.append("credentials in the URL")
+    if _SECRET_RE.search(decoded_all):
+        sigs.append("a secret-looking token")
+    if len(query) + len(frag) > MAX_QUERY_CHARS:
+        sigs.append(f"a {len(query) + len(frag)}-character query string")
+    params = parse_qsl(query, keep_blank_values=True)
+    if len(params) > MAX_PARAMS:
+        sigs.append(f"{len(params)} query parameters")
+    if any("\n" in v for _, v in params) or "%0a" in (query + frag).lower():
+        sigs.append("multi-line text")
+    if len(_EMAIL_RE.findall(unquote(query + " " + frag))) >= 2:
+        sigs.append("several email addresses")
+    blobs = [b for b in _BLOB_RE.findall(unquote(query + " " + frag)) if _has_letters_and_digits(b)]
+    blobs += [b for b in re.findall(r"[A-Za-z0-9+=_-]{%d,}" % MAX_PATH_BLOB, unquote(path))
+              if _has_letters_and_digits(b)]
+    if blobs:
+        sigs.append("an encoded data blob")
+    return sigs
+
+
+def exfil_url_reason(content: str) -> Optional[str]:
+    """Gate description when a fetch-style call's URL looks like it smuggles
+    data to its host, else None."""
+    from urllib.parse import urlsplit
+    for url in _candidate_urls(content):
+        sigs = url_payload_signals(url)
+        if sigs:
+            try:
+                host = urlsplit(url if "://" in url else "https://" + url).hostname or "a server"
+            except ValueError:
+                host = "a server"
+            return f"send data to {host} inside a URL ({', '.join(sigs[:3])})"
     return None
 
 

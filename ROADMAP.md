@@ -220,9 +220,13 @@ reduced-motion audit. Spec + log: `docs/JARVIS_UI.md`.
   Also fixed: `stream_agent_loop` crashed with UnboundLocalError (`get_setting`)
   whenever a caller passed `max_rounds` (scheduled LLM tasks, bg monitor,
   skill tests).
+  Shipped: **URL exfil gate** — on a tainted reply, `web_fetch` / `download_pdf` /
+  `scrapebadger` / URL-bearing `mcp__*` calls are held when the URL smuggles data
+  (secret-looking tokens, base64/hex blobs, 200+ char query strings, 12+ params,
+  multi-line text, several emails, `user:pw@`); ordinary page/search URLs pass.
   Next: a live (streaming) badge for flagged tool steps and held calls; an eval
-  harness that replays the payload corpus against small local models; gate
-  `web_fetch` URLs that carry long data-looking query strings on tainted turns.)
+  harness that replays the payload corpus against small local models; also hold
+  URLs that echo text the turn read from email/vault/memory (taint-aware DLP).)
 - Better degraded-state reporting for ChromaDB, SearXNG, email, ntfy, and provider probes.
   (Background checks + notifications + sidebar status dot shipped as Service
   Health; still open: LLM provider probes.)
