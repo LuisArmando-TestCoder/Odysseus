@@ -310,6 +310,17 @@
   font: 600 11px/1 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.14em; margin-right: 6px;
 }
 :root[data-odx-theme="jarvis"] .goalbar.on .meta { font-family: var(--jv-mono); font-size: 11.5px; }
+:root[data-odx-theme="jarvis"] .goalbar.offer { outline: 1px solid var(--jv-cyan); outline-offset: 3px; }
+:root[data-odx-theme="jarvis"] .offer-tag { font: 600 10.5px/1 var(--jv-mono); color: var(--jv-cyan); letter-spacing: 0.14em; }
+:root[data-odx-theme="jarvis"] .goal-why {
+  border-radius: 0; border-left: 2px solid var(--jv-danger);
+  background: color-mix(in srgb, var(--jv-danger) 7%, transparent);
+  color: var(--jv-text); font-size: 13px;
+}
+:root[data-odx-theme="jarvis"] .goal-why b { color: var(--jv-danger); }
+:root[data-odx-theme="jarvis"] .goal-why.warnish { border-left-color: var(--jv-amber); background: color-mix(in srgb, var(--jv-amber) 7%, transparent); }
+:root[data-odx-theme="jarvis"] .goal-why.warnish b { color: var(--jv-amber); }
+:root[data-odx-theme="jarvis"] .goal-why .meta { font-family: inherit; font-size: 12px; margin-top: 3px; }
 
 /* Entities / relationships / findings / steps: data rows on hairlines */
 :root[data-odx-theme="jarvis"] :is(.ent, .finding, .w) { border-bottom: 1px solid color-mix(in srgb, var(--jv-cyan) 10%, transparent); }

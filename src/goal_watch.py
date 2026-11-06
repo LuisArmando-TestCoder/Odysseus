@@ -237,5 +237,18 @@ def due_goal_alerts(owner: str, *, goal_api=None, now: Optional[float] = None,
     return [alert]
 
 
-def format_goal_alerts(items: List[Dict[str, Any]]) -> str:
-    return "\n".join(a["message"] for a in items)
+def format_goal_alerts(items: List[Dict[str, Any]], links: bool = False, base_url: str = "") -> str:
+    """Alert lines. With ``links``, a goal that drives a case gets a deep link
+    to that case on the Intel Board — with a one-click Resume offer when it is
+    blocked or paused."""
+    out = []
+    for a in items:
+        msg = a["message"]
+        if links and a.get("case_id"):
+            from src.case_goal import case_action_link
+            act = "resume" if a.get("kind") in ("blocked", "paused") else None
+            url = case_action_link(a["case_id"], act, base_url)
+            if url:
+                msg += f" → {url}"
+        out.append(msg)
+    return "\n".join(out)

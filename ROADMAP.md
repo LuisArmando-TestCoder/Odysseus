@@ -138,9 +138,16 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   that is blocked now count in the Intel Board badge; the tooltip names the
   goal's state ("goal blocked on “X”: reason" / paused / driving) and new
   links, and the JSON adds `goal`, `new_links`, `links`.
-- Next: one-click "Drive with goal" / "Resume goal" from a cold-case or
-  blocked-goal notification; show the blocked reason with a Resume button on
-  `/cases`.
+- **One-click case goals** (`case_goal.resume_case_goal`,
+  `POST /api/cases/{id}/resume`, `case_action_link`): a blocked or paused
+  case goal shows *why it stopped* and a **Resume goal** button on `/cases`;
+  Intel Cold Cases and Goal Check-in notifications end with a deep link
+  (`/cases?case=…&do=drive|resume`, absolute when `app_public_url` is set)
+  that opens the case with the action highlighted and focused — one click,
+  never an automatic change on load. Resume is human-only like
+  `/api/goal/resume`.
+- Next: "Answer the blocker" — reply to a blocked case goal's question right
+  in the `/cases` goal bar (posts into the goal's chat, then resumes).
 
 ## Jarvis UI (in progress)
 

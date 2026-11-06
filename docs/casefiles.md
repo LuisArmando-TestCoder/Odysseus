@@ -72,6 +72,17 @@ data (control characters and fence look-alikes stripped, lines capped), and a
 binding to a deleted case degrades to a short note. `GET /api/cases/{id}`
 returns `goal` (phase, rounds, blocked reason) when the case is bound.
 
+**Resume in one click.** When the case goal is *blocked* the goal bar shows
+"Why it stopped" with the reason and a **Resume goal** button (also for a
+*paused* goal); it calls `POST /api/cases/{id}/resume` (direct human request
+only, like `/api/goal/resume`), which resumes the goal and starts the next
+round. The Intel Cold Cases and Goal Check-in notifications end with a deep
+link — `/cases?case=<id>&do=drive` for a cold case with open steps,
+`&do=resume` for a blocked/paused case goal — prefixed with `app_public_url`
+when that setting is a valid http(s) URL. Opening the link highlights and
+focuses the matching button; nothing changes until you click it, and a stale
+link (goal already running) simply opens the case.
+
 ## Watchlist (`src/watchlist.py`)
 
 Watch any URL on an interval (min 15 min). Each check fetches the page
@@ -161,6 +172,7 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | POST | `/api/cases/{id}/entities` · `/findings` · `/links` · `/steps` | add (`/steps` with `{"pivots": true}` queues all pivots) |
 | POST | `/api/cases/{id}/steps/{step}/done` | complete a step |
 | POST | `/api/cases/{id}/drive` | bind to the goal (creates one if none is live) / `{"on": false}` releases |
+| POST | `/api/cases/{id}/resume` | resume the paused/blocked goal driving this case (human-only) → `{goal, resumed}` |
 | GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes (each with `also_in`), typed + co-mention edges, hubs, isolated, `overlap_cases` |
 | GET | `/api/cases/{id}/overlap` | selectors shared with the caller's other cases: per-entity `entities`, ranked `cases` |
 | GET | `/api/cases/{id}/export` | markdown dossier |

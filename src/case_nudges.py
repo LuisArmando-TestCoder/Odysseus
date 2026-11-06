@@ -118,12 +118,22 @@ def stale_cases(owner: str, *, store=None, goal_api=None, now: Optional[float] =
     return out[:limit]
 
 
-def format_nudges(items: List[Dict[str, Any]], header: str = "Cases going cold:") -> str:
+def format_nudges(items: List[Dict[str, Any]], header: str = "Cases going cold:",
+                  links: bool = False, base_url: str = "") -> str:
+    """One line per cold case. With ``links`` each line ends with a deep link
+    into the Intel Board (``/cases?case=…&do=drive`` when driving is the next
+    move) — absolute when ``base_url`` (the app's public URL) is set."""
     if not items:
         return ""
     lines = [header]
     for c in items:
-        lines.append(f"  · {c['title']} — last touched {_ago(c['idle_days'])}; {c['suggestion']}")
+        line = f"  · {c['title']} — last touched {_ago(c['idle_days'])}; {c['suggestion']}"
+        if links:
+            from src.case_goal import case_action_link
+            url = case_action_link(c.get("id"), "drive" if c.get("action") == "drive" else None, base_url)
+            if url:
+                line += f" → {url}"
+        lines.append(line)
     return "\n".join(lines)
 
 

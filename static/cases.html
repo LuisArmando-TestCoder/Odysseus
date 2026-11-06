@@ -72,6 +72,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .overlap button{font-size:12px;padding:3px 8px}
 .goalbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:10px;padding:8px 10px;border:1px dashed var(--border);border-radius:10px}
 .goalbar.on{border-style:solid;border-color:var(--accent)}
+.goalbar.offer{outline:2px solid var(--accent);outline-offset:2px}
+.offer-tag{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-right:8px}
+.goal-why{flex-basis:100%;border-left:3px solid var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent);padding:7px 10px;border-radius:0 8px 8px 0;overflow-wrap:anywhere}
+.goal-why b{color:var(--bad);margin-right:6px}
+.goal-why.warnish{border-left-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.goal-why.warnish b{color:var(--warn)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px}
 .legend span{font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -156,6 +162,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   const openCase = run(async (id) => {
     const { case: c, pivots, goal } = await api('/api/cases/' + id);
     current = c; renderCase(c, pivots, goal); loadGraph(c.id); loadCases();
+    const offered = offer && document.querySelector('.goalbar.offer button.primary');
+    if (offered) { offered.scrollIntoView({ block: 'center' }); offered.focus({ preventScroll: true }); }
+    else if (offer) clearOffer();  // stale link (already resumed / now driving) — nothing to offer
   });
 
   function renderCase(c, pivots, goal) {
@@ -197,17 +206,28 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     </div>`;
   }
 
+  // A notification deep link (/cases?case=…&do=drive|resume) only *offers*
+  // the action: the button still needs a click, nothing changes on load.
+  let offer = new URLSearchParams(location.search).get('do');
+  function clearOffer() {
+    offer = null;
+    try { const u = new URL(location.href); u.searchParams.delete('do'); history.replaceState(null, '', u); } catch (_) {}
+  }
   function goalBar(c, g) {
     const openN = c.next_steps.filter(s => !s.done).length;
+    const from = (act) => offer === act ? '<span class="offer-tag">From your notification</span>' : '';
     if (!g) {
       if (c.status === 'closed') return '';
-      return `<div class="goalbar"><span class="meta">Let Odysseus keep working this case on its own: a goal works the open steps round after round${openN ? '' : ' (queue a few pivots first)'}.</span>
+      return `<div class="goalbar${offer === 'drive' ? ' offer' : ''}"><span class="meta">${from('drive')}Let Odysseus keep working this case on its own: a goal works the open steps round after round${openN ? '' : ' (queue a few pivots first)'}.</span>
         <button id="c-drive" class="primary">Drive with goal</button></div>`;
     }
     const cls = g.phase === 'active' ? 'good' : g.phase === 'blocked' ? 'bad' : 'warn';
-    const why = g.phase === 'blocked' && g.blocked_reason ? ` — ${esc(g.blocked_reason)}` : g.phase === 'paused' ? ' — resume it from the goal card' : '';
-    return `<div class="goalbar on"><span><b class="${cls}">Goal ${esc(g.phase)}</b> <span class="meta">round ${g.rounds}/${g.max_rounds} · ${openN} open step(s)${why}</span></span>
-      <button id="c-release" class="ghost">Stop driving</button></div>`;
+    const stuck = g.phase === 'blocked' || g.phase === 'paused';
+    const why = g.phase === 'blocked'
+      ? `<div class="goal-why" role="note"><b>Why it stopped</b> ${esc(g.blocked_reason || 'the goal reported a blocker without a reason')}<div class="meta">Fix what it needs (answer in its chat, add the key, edit the objective), then resume — it picks up at the next open step.</div></div>`
+      : g.phase === 'paused' ? '<div class="goal-why warnish" role="note"><b>Paused</b> it waits here until you resume it.</div>' : '';
+    return `<div class="goalbar on${stuck && offer === 'resume' ? ' offer' : ''}"><span>${stuck ? from('resume') : ''}<b class="${cls}">Goal ${esc(g.phase)}</b> <span class="meta">round ${g.rounds}/${g.max_rounds} · ${openN} open step(s)</span></span>
+      <span class="row">${stuck ? '<button id="c-resume" class="primary">Resume goal</button>' : ''}<button id="c-release" class="ghost">Stop driving</button></span>${why}</div>`;
   }
 
   // ----- entity graph ------------------------------------------------------
@@ -342,8 +362,16 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       await api(`/api/cases/${id}/steps/${e.target.dataset.step}/done`, { method: 'POST', body: { result } }); return openCase(id);
     }
     if (e.target.id === 'c-drive') {
+      e.target.disabled = true; clearOffer();
       const r = await api(`/api/cases/${id}/drive`, { method: 'POST', body: { on: true } });
       toast(r.created ? 'Goal started — it works this case between your messages' : r.rebound_from ? 'Goal switched to this case' : 'The current goal now drives this case');
+      return openCase(id);
+    }
+    if (e.target.id === 'c-resume') {
+      e.target.disabled = true;
+      const r = await api(`/api/cases/${id}/resume`, { method: 'POST', body: {} });
+      clearOffer();
+      toast(r.resumed ? 'Goal resumed — next round starts on the first open step' : 'The goal is already running');
       return openCase(id);
     }
     if (e.target.id === 'c-release') { await api(`/api/cases/${id}/drive`, { method: 'POST', body: { on: false } }); toast('Goal released from this case'); return openCase(id); }

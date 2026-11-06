@@ -1417,7 +1417,9 @@ async def action_check_stale_cases(owner: str, **kwargs) -> Tuple[str, bool]:
         return str(e), False
     if not due:
         raise TaskNoop("no cases going cold")
-    return format_nudges(due, header=f"{len(due)} open case(s) going cold:"), True
+    from src.case_goal import public_base_url
+    return format_nudges(due, header=f"{len(due)} open case(s) going cold:",
+                         links=True, base_url=public_base_url()), True
 
 
 async def action_check_goals(owner: str, **kwargs) -> Tuple[str, bool]:
@@ -1433,7 +1435,8 @@ async def action_check_goals(owner: str, **kwargs) -> Tuple[str, bool]:
         return str(e), False
     if not due:
         raise TaskNoop("goal needs nothing")
-    return format_goal_alerts(due), True
+    from src.case_goal import public_base_url
+    return format_goal_alerts(due, links=True, base_url=public_base_url()), True
 
 
 def _email_deadline_notes_safe(owner: str) -> list:

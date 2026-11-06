@@ -115,6 +115,28 @@ def setup_case_routes() -> APIRouter:
         return {"goal": case_goal.binding_for(owner, cid), "created": r["created"],
                 "rebound_from": r["rebound_from"]}
 
+    @router.post("/api/cases/{case_id}/resume")
+    async def resume_case_goal(case_id: str, request: Request):
+        """Resume the paused/blocked goal that drives this case (the one-click
+        "Resume goal" on /cases and in notification deep links). Like
+        POST /api/goal/resume it needs a direct human request."""
+        from src import case_goal
+        from routes.goal_routes import _is_top_level_human
+        owner = _owner(request)
+        if not owner:
+            raise HTTPException(403, "Authentication required")
+        if not _is_top_level_human(request):
+            raise HTTPException(403, "this action requires a direct human request")
+        cid = _guard(get_case_store().resolve_case_id, owner, case_id)
+        r = _guard(case_goal.resume_case_goal, owner, cid)
+        if r["resumed"]:
+            try:
+                from src import goal_driver
+                goal_driver.maybe_start_goal_round(owner=owner, goal=r["goal"])
+            except Exception:
+                logger.debug("resume: could not start a goal round", exc_info=True)
+        return {"goal": case_goal.binding_for(owner, cid), "resumed": r["resumed"]}
+
     @router.patch("/api/cases/{case_id}")
     async def update_case(case_id: str, request: Request):
         b = await _body(request)

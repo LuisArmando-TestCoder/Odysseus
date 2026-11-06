@@ -97,6 +97,62 @@ def release_case(owner: Optional[str], case_id: Optional[str] = None, *,
     return goal
 
 
+_CASE_ID_RE = re.compile(r"^case_[0-9a-f]{6,32}$")
+LINK_ACTIONS = ("drive", "resume")
+
+
+def public_base_url(settings_get=None) -> str:
+    """The owner-configured ``app_public_url`` (http/https only, no trailing
+    slash), or "" so links stay relative. Never raises."""
+    try:
+        if settings_get is None:
+            from src.settings import get_setting as settings_get
+        base = str(settings_get("app_public_url") or "").strip().rstrip("/")
+    except Exception:
+        return ""
+    if not re.match(r"^https?://[^\s/?#]+(?:/[^\s?#]*)?$", base, re.IGNORECASE):
+        return ""
+    return base
+
+
+def case_action_link(case_id: Any, action: Optional[str] = None, base_url: str = "") -> str:
+    """Deep link into the Intel Board for one case, optionally offering a
+    one-click action (``drive`` / ``resume``). The page asks before acting —
+    opening the link never changes anything by itself. "" for a bad id."""
+    cid = str(case_id or "")
+    if not _CASE_ID_RE.match(cid):
+        return ""
+    q = f"/cases?case={cid}"
+    if action in LINK_ACTIONS:
+        q += f"&do={action}"
+    return (base_url or "").rstrip("/") + q
+
+
+def resume_case_goal(owner: Optional[str], case_id: str, *, goal_api=None) -> Dict[str, Any]:
+    """Resume the owner's goal that drives ``case_id`` when it is paused or
+    blocked. Returns ``{"goal", "resumed"}`` (``resumed`` False when it was
+    already active). Raises ``ValueError`` when no goal drives this case or
+    the goal already finished (drive the case again to start a new one)."""
+    if not owner:
+        raise ValueError("an owner is required to resume a goal")
+    ga = _goal_api(goal_api)
+    goal = ga.get_goal(owner)
+    if not goal or goal.get("case_id") != case_id:
+        raise ValueError("no goal is driving this case — use Drive with goal")
+    phase = goal.get("phase")
+    if phase == "active":
+        return {"goal": goal, "resumed": False}
+    if phase not in ("paused", "blocked"):
+        raise ValueError("that goal already finished — Drive with goal to start a new one")
+    try:
+        goal = ga.update_goal(owner, goal["revision"], "resume")
+    except Exception as e:  # GoalConflict: the goal changed under us
+        if type(e).__name__ == "GoalConflict":
+            raise ValueError("the goal just changed — reload and try again")
+        raise
+    return {"goal": goal, "resumed": True}
+
+
 def binding_for(owner: Optional[str], case_id: str, *, goal_api=None) -> Optional[Dict[str, Any]]:
     """Compact goal state when the owner's goal is bound to ``case_id``."""
     goal = _goal_api(goal_api).get_goal(owner) if owner else None
