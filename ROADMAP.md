@@ -176,9 +176,14 @@ swept every text node and placeholder across all tool windows and settings
 tabs at 1440 and 390: sub-AA secondary text (counters, empty states,
 placeholders, micro-labels, Compare's off toggles) now uses the jarvis
 faint tone at full opacity (≥ 5 : 1); under reduced motion no animation
-runs in any view. Next: the same audit inside chat content (bubbles,
-tool cards, agent activity) and the voice overlay. Spec + log:
-`docs/JARVIS_UI.md`.
+runs in any view. Part 2 (run 19) ran the same sweep over a seeded agent
+turn and the voice overlay: chat content and the voice overlay are now 0
+sub-AA strings in jarvis (timestamps/metrics via `--color-muted-alt`,
+source domains, voice `--vx-faint`/`--vx-dim`), ordered-list numbers are no
+longer clipped, wrapped code lines align, and the voice chat feed / spoken
+answers no longer read the sources box aloud ("2 Web sources1crt.sh…").
+Next: gradient-clipped headings + light-theme chat contrast report.
+Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
 

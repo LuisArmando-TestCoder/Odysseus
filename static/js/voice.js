@@ -2344,7 +2344,10 @@ function _msgText(el, max = 4000) {
 
 function _extractText(body) {
   const clone = body.cloneNode(true);
+  // .sources-section is the web/research sources + findings box (it was
+  // read as "2 Web sources1crt.sh | acme…"); .edit-summary is the files card.
   clone.querySelectorAll('details, .think, .thinking, .thinking-section, .live-think-inner, .sources-box, ' +
+    '.sources-section, .edit-summary, .deep-dive, ' +
     '.msg-actions, .msg-metrics, .msg-footer, .agent-thread, .spinner, .research-timer, .stopped-indicator, ' +
     'button, svg, style, script')
     .forEach(n => n.remove());

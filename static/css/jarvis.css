@@ -79,6 +79,9 @@
   --color-accent: var(--jv-cyan);
   --color-link-hover: var(--jv-cyan-hi);
   --color-subheader: var(--jv-text-faint);
+  /* style.css's #6b7280 secondary grey (timestamps, metrics, footer
+     dividers, small icon keys) is 4.1 : 1 here — use the jarvis tone. */
+  --color-muted-alt: var(--jv-text-faint);
 
   /* cinematic-ai.css token bridge — cool the aurora down to one source
      (no warm/terracotta wash), keep its glass + easing. */
@@ -502,6 +505,43 @@
 }
 :root[data-odx-theme="jarvis"] :is(.compare-blind-toggle, .compare-save-toggle, .compare-dice-toggle, .compare-reset-toggle, .compare-mode-tab):not(.active):hover {
   color: var(--jv-text);
+}
+
+/* Run 19 · chat content. The same sweep over a seeded agent turn (tool
+   cards, sources, findings, edit summary, thinking, table, code) with
+   every disclosure opened. Message chrome used style.css's hard-coded
+   --color-muted-alt (#6b7280, 4.1 : 1); source domains a 45 % fade of
+   cyan (3.1 : 1). The grey is fixed at the token (§0, --color-muted-alt);
+   message bodies, tables, code and tool cards already pass. */
+:root[data-odx-theme="jarvis"] .msg .timestamp { color: var(--jv-text-faint); }
+:root[data-odx-theme="jarvis"] .source-domain {
+  opacity: 1;
+  color: var(--jv-text-faint);
+  font-family: var(--jv-mono);
+}
+/* Ordered-list numbers were clipped to a bare "." — the base 1.2em indent
+   is narrower than a mono "1." marker, so the digit fell outside the body.
+   Indent from the padding (room for "10.") instead of the margin. */
+:root[data-odx-theme="jarvis"] .msg .body ol {
+  margin-left: 0;
+  padding-left: calc(3ch + 0.5em);
+}
+/* Wrapped code lines hung left of the first: hljs's 8px padding lands on
+   the inline <code> inside the already-padded <pre>, indenting line 1 only. */
+:root[data-odx-theme="jarvis"] .msg .body pre > code.hljs { padding: 0; }
+:root[data-odx-theme="jarvis"] .msg .body ol > li::marker {
+  color: var(--jv-text-faint);
+  font-family: var(--jv-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Run 19 · voice overlay. Its two quiet tones were 32 % and 58 % alpha
+   (2.4 : 1 and, inside a .8-opacity pipeline node, 3.9 : 1) — every chip,
+   pill, gauge label, strata count, log timestamp and empty state used them.
+   Re-point the tokens rather than chase 21 rules. */
+:root[data-odx-theme="jarvis"] .vx {
+  --vx-faint: rgba(205, 228, 245, .62);
+  --vx-dim: rgba(205, 228, 245, .74);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

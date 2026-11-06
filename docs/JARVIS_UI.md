@@ -744,3 +744,47 @@ home screen, all 11 sidebar tool windows and all 9 settings tabs, at
 and the voice overlay, then gradient-clipped headings (the probe skips
 `background-clip: text`).
 
+### Run 19 — 2026-11-06 · Whole-app audit, part 2: chat content + voice overlay
+`static/css/jarvis.css` (§0 token bridge + §5 contrast floor, "Run 19"
+blocks) and one all-theme text-extraction fix in `static/js/voice.js`.
+Method: the Run 18 probe (composited fg/bg, opacity chain, hit-tested) over
+a seeded session — user turns, a 2-round agent turn with ok/failed/guarded
+tool cards, web sources, findings, an edit summary with diff stats, a
+table, an ordered list, a bash block, inline code, a blockquote, a thinking
+section — with every disclosure opened and the history scrolled in 70 %
+steps; then the voice overlay (`openVoiceMode({autostart:false})`) on top.
+1440×900 and 390×844 touch, reduced motion.
+- **Chat (jarvis 8 → 0 per width):** timestamps, response metrics and the
+  footer `|` dividers used style.css's hard-coded `--color-muted-alt`
+  (#6b7280, 4.1 : 1; the dividers set it inline from JS). Re-pointed the
+  token in jarvis §0 instead of chasing selectors. Source domains were a
+  45 % fade of cyan (3.1 : 1) → `--jv-text-faint`, mono.
+- **Voice overlay (jarvis 7 → 0):** "Idle" chip, engine tag and pipeline
+  step numbers sat on `--vx-faint` (32 %, 2.4 : 1) / `--vx-dim` (58 % inside
+  an .8-opacity node, 3.9 : 1). 21 rules use those tokens (gauge labels,
+  strata counts, log timestamps, empty states), so jarvis re-points them
+  on `.vx` to 62 % / 74 % (≥ 5 : 1).
+- **Ordered lists showed a bare "."** — the base 1.2em margin is narrower
+  than a mono "1." marker, so the digit fell outside the body. Indent now
+  comes from padding (`3ch + .5em`, room for "10."), markers are faint mono.
+- **Wrapped code hung left of line 1** — hljs's 8px padding landed on the
+  inline `<code>` inside the padded `<pre>`; zeroed in jarvis.
+- **Voice chat feed / spoken answers read the sources box** ("2 Web
+  sources1crt.sh | acme…"): `_extractText` stripped `.sources-box`, but the
+  renderer's class is `.sources-section`. Now strips `.sources-section`,
+  `.edit-summary`, `.deep-dive` too (all themes — it also changes what the
+  voice speaks, for the better).
+- Verified headless (mocked `/api/*`, nonce injected): jarvis before/after
+  at 1440 + 390 (chat top/bottom, code close-up, voice); light 1440 + 390
+  pixel-identical apart from the live clock digit and the voice feed text
+  fix. No new console errors. Tests touching edited files: 226 pass /
+  7 fail, identical to baseline.
+- Seen, not fixed (out of jarvis scope): the **light** theme has ~44
+  sub-AA strings in chat content (terracotta `#c47d5a` links/labels at
+  2.8–3 : 1, gold code at 4.1 : 1) and ~60 in the voice overlay (it stays
+  dark-on-light). Markdown autolinks `acme-robotics.co.uk` as `…co` + `.uk`
+  (linkifier TLD list, JS).
+
+**Next:** audit part 3 — gradient-clipped headings (`background-clip:
+text`, skipped by the probe): sample the gradient stops against the canvas;
+then hand the light-theme report above to whoever owns that preset.
