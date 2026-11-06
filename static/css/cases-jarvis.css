@@ -321,6 +321,13 @@
 :root[data-odx-theme="jarvis"] .goal-why.warnish { border-left-color: var(--jv-amber); background: color-mix(in srgb, var(--jv-amber) 7%, transparent); }
 :root[data-odx-theme="jarvis"] .goal-why.warnish b { color: var(--jv-amber); }
 :root[data-odx-theme="jarvis"] .goal-why .meta { font-family: inherit; font-size: 12px; margin-top: 3px; }
+:root[data-odx-theme="jarvis"] .goal-answer textarea {
+  border-radius: 0; background: color-mix(in srgb, var(--jv-void) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--jv-cyan) 28%, transparent); color: var(--jv-text);
+}
+:root[data-odx-theme="jarvis"] .goal-answer textarea:focus-visible { border-color: var(--jv-cyan); outline: 1px solid var(--jv-cyan); outline-offset: 1px; }
+:root[data-odx-theme="jarvis"] .goal-answer .ans-row .meta { font-family: var(--jv-mono); font-size: 11px; letter-spacing: 0.04em; }
+@media (max-width: 560px) { :root[data-odx-theme="jarvis"] .goal-answer .ans-row button, .goal-answer .ans-row button { flex: 1 1 100%; min-height: 44px; } }
 
 /* Entities / relationships / findings / steps: data rows on hairlines */
 :root[data-odx-theme="jarvis"] :is(.ent, .finding, .w) { border-bottom: 1px solid color-mix(in srgb, var(--jv-cyan) 10%, transparent); }

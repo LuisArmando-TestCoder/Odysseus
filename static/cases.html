@@ -76,6 +76,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .offer-tag{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-right:8px}
 .goal-why{flex-basis:100%;border-left:3px solid var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent);padding:7px 10px;border-radius:0 8px 8px 0;overflow-wrap:anywhere}
 .goal-why b{color:var(--bad);margin-right:6px}
+.goal-answer{margin-top:8px;display:grid;gap:6px}
+.goal-answer textarea{min-height:56px;background:var(--panel)}
+.ans-row{justify-content:space-between;flex-wrap:wrap}
 .goal-why.warnish{border-left-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,transparent)}
 .goal-why.warnish b{color:var(--warn)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px}
@@ -162,7 +165,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   const openCase = run(async (id) => {
     const { case: c, pivots, goal } = await api('/api/cases/' + id);
     current = c; renderCase(c, pivots, goal); loadGraph(c.id); loadCases();
-    const offered = offer && document.querySelector('.goalbar.offer button.primary');
+    const offered = offer && document.querySelector('.goalbar.offer textarea, .goalbar.offer button.primary');
     if (offered) { offered.scrollIntoView({ block: 'center' }); offered.focus({ preventScroll: true }); }
     else if (offer) clearOffer();  // stale link (already resumed / now driving) — nothing to offer
   });
@@ -213,6 +216,29 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     offer = null;
     try { const u = new URL(location.href); u.searchParams.delete('do'); history.replaceState(null, '', u); } catch (_) {}
   }
+  const ANSWER_MAX = 1200;
+  function answerInput() {
+    const t = $('#c-answer'), n = $('#c-answer-n'), go = $('#c-answer-go'); if (!t) return;
+    const len = t.value.trim().length;
+    go.disabled = !len;
+    n.textContent = len ? `${t.value.length}/${ANSWER_MAX} · ⌘/Ctrl+Enter to send` : '⌘/Ctrl+Enter to send';
+  }
+  const sendAnswer = run(async () => {
+    const t = $('#c-answer'), go = $('#c-answer-go'); if (!t || !current || !t.value.trim()) return;
+    go.disabled = true; t.readOnly = true; go.textContent = 'Sending…';
+    try {
+      const r = await api(`/api/cases/${current.id}/answer`, { method: 'POST', body: { answer: t.value } });
+      clearOffer();
+      toast(r.resumed ? 'Answer sent — the goal is back on this case' : 'Answer sent');
+    } catch (e) {
+      t.readOnly = false; go.textContent = 'Answer & resume'; answerInput(); throw e;
+    }
+    return openCase(current.id);
+  });
+  $('#detail').addEventListener('input', (e) => { if (e.target.id === 'c-answer') answerInput(); });
+  $('#detail').addEventListener('keydown', (e) => {
+    if (e.target.id === 'c-answer' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendAnswer(); }
+  });
   function goalBar(c, g) {
     const openN = c.next_steps.filter(s => !s.done).length;
     const from = (act) => offer === act ? '<span class="offer-tag">From your notification</span>' : '';
@@ -224,10 +250,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     const cls = g.phase === 'active' ? 'good' : g.phase === 'blocked' ? 'bad' : 'warn';
     const stuck = g.phase === 'blocked' || g.phase === 'paused';
     const why = g.phase === 'blocked'
-      ? `<div class="goal-why" role="note"><b>Why it stopped</b> ${esc(g.blocked_reason || 'the goal reported a blocker without a reason')}<div class="meta">Fix what it needs (answer in its chat, add the key, edit the objective), then resume — it picks up at the next open step.</div></div>`
+      ? `<div class="goal-why" role="note"><b>Why it stopped</b> ${esc(g.blocked_reason || 'the goal reported a blocker without a reason')}
+        <div class="goal-answer"><label for="c-answer" class="meta">Answer it here — your reply goes to the goal's chat and the goal resumes at the next open step. (Fixed it elsewhere? Just resume.)</label>
+          <textarea id="c-answer" rows="2" maxlength="${ANSWER_MAX}" placeholder="e.g. Use the Shodan key I just added · skip LinkedIn · the domain is acme.io, not acme.com"></textarea>
+          <div class="row ans-row"><span id="c-answer-n" class="meta" aria-live="polite">⌘/Ctrl+Enter to send</span><button id="c-answer-go" class="primary" disabled>Answer &amp; resume</button></div></div></div>`
       : g.phase === 'paused' ? '<div class="goal-why warnish" role="note"><b>Paused</b> it waits here until you resume it.</div>' : '';
     return `<div class="goalbar on${stuck && offer === 'resume' ? ' offer' : ''}"><span>${stuck ? from('resume') : ''}<b class="${cls}">Goal ${esc(g.phase)}</b> <span class="meta">round ${g.rounds}/${g.max_rounds} · ${openN} open step(s)</span></span>
-      <span class="row">${stuck ? '<button id="c-resume" class="primary">Resume goal</button>' : ''}<button id="c-release" class="ghost">Stop driving</button></span>${why}</div>`;
+      <span class="row">${stuck ? `<button id="c-resume" class="${g.phase === 'blocked' ? 'ghost' : 'primary'}">Resume goal</button>` : ''}<button id="c-release" class="ghost">Stop driving</button></span>${why}</div>`;
   }
 
   // ----- entity graph ------------------------------------------------------
@@ -367,6 +396,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       toast(r.created ? 'Goal started — it works this case between your messages' : r.rebound_from ? 'Goal switched to this case' : 'The current goal now drives this case');
       return openCase(id);
     }
+    if (e.target.id === 'c-answer-go') return sendAnswer();
     if (e.target.id === 'c-resume') {
       e.target.disabled = true;
       const r = await api(`/api/cases/${id}/resume`, { method: 'POST', body: {} });

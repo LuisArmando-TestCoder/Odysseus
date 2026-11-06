@@ -137,6 +137,29 @@ def setup_case_routes() -> APIRouter:
                 logger.debug("resume: could not start a goal round", exc_info=True)
         return {"goal": case_goal.binding_for(owner, cid), "resumed": r["resumed"]}
 
+    @router.post("/api/cases/{case_id}/answer")
+    async def answer_case_goal(case_id: str, request: Request):
+        """Answer the blocker of the goal driving this case right from /cases:
+        posts {"answer": "…"} into the goal's chat as the user's message, then
+        resumes the goal. Human-only, like resume."""
+        from src import case_goal
+        from routes.goal_routes import _is_top_level_human
+        owner = _owner(request)
+        if not owner:
+            raise HTTPException(403, "Authentication required")
+        if not _is_top_level_human(request):
+            raise HTTPException(403, "this action requires a direct human request")
+        b = await _body(request)
+        cid = _guard(get_case_store().resolve_case_id, owner, case_id)
+        r = _guard(case_goal.answer_case_blocker, owner, cid, b.get("answer"))
+        if r["resumed"]:
+            try:
+                from src import goal_driver
+                goal_driver.maybe_start_goal_round(owner=owner, goal=r["goal"])
+            except Exception:
+                logger.debug("answer: could not start a goal round", exc_info=True)
+        return {"goal": case_goal.binding_for(owner, cid), "resumed": r["resumed"]}
+
     @router.patch("/api/cases/{case_id}")
     async def update_case(case_id: str, request: Request):
         b = await _body(request)

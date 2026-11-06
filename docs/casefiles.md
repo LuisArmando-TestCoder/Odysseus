@@ -83,6 +83,17 @@ when that setting is a valid http(s) URL. Opening the link highlights and
 focuses the matching button; nothing changes until you click it, and a stale
 link (goal already running) simply opens the case.
 
+**Answer the blocker.** A blocked goal usually stopped on a question ("which
+domain is the client's?"). The "Why it stopped" panel has an answer box:
+**Answer & resume** (or ⌘/Ctrl+Enter) calls `POST /api/cases/{id}/answer`
+with `{"answer": "…"}` (≤1200 chars, direct human request only). The reply
+is posted into the goal's chat as your message — naming the case and quoting
+the blocker — so the next round reads it in its steering block, then the goal
+resumes. It is refused while that chat is mid-reply, when the goal is not
+waiting on you, or when the chat no longer exists; nothing resumes unless the
+answer was posted. A deep link with `&do=resume` focuses the answer box for a
+blocked goal (Resume goal stays available for a blocker you fixed elsewhere).
+
 ## Watchlist (`src/watchlist.py`)
 
 Watch any URL on an interval (min 15 min). Each check fetches the page
@@ -173,6 +184,7 @@ ops: `add` (`kind`: `auto`|`page`|`feed`), `list`, `check`, `pause`, `resume`, `
 | POST | `/api/cases/{id}/steps/{step}/done` | complete a step |
 | POST | `/api/cases/{id}/drive` | bind to the goal (creates one if none is live) / `{"on": false}` releases |
 | POST | `/api/cases/{id}/resume` | resume the paused/blocked goal driving this case (human-only) → `{goal, resumed}` |
+| POST | `/api/cases/{id}/answer` | `{answer}` → post it to the goal's chat, then resume the goal (human-only) → `{goal, resumed}` |
 | GET | `/api/cases/{id}/graph` | entity graph (`?max_nodes=80`, ≤300): nodes (each with `also_in`), typed + co-mention edges, hubs, isolated, `overlap_cases` |
 | GET | `/api/cases/{id}/overlap` | selectors shared with the caller's other cases: per-entity `entities`, ranked `cases` |
 | GET | `/api/cases/{id}/export` | markdown dossier |

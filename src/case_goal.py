@@ -153,6 +153,89 @@ def resume_case_goal(owner: Optional[str], case_id: str, *, goal_api=None) -> Di
     return {"goal": goal, "resumed": True}
 
 
+MAX_ANSWER_CHARS = 1200  # the round steering block keeps 1500 chars per message
+_ANSWER_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _blocked_reason_text(goal: Dict[str, Any]) -> str:
+    reason = goal.get("blockedReason")
+    if isinstance(reason, dict):
+        reason = reason.get("message")
+    return str(reason or "")
+
+
+def clean_answer(text: Any) -> str:
+    """The user's reply as it will be posted: control chars dropped (newlines
+    kept), runs of blank lines collapsed, trimmed. Raises ``ValueError`` when
+    empty or longer than ``MAX_ANSWER_CHARS``."""
+    s = _ANSWER_CTRL_RE.sub("", str(text or "")).replace("\r\n", "\n").replace("\r", "\n")
+    s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    if not s:
+        raise ValueError("write an answer first")
+    if len(s) > MAX_ANSWER_CHARS:
+        raise ValueError(f"answer is too long (max {MAX_ANSWER_CHARS} characters)")
+    return s
+
+
+def answer_message(case: Dict[str, Any], reason: str, answer: str) -> str:
+    """The chat message the goal's next round reads in its steering block.
+    It names the case and quotes the blocker so a small model connects the
+    reply to the question it asked."""
+    head = f'Answer to your blocker on case "{_clean(case.get("title"), 120)}"'
+    if reason:
+        head += f' ("{_clean(reason, 240)}")'
+    return f"{head}:\n\n{answer}\n\nUse this and continue the case from its next open step."
+
+
+def _default_post(owner: str, session_id: str, text: str, meta: Dict[str, Any]) -> None:
+    from src import agent_runs
+    if agent_runs.is_active(session_id):
+        raise ValueError("the goal's chat is busy right now — try again when its reply finishes")
+    from src.ai_interaction import get_session_manager
+    from core.models import ChatMessage
+    sm = get_session_manager()
+    sess = sm.get_session(session_id) if sm else None
+    if not sess:
+        raise ValueError("the goal's chat no longer exists — Drive with goal to start a new one")
+    sess_owner = getattr(sess, "owner", None)
+    if sess_owner and sess_owner != owner:
+        raise ValueError("the goal's chat belongs to someone else")
+    sess.add_message(ChatMessage("user", text, metadata=meta))
+
+
+def answer_case_blocker(owner: Optional[str], case_id: str, answer: Any, *, store=None,
+                        goal_api=None, post=None) -> Dict[str, Any]:
+    """Reply to the blocker of the goal driving ``case_id``: post the answer
+    into the goal's chat as a user message (the next round reads it as
+    steering), then resume the goal. Works for blocked and paused goals.
+
+    ``post(owner, session_id, text, meta)`` is injectable for tests. Returns
+    ``{"goal", "resumed", "message"}``. Raises ``ValueError`` for an empty or
+    oversized answer, no bound goal, a finished goal or no chat to post in;
+    ``KeyError`` for an unknown case.
+    """
+    if not owner:
+        raise ValueError("an owner is required to answer a goal")
+    text = clean_answer(answer)
+    ga = _goal_api(goal_api)
+    goal = ga.get_goal(owner)
+    if not goal or goal.get("case_id") != case_id:
+        raise ValueError("no goal is driving this case — use Drive with goal")
+    if goal.get("phase") not in ("paused", "blocked"):
+        raise ValueError("the goal is not waiting on you — send it a message in its chat instead"
+                         if goal.get("phase") == "active"
+                         else "that goal already finished — Drive with goal to start a new one")
+    session_id = goal.get("session_id")
+    if not session_id:
+        raise ValueError("the goal has no chat to answer in — Drive with goal to start a new one")
+    case = _store(store).get_case(owner, case_id)
+    message = answer_message(case, _blocked_reason_text(goal), text)
+    (post or _default_post)(owner, session_id, message,
+                            {"goal_answer": True, "case_id": case_id, "goal_id": goal.get("id")})
+    r = resume_case_goal(owner, case_id, goal_api=ga)
+    return {"goal": r["goal"], "resumed": r["resumed"], "message": message}
+
+
 def binding_for(owner: Optional[str], case_id: str, *, goal_api=None) -> Optional[Dict[str, Any]]:
     """Compact goal state when the owner's goal is bound to ``case_id``."""
     goal = _goal_api(goal_api).get_goal(owner) if owner else None

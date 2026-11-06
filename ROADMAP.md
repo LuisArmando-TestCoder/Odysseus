@@ -146,8 +146,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   that opens the case with the action highlighted and focused — one click,
   never an automatic change on load. Resume is human-only like
   `/api/goal/resume`.
-- Next: "Answer the blocker" — reply to a blocked case goal's question right
-  in the `/cases` goal bar (posts into the goal's chat, then resumes).
+- **Answer the blocker** (`case_goal.answer_case_blocker`,
+  `POST /api/cases/{id}/answer`): the "Why it stopped" panel on `/cases` has
+  an answer box — the reply is posted into the goal's chat (naming the case
+  and quoting the blocker, so the next round's steering block connects it),
+  then the goal resumes. Human-only; refused while the chat is mid-reply and
+  never resumes unless the answer landed. `&do=resume` deep links focus it.
+- Next: "snooze / mark done" actions on deadline notifications; show the
+  goal's last round output (what it tried) under "Why it stopped".
 
 ## Jarvis UI (in progress)
 
