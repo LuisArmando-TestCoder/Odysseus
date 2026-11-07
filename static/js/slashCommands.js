@@ -5679,6 +5679,13 @@ const COMMANDS = {
     handler: () => { window.location.assign('/cases'); return true; },
     usage: '/cases'
   },
+  deadlines: {
+    alias: ['due', 'overdue'],
+    category: 'Tools',
+    help: 'Open Deadlines — snooze or mark done what Deadline Watch follows up on',
+    handler: () => { window.location.assign('/deadlines'); return true; },
+    usage: '/deadlines'
+  },
   notes: {
     alias: [],
     category: 'Tools',

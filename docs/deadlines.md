@@ -26,6 +26,12 @@ of that day; naive timestamps are server-local, `Z`/offset ones are honored.
   state and due date: rescheduling a note, or a due-soon note going overdue,
   is reported again; nothing new is silent (`TaskNoop`). Dedup state lives in
   `data/deadline_alerts/<owner>.json` and only keeps notes still in play.
+- **Sidebar** — a "Deadlines" entry under Intel Board (Tools section and
+  icon rail) opens `/deadlines`. Its badge is the number of overdue items
+  still being followed up; hover for what's due in 24h, how many are
+  snoozed and the next item (`GET /api/deadlines/status`, polled every 5
+  minutes and on tab focus). `/deadlines`, `/due` or `/overdue` in the chat
+  box opens the page too. Hiding Intel Board in Appearance hides it as well.
 
 Data is owner-scoped; legacy null-owner notes are included only on
 single-user installs (same rule as the daily brief). Titles are stripped of

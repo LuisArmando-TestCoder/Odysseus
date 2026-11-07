@@ -36,6 +36,14 @@ def setup_deadline_routes() -> APIRouter:
         notes = await asyncio.to_thread(_owner_items, owner)
         return deadline_overview(notes, load_followups(owner))
 
+    @router.get("/api/deadlines/status")
+    async def deadline_status_route(request: Request):
+        """Badge counts for the main app's "Deadlines" sidebar entry."""
+        from src.deadline_followups import deadline_status, load_followups
+        owner = get_current_user(request) or ""
+        notes = await asyncio.to_thread(_owner_items, owner)
+        return deadline_status(notes, load_followups(owner))
+
     @router.post("/api/deadlines/{action}")
     async def act_on_deadline(action: str, request: Request):
         from src.deadline_followups import ACTIONS, apply_action

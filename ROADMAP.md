@@ -64,8 +64,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   Held items leave alerts and the daily brief ("(n snoozed)"); a snooze that
   runs out is reported again. Deadline Watch alerts end with a
   "Snooze or mark done" link. Owner-scoped; only your current deadlines.
-- Next: a "Deadlines" entry in the main app's Tools sidebar (badge = overdue);
-  deadlines from calendar events; an LLM fallback for deadline phrasing the
+- **Deadlines in the main app** (`deadline_followups.deadline_status`,
+  `GET /api/deadlines/status`, `static/js/deadlineLink.js`): a "Deadlines"
+  entry under Intel Board in the Tools sidebar + icon rail, and a
+  `/deadlines` (`/due`, `/overdue`) slash command. The badge counts overdue
+  items still being followed up (snoozed / done excluded); the tooltip adds
+  what's due in 24h, how many are snoozed, and the next item. Follows the
+  Intel Board entry's Appearance toggle; degrades to a plain link.
+- Next: deadlines from calendar events; an LLM fallback for deadline phrasing the
   regexes miss; treat a sent reply (not just opening the email) as done.
 
 ## Service Health (shipped)

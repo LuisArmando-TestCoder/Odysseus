@@ -195,3 +195,58 @@ def test_routes_owner_scoped(tmp_path, monkeypatch):
                   headers={"content-type": "application/json"}).status_code == 400
     who["u"] = "bob"
     assert c.get("/api/deadlines").json()["held"] == []
+
+
+# ── sidebar badge (deadline_status) ──────────────────────────────────────────
+
+def test_status_counts_overdue_and_due_soon():
+    st = F.deadline_status(_notes(), {}, now=NOW)
+    assert st["attention"] == 1 and st["overdue"] == 1
+    assert st["due_soon"] == 1          # n2; the email at +30h is outside 24h
+    assert st["snoozed"] == 0
+    assert st["next"]["id"] == "n1" and st["next"]["kind"] == "overdue"
+    assert st["next"]["link"] == "/deadlines?item=n1"
+    assert st["label"].startswith("Deadlines — 1 overdue · 1 due in 24h")
+    assert "Pay rent" in st["label"]
+
+
+def test_status_excludes_snoozed_and_done(path):
+    notes = _notes()
+    due1 = next(n["due_date"] for n in notes if n["id"] == "n1")
+    due2 = next(n["due_date"] for n in notes if n["id"] == "n2")
+    F.snooze_deadline("alice", "n1", due1, "3d", now=NOW, path=path)
+    F.mark_deadline_done("alice", "n2", due2, now=NOW, path=path)
+    st = F.deadline_status(notes, F.load_followups("alice", path), now=NOW)
+    assert st["attention"] == 0 and st["due_soon"] == 0
+    assert st["snoozed"] == 1
+    assert st["next"] is None
+    assert st["label"] == "Deadlines — 1 snoozed"
+    # snooze runs out → overdue again
+    later = NOW + 4 * 24 * HOUR
+    st = F.deadline_status(notes, F.load_followups("alice", path), now=later)
+    assert st["overdue"] >= 1 and st["snoozed"] == 0
+
+
+def test_status_empty():
+    st = F.deadline_status([], {}, now=NOW)
+    assert st["attention"] == 0 and st["next"] is None
+    assert st["label"] == "Deadlines — nothing due in the next 24h"
+
+
+def test_status_route_owner_scoped(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import routes.deadline_routes as R
+
+    owners = {"alice": _notes(), "bob": []}
+    who = {"u": "bob"}
+    monkeypatch.setattr(R, "get_current_user", lambda request: who["u"])
+    monkeypatch.setattr(R, "_owner_items", lambda owner: owners.get(owner, []))
+    monkeypatch.setattr(F, "state_path", lambda owner: str(tmp_path / f"{owner}.json"))
+    app = FastAPI()
+    app.include_router(R.setup_deadline_routes())
+    c = TestClient(app)
+    r = c.get("/api/deadlines/status")
+    assert r.status_code == 200 and r.json()["attention"] == 0 and r.json()["next"] is None

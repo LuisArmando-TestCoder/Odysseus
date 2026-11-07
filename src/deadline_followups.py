@@ -266,3 +266,51 @@ def apply_action(owner: str, action: str, body: Dict[str, Any],
         return mark_deadline_done(owner, item_id, due_date, title=match["title"], now=now, path=path)
     return snooze_deadline(owner, item_id, due_date, str(body.get("preset") or ""),
                            title=match["title"], now=now, path=path)
+
+
+# ── sidebar badge (main SPA) ─────────────────────────────────────────────────
+
+BADGE_SOON_HOURS = 24.0
+
+
+def deadline_status(notes: Iterable[Dict[str, Any]], entries: Dict[str, Dict[str, Any]], *,
+                    now: Optional[float] = None) -> Dict[str, Any]:
+    """Compact counts for the "Deadlines" entry in the main app's sidebar.
+
+    ``attention`` (the badge) is the number of overdue items still being
+    followed up — snoozed / done ones are held and not counted. ``label`` is
+    a one-line tooltip such as "Deadlines — 2 overdue · 1 due in 24h". The
+    next item (overdue first, then soonest) is included so the tooltip can
+    name it.
+    """
+    from src.deadline_watch import assess_notes
+    now = time.time() if now is None else now
+    res = assess_notes(notes, now=now, horizon_hours=BADGE_SOON_HOURS)
+    visible, held = apply_followups(res["items"], entries, now)
+    overdue = sum(1 for i in visible if i["kind"] == "overdue")
+    due_soon = sum(1 for i in visible if i["kind"] == "due_soon")
+    snoozed = sum(1 for i in held if (i.get("followup") or {}).get("status") == "snoozed")
+    parts = []
+    if overdue:
+        parts.append(f"{overdue} overdue")
+    if due_soon:
+        parts.append(f"{due_soon} due in 24h")
+    if snoozed:
+        parts.append(f"{snoozed} snoozed")
+    label = "Deadlines — " + (" · ".join(parts) if parts else "nothing due in the next 24h")
+    nxt = None
+    if visible:
+        first = visible[0]
+        nxt = {"id": first["note_id"], "kind": first["kind"], "title": first["title"],
+               "message": _clean_title(first.get("message"), 160),
+               "link": deadlines_link("", first["note_id"])}
+        label += f'\nNext: {nxt["message"]}'
+    return {
+        "attention": overdue,
+        "overdue": overdue,
+        "due_soon": due_soon,
+        "snoozed": snoozed,
+        "long_overdue": res["long_overdue"],
+        "next": nxt,
+        "label": label,
+    }

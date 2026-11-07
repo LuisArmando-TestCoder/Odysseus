@@ -8,6 +8,9 @@
 // tab, like a normal link. If the status call fails the badge just hides —
 // the link always works.
 
+// The Deadlines entry sits right under Intel Board and is built by its own module.
+import './deadlineLink.js';
+
 const STATUS_URL = '/api/intel/status';
 const POLL_MS = 5 * 60 * 1000;
 const BOARD_URL = '/cases';
