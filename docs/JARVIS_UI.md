@@ -60,6 +60,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
 13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · ✅ part 6 voice overlay controls
 14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · ✅ part 2 chat content + voice overlay · ✅ part 3 gradient headings + welcome hero (`jarvis.css` §6) · ✅ part 4 `pointer-events: none` surfaces + queue tray (`jarvis.css` §7)
+15. Streaming states — ✅ part 1 chat: pending turn, live thinking, running tool (`jarvis.css` §8)
 
 ## Progress log
 
@@ -878,3 +879,47 @@ theme contrast/overlap report to whoever owns that preset.
 **Next:** hand the light-theme contrast/overlap report (Runs 19–21) to the
 preset owner; then a jarvis motion pass on streaming states (thinking core,
 tool-card progress) under reduced motion.
+
+### Run 22 — 2026-11-07 · Streaming states, part 1: the living core
+`static/css/jarvis.css` §8 "Streaming states" (+ reduced-motion and
+forced-colours gates) and one all-theme change in `static/js/spinner.js`.
+- **Problem:** the moments Odysseus is *working* still spoke three older
+  idioms — ASCII `▁▂▃` waves after "Processing request" / "Generating
+  response" / agent "Thinking" (cycled by a JS ticker, so the Run 18
+  `getAnimations()` probe never saw them move under reduced motion), the
+  same wave on a running tool node, and a 12px whirlpool canvas in the
+  live thinking header. The live timer sat at `opacity: .4` inline
+  (3.2 : 1).
+- **One language now:** a 14px reactor *core* (faint ring, bright centre,
+  rotating arc via a masked conic gradient, 0.9 s/turn) + a mono uppercase
+  micro-label + a 36px *scan line* (hairline track, one bright segment
+  sweeping, expo-out). Used by the pending turn, agent "Thinking" bubble
+  and live thinking header (core replaces the whirlpool; header is a cyan
+  micro-label only while live — scoped with `:has(.live-think-spinner-slot)`,
+  which chat.js removes when thinking closes). The running tool node keeps
+  tron's diamond and gains a 1.6 s ping ring; its wave becomes the scan line;
+  elapsed time is mono cyan. The stdout tail (inline grey box from chat.js)
+  is a drawn readout: hairline frame, cyan left rule, "STDOUT · LIVE"
+  micro-label (alt text `""`).
+- **spinner.js:** `updateDisplay()` now builds `.ai-spinner-msg` +
+  `.ai-spinner-frame` (aria-hidden) spans once and only rewrites the frame
+  text per tick — same visible string in every theme, no per-tick
+  `innerHTML` reparse, message set via `textContent`. `start()` holds the
+  first frame under `prefers-reduced-motion` (all themes; CSS can't stop a
+  JS ticker).
+- **Contrast (jarvis, composited probe):** pending/"Thinking" label 8.3 : 1,
+  live header 12.9, timer 3.2 → 5.0, elapsed 14.7, done-tool status 5.7,
+  stdout 8.3. Reduced motion: 0 running animations in the scene.
+- Verified headless (mocked `/api/*`, nonce injected): seeded scene (user
+  turn, pending turn, live thinking, done + running tool with stdout,
+  agent "Thinking") in jarvis + light at 1440×900 and 390×844, normal and
+  reduced motion; light before/after identical except spinner frames and a
+  1px scroll offset. No page errors. Tests touching theme/CSS: 60 pass /
+  4 fail, identical to baseline (legal tests, unrelated).
+- Seen, not fixed: chat.js's tool-node wave ticker (100 ms) still cycles
+  under reduced motion in other themes; the light theme's streaming labels
+  sit at 1.8–3 : 1 (add to the light-theme report).
+
+**Next:** streaming states part 2 — the document editor's stream cursor
+(`.doc-stream-cursor`) and Deep Research's live progress panel in the same
+core/scan language; then the light-theme contrast report.

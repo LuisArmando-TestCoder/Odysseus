@@ -872,6 +872,151 @@
 :root[data-odx-theme="jarvis"] .cal-empty-state > div[style*="opacity"] { opacity: 1 !important; color: var(--jv-text-faint); }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   8. STREAMING STATES — the living core (Run 22)
+   Every "working" signal in chat speaks one language: a small reactor core
+   (hairline ring, bright centre, a rotating arc) + a mono micro-label + a
+   scan line. Replaces three ASCII/canvas idioms: the ▁▂▃ wave after
+   "Processing request" / "Generating response" / agent "Thinking", the ▁▂▃
+   on a running tool node, and the whirlpool canvas in the live thinking
+   header. spinner.js wraps message and frame in their own spans.
+   Reduced motion: core and scan hold still (spinner.js also stops ticking).
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] {
+  --jv-core: 14px;
+}
+/* Pending turn / agent "Thinking": label + core + scan */
+:root[data-odx-theme="jarvis"] .ai-spinner:not(.ai-spinner-whirlpool, .ai-spinner-sinewave) {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+  font-family: var(--jv-mono) !important;
+  font-size: 11px !important;
+  letter-spacing: var(--jv-label-track) !important;
+  text-transform: uppercase;
+  white-space: nowrap !important;
+  color: var(--jv-text-dim);
+}
+:root[data-odx-theme="jarvis"] .ai-spinner:not(.ai-spinner-whirlpool, .ai-spinner-sinewave)::before,
+:root[data-odx-theme="jarvis"] .live-think-spinner-slot::before {
+  content: "";
+  flex: none;
+  width: var(--jv-core);
+  height: var(--jv-core);
+  border-radius: 50%;
+  /* centre point · rotating arc (masked to a ring) · faint full ring */
+  background:
+    radial-gradient(circle, var(--jv-cyan-hi) 0 1.6px, transparent 2.4px),
+    conic-gradient(from 0deg, color-mix(in srgb, var(--jv-cyan) 20%, transparent) 0 58%, color-mix(in srgb, var(--jv-cyan) 45%, transparent) 76%, var(--jv-cyan-hi) 100%);
+  -webkit-mask: radial-gradient(circle, #000 0 2.6px, transparent 3px 4.6px, #000 5px 6.4px, transparent 7px);
+          mask: radial-gradient(circle, #000 0 2.6px, transparent 3px 4.6px, #000 5px 6.4px, transparent 7px);
+  filter: drop-shadow(0 0 calc(4px * var(--jv-glow-k)) var(--jv-glow));
+  animation: jv-core-spin 0.9s linear infinite;
+}
+/* The ASCII frame becomes a scan line: hairline track, one bright segment */
+:root[data-odx-theme="jarvis"] .ai-spinner .ai-spinner-frame,
+:root[data-odx-theme="jarvis"] .agent-thread-node.running .agent-thread-wave {
+  display: inline-block;
+  flex: none;
+  width: 36px;
+  height: 2px;
+  font-size: 0 !important;
+  color: transparent !important;
+  overflow: hidden;
+  vertical-align: middle;
+  background:
+    linear-gradient(90deg, transparent, var(--jv-cyan-hi), transparent) no-repeat,
+    color-mix(in srgb, var(--jv-cyan) 22%, transparent);
+  background-size: 45% 100%, 100% 100%;
+  background-position: -60% 0, 0 0;
+  animation: jv-scan 1.15s var(--jv-ease) infinite;
+}
+:root[data-odx-theme="jarvis"] .ai-spinner .ai-spinner-msg { color: inherit; }
+/* A pending turn has nothing else in it: drop the bubble's bottom slack */
+:root[data-odx-theme="jarvis"] .msg-ai > .body > .ai-spinner:only-child { margin: 2px 0; }
+
+/* Live thinking header: core replaces the whirlpool canvas; label + timer
+   read as instrument text. (:has() scopes it to the live state — the slot
+   is removed when thinking closes.) */
+:root[data-odx-theme="jarvis"] .live-think-spinner-slot {
+  display: inline-flex;
+  align-items: center;
+}
+:root[data-odx-theme="jarvis"] .live-think-spinner-slot > .spinner-whirlpool { display: none !important; }
+:root[data-odx-theme="jarvis"] .thinking-header:has(.live-think-spinner-slot) .live-think-header-text {
+  font-family: var(--jv-mono);
+  font-size: 11px;
+  letter-spacing: var(--jv-label-track);
+  text-transform: uppercase;
+  color: var(--jv-cyan-hi);
+}
+:root[data-odx-theme="jarvis"] .live-think-timer {
+  opacity: 1 !important;                 /* inline .4 put it at 3.2 : 1 */
+  color: var(--jv-text-faint);
+  font-family: var(--jv-mono);
+  font-size: 11px !important;
+  min-width: 5ch;
+  text-align: right;
+}
+
+/* Running tool node: the diamond gets a ping ring; elapsed reads as data */
+:root[data-odx-theme="jarvis"] .agent-thread-node.running .agent-thread-dot::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid var(--jv-cyan);
+  opacity: 0;
+  animation: jv-ping 1.6s var(--jv-ease) infinite;
+}
+:root[data-odx-theme="jarvis"] .agent-thread-node.running .agent-thread-elapsed {
+  font-family: var(--jv-mono);
+  font-weight: 500;
+  color: var(--jv-cyan-hi);
+  min-width: 5ch;
+}
+:root[data-odx-theme="jarvis"] .agent-thread-status {
+  opacity: 1;
+  font-family: var(--jv-mono);
+  color: var(--jv-text-faint);
+}
+/* Live stdout tail: a drawn readout, not a grey box (inline styles from JS) */
+:root[data-odx-theme="jarvis"] .agent-thread-tail {
+  position: relative;
+  margin-top: 6px !important;
+  padding: 20px 10px 8px !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--tr-ln-dim, var(--jv-line));
+  border-left: 2px solid color-mix(in srgb, var(--jv-cyan) 55%, transparent);
+  background: color-mix(in srgb, #000 40%, var(--jv-panel)) !important;
+  opacity: 1 !important;
+  font-family: var(--jv-mono);
+  font-size: 11.5px !important;
+  line-height: 1.55;
+  color: var(--jv-text-dim);
+}
+:root[data-odx-theme="jarvis"] .agent-thread-tail::before {
+  content: "STDOUT · LIVE" / "";
+  position: absolute;
+  top: 5px;
+  left: 10px;
+  font-size: 9.5px;
+  letter-spacing: var(--jv-label-track);
+  color: var(--jv-text-faint);
+}
+:root[data-odx-theme="jarvis"] .agent-thread-node:not(.running) .agent-thread-tail::before { content: "STDOUT" / ""; }
+
+@keyframes jv-core-spin { to { transform: rotate(1turn); } }
+@keyframes jv-scan {
+  from { background-position: -60% 0, 0 0; }
+  to   { background-position: 160% 0, 0 0; }
+}
+@keyframes jv-ping {
+  0%   { opacity: .7; transform: scale(.55); }
+  70%  { opacity: 0; transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
    3. ACCESSIBILITY GATES
    ─────────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -881,6 +1026,12 @@
   :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name { animation: none; }
   :root[data-odx-theme="jarvis"] .queue-tray { animation: none; }
   :root[data-odx-theme="jarvis"] :is(.queue-tray-item, .queue-tray-item::before, .queue-tray-x) { transition: none; }
+  /* Streaming states (§8): core holds its arc, scan parks mid-track, no ping */
+  :root[data-odx-theme="jarvis"] .ai-spinner::before,
+  :root[data-odx-theme="jarvis"] .live-think-spinner-slot::before,
+  :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-wave) { animation: none !important; }
+  :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-node.running .agent-thread-wave) { background-position: 50% 0, 0 0; }
+  :root[data-odx-theme="jarvis"] .agent-thread-node.running .agent-thread-dot::after { animation: none; opacity: .45; transform: scale(1); }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -920,4 +1071,8 @@
   :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
   :root[data-odx-theme="jarvis"] #welcome-screen::before { display: none; }
   :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name::before { background: none; border-color: CanvasText; }
+  /* Gradient-drawn core and scan vanish in forced colours: use system ink */
+  :root[data-odx-theme="jarvis"] .ai-spinner::before,
+  :root[data-odx-theme="jarvis"] .live-think-spinner-slot::before { background: CanvasText; -webkit-mask: none; mask: none; width: 6px; height: 6px; animation: none; }
+  :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-node.running .agent-thread-wave) { background: CanvasText; animation: none; }
 }

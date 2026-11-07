@@ -267,16 +267,24 @@ class Spinner {
 
     const frame = this.frames[this.currentFrame % this.frames.length];
 
-    let display = '';
-    if (this.style === "left") {
-      display = `${frame} ${this.message}`;
-    } else if (this.style === "right") {
-      display = `${this.message} ${frame}`;
-    } else { // clean
-      display = this.message;
+    // Message and frame get their own spans so themes can restyle them
+    // separately (jarvis swaps the ASCII frame for a CSS scan line). The
+    // text is identical to the old `${message} ${frame}` string. Once
+    // built, only the frame's text node changes per tick.
+    if (!this._msgEl || this._msgEl.parentNode !== this.element) {
+      this.element.textContent = '';
+      this._msgEl = document.createElement('span');
+      this._msgEl.className = 'ai-spinner-msg';
+      this._frameEl = document.createElement('span');
+      this._frameEl.className = 'ai-spinner-frame';
+      this._frameEl.setAttribute('aria-hidden', 'true');
+      if (this.style === 'left') this.element.append(this._frameEl, ' ', this._msgEl);
+      else if (this.style === 'right') this.element.append(this._msgEl, ' ', this._frameEl);
+      else this.element.append(this._msgEl);
     }
-
-    this.element.innerHTML = display;
+    if (this._msgEl.textContent !== this.message) this._msgEl.textContent = this.message;
+    if (this.style !== 'left' && this.style !== 'right') return;
+    this._frameEl.textContent = frame;
   }
 
   /**
@@ -299,6 +307,12 @@ class Spinner {
     }
 
     this.currentFrame = 0;
+    this.updateDisplay();
+    // Reduced motion: hold the first frame instead of cycling glyphs. CSS
+    // can't stop a JS ticker, so this is the only place to honour it.
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    } catch (_) {}
     this.intervalId = setInterval(() => {
       this.currentFrame++;
       this.updateDisplay();

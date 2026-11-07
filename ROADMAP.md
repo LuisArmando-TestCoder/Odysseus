@@ -218,7 +218,14 @@ Part 4 (run 21) re-ran the probe with `pointer-events: none` overlays
 hit-testable: no new failures; Calendar's empty state lifted to AA, and the
 queue tray no longer sits under the model picker (header row, orange HUD
 styling, 44px touch keys).
-Next: light-theme contrast report; motion pass on streaming states.
+Run 22 gave every "working" signal in chat one HUD language — a small
+rotating reactor core, a mono micro-label and a scan line replace the ASCII
+▁▂▃ waves (pending turn, agent "Thinking", running tool) and the whirlpool
+in the live thinking header; running tools get a ping ring and a drawn
+"STDOUT · LIVE" readout; the live thinking timer reaches AA (3.2 → 5 : 1).
+Under reduced motion the ASCII spinner now holds still in every theme.
+Next: light-theme contrast report; streaming polish (document stream cursor,
+research progress).
 Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
