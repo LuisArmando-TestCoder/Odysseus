@@ -545,11 +545,223 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   6. WELCOME HERO (Run 20 · gradient-heading audit, part 3)
+   The audit found one gradient-clipped heading in the app shell — the
+   welcome wordmark (cinematic-ai's fg → warm → cyan wash, 15.7 : 1, so it
+   passed) — but it was the last surface still speaking the old language:
+   a 64px bold rounded wordmark and a pill chip under a HUD. Here it
+   becomes an instrument: the emblem sits in a reactor reticle (hairline
+   ring + four ticks, a slow dashed outer ring = the idle "core"), the
+   wordmark is tracked light caps in solid cyan (no background-clip, so it
+   survives forced colours), a circuit rule underneath, and Nobody is a
+   square key. Nobody mode turns the reticle and wordmark amber — it is an
+   attention state (no memory, nothing saved). Everything stays inside
+   .welcome-name's box, because style.css's reveal clips to it.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] #welcome-screen {
+  --hero-c: var(--jv-cyan);
+  --hero-hi: var(--jv-cyan-hi);
+  --hero-ring: 96px;
+}
+:root[data-odx-theme="jarvis"] #welcome-screen:has(.incognito-btn.active) {
+  --hero-c: var(--jv-amber);
+  --hero-hi: color-mix(in srgb, var(--jv-amber) 70%, #ffffff);
+}
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-name {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--hero-ring);
+  margin: 0 0 14px;
+  padding-bottom: 18px;                 /* room for the circuit rule */
+  background: none;
+  -webkit-background-clip: border-box;
+          background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: var(--hero-hi);
+  font-family: var(--jv-ui);
+  font-size: clamp(1.75rem, 3.4vw, 2.5rem);
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;                  /* optical centring of tracked caps */
+  text-transform: uppercase;
+  text-shadow:
+    0 0 calc(18px * var(--jv-glow-k)) color-mix(in srgb, var(--hero-c) calc(55% * var(--jv-glow-k)), transparent),
+    0 0 calc(42px * var(--jv-glow-k)) color-mix(in srgb, var(--hero-c) calc(22% * var(--jv-glow-k)), transparent);
+  animation: jv-hero-scan var(--jv-slow) var(--jv-ease) backwards;
+  transition: color var(--jv-base) var(--jv-ease);
+}
+/* Emblem: centred in the reticle, no longer inline with the word. */
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-boat {
+  position: absolute;
+  top: calc(var(--hero-ring) / 2 - 20px);
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: 0 0 0 -20px;
+  color: var(--hero-c);
+  filter: drop-shadow(0 0 calc(10px * var(--jv-glow-k)) color-mix(in srgb, var(--hero-c) 70%, transparent));
+  transition: color var(--jv-base) var(--jv-ease);
+}
+/* Inner reticle: hairline ring, four ticks, a faint core glow. */
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-name::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  width: calc(var(--hero-ring) - 24px);
+  height: calc(var(--hero-ring) - 24px);
+  margin-left: calc((var(--hero-ring) - 24px) / -2);
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--hero-c) 38%, transparent);
+  background:
+    linear-gradient(var(--hero-c), var(--hero-c)) top    center / 1px 7px no-repeat,
+    linear-gradient(var(--hero-c), var(--hero-c)) bottom center / 1px 7px no-repeat,
+    linear-gradient(var(--hero-c), var(--hero-c)) left   center / 7px 1px no-repeat,
+    linear-gradient(var(--hero-c), var(--hero-c)) right  center / 7px 1px no-repeat,
+    radial-gradient(closest-side, color-mix(in srgb, var(--hero-c) calc(16% * var(--jv-glow-k)), transparent), transparent);
+  box-shadow: inset 0 0 calc(16px * var(--jv-glow-k)) color-mix(in srgb, var(--hero-c) 18%, transparent);
+  pointer-events: none;
+}
+/* Circuit rule: a hairline that fades at both ends, bright at the centre. */
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-name::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: min(240px, 70%);
+  height: 1px;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(90deg, transparent calc(50% - 12px), var(--hero-hi) calc(50% - 12px) calc(50% + 12px), transparent calc(50% + 12px)),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--hero-c) 45%, transparent) 30% 70%, transparent);
+}
+/* Outer ring: dashed, slowly turning — the idle core. Lives on the screen
+   (not the clipped name) and lines up with the reticle at the top. */
+:root[data-odx-theme="jarvis"] #welcome-screen::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--hero-ring);
+  height: var(--hero-ring);
+  margin-left: calc(var(--hero-ring) / -2);
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--hero-c) 55%, transparent) 0 3deg, transparent 3deg 15deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+          mask: radial-gradient(closest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+  animation: jv-hero-orbit 48s linear infinite;
+  pointer-events: none;
+}
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-sub {
+  font-family: var(--jv-ui);
+  font-size: 0.9375rem;
+  color: var(--jv-text-dim);
+  opacity: 1;                               /* style.css: 0.6 → 3.4 : 1 */
+  letter-spacing: 0.01em;
+  margin-bottom: 0.5rem;
+}
+:root[data-odx-theme="jarvis"] #welcome-screen .setup-trigger-link {
+  color: var(--jv-cyan-hi) !important;      /* inline style from models.js */
+  font-family: var(--jv-mono);
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  border-bottom: 1px solid var(--jv-line-strong);
+  padding: 0 2px;
+  pointer-events: auto;
+}
+:root[data-odx-theme="jarvis"] #welcome-screen .setup-trigger-link:hover {
+  border-bottom-color: var(--jv-cyan);
+  background: color-mix(in srgb, var(--jv-cyan) 10%, transparent);
+}
+:root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip {
+  opacity: 1 !important;                    /* Nobody mode sets 0.5 inline */
+  font-family: var(--jv-mono);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--jv-text-faint);
+}
+/* Nobody: a square hairline key, mono caps; amber while active. */
+:root[data-odx-theme="jarvis"] .incognito-btn {
+  border-radius: 2px;
+  opacity: 1;
+  min-height: 32px;
+  padding: 0 14px;
+  gap: 8px;
+  font-family: var(--jv-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--jv-text-dim);
+  background: color-mix(in srgb, var(--jv-panel) 70%, transparent);
+  border: 1px solid var(--jv-line);
+  box-shadow: none;
+  transition: color var(--jv-fast) var(--jv-ease), border-color var(--jv-fast) var(--jv-ease),
+              background var(--jv-fast) var(--jv-ease), box-shadow var(--jv-fast) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .incognito-btn .incognito-label { font-size: inherit; font-weight: 500; letter-spacing: inherit; }
+:root[data-odx-theme="jarvis"] .incognito-btn:hover,
+:root[data-odx-theme="jarvis"] .incognito-btn:focus-visible {
+  color: var(--jv-cyan-hi);
+  border-color: var(--jv-line-strong);
+  background: color-mix(in srgb, var(--jv-cyan) 8%, var(--jv-panel));
+  box-shadow: inset 0 -2px 0 var(--jv-cyan);
+}
+:root[data-odx-theme="jarvis"] .incognito-btn.active {
+  color: var(--jv-amber);
+  border-color: color-mix(in srgb, var(--jv-amber) 55%, transparent);
+  background: color-mix(in srgb, var(--jv-amber) 10%, var(--jv-panel));
+  box-shadow: inset 0 -2px 0 var(--jv-amber);
+}
+/* Desktop: style.css centres the hero at 40 % while the empty-state composer
+   floats at 70vh, so any hero taller than ~220px slid under the composer
+   (it already did at 1440×768 in every theme). In jarvis the hero's
+   *bottom* docks a fixed gap above the composer instead: `translate`
+   composes with the -50 % transform the entrance keyframes (and app.js's
+   inline re-run on Nobody toggles) own, so they keep working. */
+@media (min-width: 769px) {
+  :root[data-odx-theme="jarvis"] #welcome-screen {
+    top: calc(70vh - 8px - 103px - 28px);
+    translate: 0 -50%;
+  }
+}
+@media (min-width: 769px) and (min-height: 651px) {
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip { margin-top: 16px; }
+}
+/* Short viewports: style.css folds the tip away at ≤650px and the sub at
+   ≤500px; the jarvis rules above (and jarvis-mobile's tip max-height) out-
+   rank those, so restate them, then shrink and finally drop the emblem. */
+@media (max-height: 650px) {
+  :root[data-odx-theme="jarvis"] #welcome-screen { --hero-ring: 72px; }
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-boat { width: 28px; height: 28px; margin-left: -14px; top: calc(var(--hero-ring) / 2 - 14px); }
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip { opacity: 0 !important; max-height: 0 !important; margin: 0; }  /* !: jarvis-mobile loads later */
+}
+@media (max-height: 560px) {
+  :root[data-odx-theme="jarvis"] #welcome-screen { --hero-ring: 0px; }
+  :root[data-odx-theme="jarvis"] #welcome-screen::before,
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name::before,
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-boat { display: none; }
+}
+@media (max-height: 500px) {
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name { font-size: 1.4rem; margin-bottom: 8px; padding-bottom: 12px; }
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-sub { margin: 0; }
+}
+@keyframes jv-hero-scan {
+  from { clip-path: inset(0 50% 0 50%); opacity: 0.4; }
+  to   { clip-path: inset(0 0 0 0); opacity: 1; }
+}
+@keyframes jv-hero-orbit { to { transform: rotate(360deg); } }
+
+/* ───────────────────────────────────────────────────────────────────────────
    3. ACCESSIBILITY GATES
    ─────────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-odx-theme="jarvis"] .chat-container::before { animation: none; }
   :root[data-odx-theme="jarvis"] .jv-boot { animation: none; }
+  :root[data-odx-theme="jarvis"] #welcome-screen::before,
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name { animation: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -587,4 +799,6 @@
 
 @media (forced-colors: active) {
   :root[data-odx-theme="jarvis"] .chat-container::after { display: none; }
+  :root[data-odx-theme="jarvis"] #welcome-screen::before { display: none; }
+  :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name::before { background: none; border-color: CanvasText; }
 }

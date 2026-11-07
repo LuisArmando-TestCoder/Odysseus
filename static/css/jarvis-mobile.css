@@ -140,17 +140,7 @@
   color: var(--jv-text-faint);
   letter-spacing: 0.02em;
 }
-:root[data-odx-theme="jarvis"] .incognito-btn {
-  opacity: 0.85;
-  color: var(--jv-text-dim);
-  border-color: var(--jv-line);
-}
-:root[data-odx-theme="jarvis"] .incognito-btn:hover,
-:root[data-odx-theme="jarvis"] .incognito-btn:focus-visible {
-  opacity: 1;
-  color: var(--jv-cyan-hi);
-  border-color: var(--jv-line-strong);
-}
+/* Nobody key: base look lives in jarvis.css §6; phones only size it here. */
 @media (max-width: 768px), (pointer: coarse) {
   :root[data-odx-theme="jarvis"] .incognito-btn { min-height: 44px; padding-inline: 16px; }
   :root[data-odx-theme="jarvis"] #welcome-screen .welcome-tip { font-size: 0.75rem; max-width: 30ch; margin-inline: auto; }

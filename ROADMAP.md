@@ -195,7 +195,14 @@ sub-AA strings in jarvis (timestamps/metrics via `--color-muted-alt`,
 source domains, voice `--vx-faint`/`--vx-dim`), ordered-list numbers are no
 longer clipped, wrapped code lines align, and the voice chat feed / spoken
 answers no longer read the sources box aloud ("2 Web sources1crt.sh…").
-Next: gradient-clipped headings + light-theme chat contrast report.
+Part 3 (run 20) audited gradient-clipped headings (all pass) and rebuilt
+the one left in the app, the welcome hero: reactor-reticle emblem with a
+slow dashed "core" ring, tracked light-caps wordmark, circuit rule, square
+Nobody key; Nobody mode turns the hero amber. The hero now docks 28px above
+the empty-state composer on desktop (it slid under it at ≤768px tall), and
+its sub/tip reach AA (2.9 / 2.2 → 8.3 / 5.7 : 1).
+Next: re-run the contrast probe without the `elementFromPoint` filter on
+`pointer-events: none` overlays; light-theme chat contrast report.
 Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority

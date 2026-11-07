@@ -59,7 +59,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
 13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · ✅ part 6 voice overlay controls
-14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · part 2 chat content + voice overlay
+14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · ✅ part 2 chat content + voice overlay · ✅ part 3 gradient headings + welcome hero (`jarvis.css` §6)
 
 ## Progress log
 
@@ -788,3 +788,54 @@ steps; then the voice overlay (`openVoiceMode({autostart:false})`) on top.
 **Next:** audit part 3 — gradient-clipped headings (`background-clip:
 text`, skipped by the probe): sample the gradient stops against the canvas;
 then hand the light-theme report above to whoever owns that preset.
+
+### Run 20 — 2026-11-06 · Whole-app audit, part 3: gradient headings → welcome hero
+`static/css/jarvis.css` §6 "Welcome hero" (+ reduced-motion / forced-colors
+gates); the Nobody key's base rules moved there from `jarvis-mobile.css` §5
+(phones keep only sizing). No HTML/JS changes.
+- **Gradient-heading probe:** every visible element with `background-clip:
+  text` on `/`, `/login`, `/cases` and `landing.html` (1440 + 390), each
+  gradient stop composited over its real backdrop. Two exist in jarvis:
+  the welcome wordmark (cinematic-ai's fg → warm → cyan wash, ≥ 15 : 1) and
+  the landing hero's `.grad` (11.8 / 16.2 : 1). Both pass; login's
+  gradient is already flattened by `auth-tron.css`; `/cases` has none.
+- **But the hero escaped Run 18's sweep:** `#welcome-screen` is
+  `pointer-events: none`, so the `elementFromPoint` hit-test skipped it.
+  Measured directly: the sub line ("Type /setup…") was 2.9 : 1
+  (`opacity: .6` on a 60 % mix), and Nobody mode's tip 2.2 : 1 (app.js sets
+  `opacity: .5` inline). Now 8.3 : 1 and 5.7 : 1; wordmark 14.7 : 1.
+- **The hero, HUD edition:** the last surface in the old language (64px
+  bold rounded wordmark, pill chip). The emblem sits in a reactor reticle —
+  hairline ring, four ticks, faint core glow — inside a dashed outer ring
+  that turns once per 48 s (the idle "core"; off under reduced motion).
+  Wordmark: Inter 300, tracked 0.42em caps, solid `--jv-cyan-hi` with a
+  glow scaled by `--jv-glow-k` — no `background-clip`, so forced colours
+  can't blank it. A circuit rule (hairline, bright 24px centre) sits under
+  it; `/setup` is a mono key-word with a hairline underline; Nobody is a
+  square mono key with a cyan underline bar on hover/focus. Entrance: a
+  240 ms centre-out scan (`jv-hero-scan`, fill `backwards` so the final
+  state isn't clipped — style.css's reveal clips glow to the box).
+- **Nobody mode is amber:** `#welcome-screen:has(.incognito-btn.active)`
+  swaps the hero's two tokens (`--hero-c`, `--hero-hi`), so reticle, eye,
+  wordmark, rule and key all turn amber — it's an attention state.
+- **No longer slides under the composer:** style.css centres the hero at
+  40 % while the empty-state composer floats at 70vh; at 1440×768 /
+  1280×700 the Nobody chip was already 10–31px *under* the composer in
+  every theme. In jarvis (≥ 769px wide) the hero's bottom docks 28px above
+  the composer via `translate: 0 -50%`, which composes with the transform
+  the entrance keyframes and app.js's inline re-run own. Short heights
+  restate style.css's folding (jarvis/jarvis-mobile out-ranked it — the
+  tip stayed 74px tall at 844×390), shrink the ring at ≤650px and drop it
+  at ≤560px. Gap to composer: 28px at every size tested (1440×900 → 844×390).
+- Verified headless (mocked `/api/*`, nonce injected): jarvis before/after
+  at 1440 + 390 incl. Nobody state; 9 viewport geometries; light 1440 + 390
+  pixel-identical and identical geometry (it keeps the upstream overlap);
+  landing/login/cases unchanged in both themes. No console errors. CSS
+  tests 24/24 pass.
+- Seen, not fixed (out of jarvis scope): light and other themes still let
+  the Nobody chip slide under the composer at ≤ 768px-tall desktop windows.
+
+**Next:** re-run the Run 18 contrast probe with `pointer-events: none`
+surfaces included (temporarily set `pointer-events: auto` on overlays
+before hit-testing) to catch anything else it skipped; then hand the light
+theme contrast/overlap report to whoever owns that preset.
