@@ -59,7 +59,7 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
 11. ✅ Login (`auth-tron.css`) + ✅ landing (`static/landing.html` → `landing-jarvis.css`)
 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
 13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · ✅ part 6 voice overlay controls
-14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · ✅ part 2 chat content + voice overlay · ✅ part 3 gradient headings + welcome hero (`jarvis.css` §6)
+14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · ✅ part 2 chat content + voice overlay · ✅ part 3 gradient headings + welcome hero (`jarvis.css` §6) · ✅ part 4 `pointer-events: none` surfaces + queue tray (`jarvis.css` §7)
 
 ## Progress log
 
@@ -839,3 +839,42 @@ gates); the Nobody key's base rules moved there from `jarvis-mobile.css` §5
 surfaces included (temporarily set `pointer-events: auto` on overlays
 before hit-testing) to catch anything else it skipped; then hand the light
 theme contrast/overlap report to whoever owns that preset.
+
+### Run 21 — 2026-11-07 · Whole-app audit, part 4: pointer-events:none surfaces → queue tray
+`static/css/jarvis.css` §7 "Queue tray" (+ reduced-motion gate). No HTML/JS.
+- **Probe re-run with every overlay hit-testable:** the Run 18 method plus a
+  temporary `*{pointer-events:auto!important}` sheet during `elementFromPoint`,
+  diffed against the normal pass, and fully transparent (opacity < .05)
+  text dropped (hover-only labels like the sidebar "new" chips). States:
+  home/hero, success + error toasts, queue tray + stall banner (built with
+  chat.js's own DOM), all 12 sidebar tool windows, the voice overlay;
+  1440×900 and 390×844 touch. **Result: 0 new sub-AA strings** — the
+  overlays the hit-test used to skip are clean since Run 20.
+- **Residuals the sweep surfaced:** Calendar's empty state (inline
+  `opacity .5/.55`, 4.47 / 4.15 : 1) → `--jv-text-faint` at full opacity.
+  Remaining flags are probe false positives on gradient fills (voice
+  overlay panels, cyan primary buttons — checked visually).
+- **Collision (all themes, fixed for jarvis):** the queue tray is inserted
+  inside `.chat-input-top`, where the model picker is pinned top-right,
+  so "Select model ▴" sat on top of queued message #1 and its remove key.
+  The tray now opens with a sticky header row — mono "QUEUED — SENDS IN
+  ORDER" (flex `order:-1` on `::after`; `::before` is tron's frame; alt
+  text `""` so AT keeps the list's own aria-label) — and the picker docks
+  on its right. The tray is drawn in **orange** light (your pending turns,
+  like user bubbles and the queue-mode send key): square mono number keys,
+  neon hover bar, a square remove key that lights amber; 160 ms rise-in.
+  Touch: 44px rows and remove keys, tray max 168px.
+- Specificity note: tron.css §1's `:is(.msg.msg-ai, …, .queue-tray)` takes
+  its heaviest argument's weight (0,2,0), so a jarvis override needs one
+  more class (`.chat-input-bar .chat-input-top > .queue-tray`).
+- Verified headless (mocked `/api/*`, nonce injected): jarvis before/after
+  1440 + 390 (queue + stall + toast, Calendar, home); light 1440 + 390
+  pixel-identical; home 390 identical. No page errors. Tests touching
+  jarvis/CSS: 27/27 pass.
+- Seen, not fixed (out of jarvis scope): the picker/tray collision remains
+  in every other theme; Settings tabs weren't reachable by the harness this
+  run (nav built lazily) — Run 18 covered them.
+
+**Next:** hand the light-theme contrast/overlap report (Runs 19–21) to the
+preset owner; then a jarvis motion pass on streaming states (thinking core,
+tool-card progress) under reduced motion.

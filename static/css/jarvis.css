@@ -755,6 +755,123 @@
 @keyframes jv-hero-orbit { to { transform: rotate(360deg); } }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   7. QUEUE TRAY (Run 21 · audit part 4: pointer-events:none surfaces)
+   The re-run contrast probe with every overlay hit-testable found no new
+   sub-AA text — but the states it had to stage exposed a collision: the
+   queue tray is inserted inside .chat-input-top, where the model picker
+   is absolutely pinned top-right, so "Select model ▴" sat on top of
+   queued message #1 and its remove key (all themes; fixed here for
+   jarvis). The tray now opens with a header row — a mono "QUEUED" label
+   on the left, the picker docked on the right — and reads as YOUR
+   pending turns: orange light, like user turns and the queue-mode send
+   key (tron.css §2). Numbers are square mono keys, remove is a square
+   ghost key that lights amber, rows get the neon hover bar.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .chat-input-bar .chat-input-top > .queue-tray {   /* out-ranks tron.css §1 (:is() takes .msg.msg-ai’s weight) */
+  --ln: color-mix(in srgb, var(--tr-orange) 42%, transparent);
+  --hi: var(--tr-orange-hi);
+  --fill-top: color-mix(in srgb, var(--tr-orange) 5%, var(--tr-fill));
+  margin: 0 0 8px;
+  padding: 0 6px 6px;
+  gap: 2px;
+  font-family: var(--jv-mono);
+  animation: jv-queue-in var(--jv-base) var(--jv-ease) backwards;
+}
+/* Header row: flex `order` lifts ::after above the items; sticky keeps it
+   in view while the tray scrolls. Its height matches the picker's row. */
+:root[data-odx-theme="jarvis"] .chat-input-top > .queue-tray::after {
+  content: "Queued \2014  sends in order" / "";
+  order: -1;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  margin: 1px -5px 2px;                 /* inside the 1px frame line */
+  padding: 0 calc(var(--queue-picker-w, 132px) + 8px) 0 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tr-orange) 22%, transparent);
+  background: color-mix(in srgb, var(--tr-orange) 7%, var(--tr-fill-solid));
+  clip-path: polygon(calc(var(--c, 7px) - 1px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--c, 7px) - 1px));
+  color: color-mix(in srgb, var(--tr-orange-hi) 78%, var(--jv-text-faint));
+  font: 500 10px/1 var(--jv-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The picker floats over the tray's header (same top-right slot). */
+:root[data-odx-theme="jarvis"] .chat-input-top:has(> .queue-tray:not([hidden])) > .model-picker-wrap { top: 1px; right: 1px; }
+
+:root[data-odx-theme="jarvis"] .queue-tray-item {
+  position: relative;
+  grid-template-columns: 22px minmax(0, 1fr) 28px;
+  gap: 10px;
+  min-height: 30px;
+  padding: 2px 2px 2px 6px;
+  border-radius: 0;
+  color: var(--jv-text);
+  font-size: 12px;
+  transition: background var(--jv-fast) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .queue-tray-item::before {     /* neon hover bar */
+  content: "";
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 2px;
+  background: var(--tr-orange);
+  box-shadow: 0 0 calc(8px * var(--jv-glow-k)) var(--tr-orange);
+  opacity: 0;
+  transform: scaleY(.4);
+  transition: opacity var(--jv-fast) var(--jv-ease), transform var(--jv-base) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .queue-tray-item:is(:hover, :focus-within) {
+  background: color-mix(in srgb, var(--tr-orange) 7%, transparent);
+}
+:root[data-odx-theme="jarvis"] .queue-tray-item:is(:hover, :focus-within)::before { opacity: 1; transform: none; }
+:root[data-odx-theme="jarvis"] .queue-tray-n {
+  width: 20px; height: 20px;
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--tr-orange) 55%, transparent);
+  background: color-mix(in srgb, var(--tr-orange) 8%, transparent);
+  color: var(--tr-orange-hi);
+  font: 600 10.5px/1 var(--jv-mono);
+}
+:root[data-odx-theme="jarvis"] .queue-tray-text { color: var(--jv-text); letter-spacing: .01em; }
+:root[data-odx-theme="jarvis"] .queue-tray-x {
+  width: 26px; height: 26px;
+  align-items: center;
+  border-radius: 0;
+  border: 1px solid transparent;
+  color: var(--jv-text-dim);
+  opacity: 1;
+  transition: color var(--jv-fast) var(--jv-ease), border-color var(--jv-fast) var(--jv-ease), background var(--jv-fast) var(--jv-ease);
+}
+:root[data-odx-theme="jarvis"] .queue-tray-x svg { width: 12px; height: 12px; }
+:root[data-odx-theme="jarvis"] .queue-tray-x:is(:hover, :focus-visible) {
+  color: var(--jv-amber);
+  border-color: color-mix(in srgb, var(--jv-amber) 55%, transparent);
+  background: color-mix(in srgb, var(--jv-amber) 10%, transparent);
+}
+:root[data-odx-theme="jarvis"] .queue-tray-x:focus-visible { outline: 2px solid var(--jv-cyan); outline-offset: 1px; }
+@keyframes jv-queue-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+/* Touch: 44px rows and remove keys. */
+@media (pointer: coarse) {
+  :root[data-odx-theme="jarvis"] .queue-tray { max-height: 168px; }
+  :root[data-odx-theme="jarvis"] .queue-tray-item { min-height: 44px; grid-template-columns: 24px minmax(0, 1fr) 44px; font-size: 13px; }
+  :root[data-odx-theme="jarvis"] .queue-tray-x { width: 44px; height: 44px; }
+}
+
+/* Calendar's empty state: inline opacity .5 / .55 put the hint and the
+   CalDAV line at 4.15–4.47 : 1. */
+:root[data-odx-theme="jarvis"] .cal-empty-msg { opacity: 1; color: var(--jv-text-faint); }
+:root[data-odx-theme="jarvis"] .cal-empty-state > div[style*="opacity"] { opacity: 1 !important; color: var(--jv-text-faint); }
+
+/* ───────────────────────────────────────────────────────────────────────────
    3. ACCESSIBILITY GATES
    ─────────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -762,6 +879,8 @@
   :root[data-odx-theme="jarvis"] .jv-boot { animation: none; }
   :root[data-odx-theme="jarvis"] #welcome-screen::before,
   :root[data-odx-theme="jarvis"] #welcome-screen .welcome-name { animation: none; }
+  :root[data-odx-theme="jarvis"] .queue-tray { animation: none; }
+  :root[data-odx-theme="jarvis"] :is(.queue-tray-item, .queue-tray-item::before, .queue-tray-x) { transition: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {

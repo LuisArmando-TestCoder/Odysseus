@@ -201,8 +201,11 @@ slow dashed "core" ring, tracked light-caps wordmark, circuit rule, square
 Nobody key; Nobody mode turns the hero amber. The hero now docks 28px above
 the empty-state composer on desktop (it slid under it at ≤768px tall), and
 its sub/tip reach AA (2.9 / 2.2 → 8.3 / 5.7 : 1).
-Next: re-run the contrast probe without the `elementFromPoint` filter on
-`pointer-events: none` overlays; light-theme chat contrast report.
+Part 4 (run 21) re-ran the probe with `pointer-events: none` overlays
+hit-testable: no new failures; Calendar's empty state lifted to AA, and the
+queue tray no longer sits under the model picker (header row, orange HUD
+styling, 44px touch keys).
+Next: light-theme contrast report; motion pass on streaming states.
 Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority
