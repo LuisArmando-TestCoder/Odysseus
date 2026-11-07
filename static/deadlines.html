@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deadlines · Odysseus</title>
+<script nonce="{{CSP_NONCE}}">
+// Same theme handshake as cases.html: saved theme name → <html data-odx-theme>.
+try { var _t = JSON.parse(localStorage.getItem('odysseus-theme'));
+  var _tn = (_t && _t.name) ? String(_t.name).toLowerCase().replace(/[^a-z0-9_-]/g, '') : 'jarvis';
+  if (_tn) document.documentElement.setAttribute('data-odx-theme', _tn);
+} catch (_) { document.documentElement.setAttribute('data-odx-theme', 'jarvis'); }
+</script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='17' r='11' stroke='%235fb3ff' stroke-width='3' fill='none'/%3E%3Cpath d='M16 10v7l5 3' stroke='%235fb3ff' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0f1218;--panel:#161b24;--panel2:#1c2330;--border:#2a3342;--fg:#d7e3f4;--muted:#8a97ab;
+  --accent:#5fb3ff;--good:#5fd39a;--warn:#f0b450;--bad:#ef6b73;--chip:#223047;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ui:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+}
+@media (prefers-color-scheme: light){:root:not([data-odx-theme="jarvis"]){
+  --bg:#f5f7fb;--panel:#ffffff;--panel2:#f0f3f8;--border:#d8dee8;--fg:#1d2533;--muted:#5f6b7d;
+  --accent:#1f6fd1;--good:#178a55;--warn:#a86a00;--bad:#c4323d;--chip:#e6eefb;}}
+/* Jarvis HUD tokens (docs/JARVIS_UI.md): void, one cyan light, amber for attention. */
+:root[data-odx-theme="jarvis"]{
+  color-scheme:dark;
+  --bg:#060b14;--panel:#0a1424;--panel2:#050c18;--fg:#d3e9f5;--muted:#9fb9c9;
+  --accent:#4fd8ff;--good:#5ef2b3;--warn:#ffb347;--bad:#ff6b6b;--chip:#0d1d33;
+  --border:color-mix(in srgb,#4fd8ff 22%,transparent);
+  --mono:"Fira Code",ui-monospace,"SF Mono",Menlo,monospace;
+  --ui:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--ui)}
+:root[data-odx-theme="jarvis"] body{
+  background:radial-gradient(1200px 520px at 50% -180px,color-mix(in srgb,#4fd8ff 10%,transparent),transparent 70%),var(--bg)}
+a{color:var(--accent)}
+header{display:flex;gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);z-index:2}
+header h1{font-size:15px;margin:0;letter-spacing:.14em;text-transform:uppercase;font-family:var(--mono);font-weight:600}
+header .sp{flex:1}
+header nav{display:flex;gap:14px;font-size:13px}
+main{max-width:860px;margin:0 auto;padding:18px 16px 64px}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+.stat{flex:1 1 140px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 14px}
+.stat b{display:block;font:600 24px/1.1 var(--mono)}
+.stat span{color:var(--muted);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.stat.over b{color:var(--warn)}
+h2{font:600 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:22px 0 10px}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.dl{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px;
+  display:grid;grid-template-columns:auto 1fr;gap:4px 12px;transition:border-color .2s,box-shadow .2s}
+.dl.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 24px color-mix(in srgb,var(--accent) 30%,transparent)}
+.dl .tag{grid-row:span 2;align-self:start;font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  padding:5px 7px;border-radius:6px;border:1px solid currentColor;white-space:nowrap}
+.dl.overdue .tag{color:var(--warn)} .dl.due_soon .tag{color:var(--accent)}
+.dl.held .tag{color:var(--muted)}
+.dl .title{font-weight:600;word-break:break-word}
+.dl .meta{color:var(--muted);font-size:12.5px}
+.dl .meta .src{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.dl .acts{grid-column:1 / -1;display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.dl .pending{grid-column:2;margin:2px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px}
+button{font:inherit;color:inherit;background:var(--chip);border:1px solid var(--border);border-radius:8px;
+  padding:7px 12px;cursor:pointer;min-height:36px;white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button.done{border-color:color-mix(in srgb,var(--good) 55%,transparent);color:var(--good)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[disabled]{opacity:.5;cursor:default}
+.empty{background:var(--panel);border:1px dashed var(--border);border-radius:12px;padding:28px 18px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--fg);font-size:15px;margin-bottom:4px}
+.note{color:var(--muted);font-size:12.5px;margin-top:18px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--accent);
+  border-radius:10px;padding:9px 12px;display:none;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4);
+  max-width:calc(100% - 32px);z-index:5}
+#toast.bad{border-color:var(--bad);color:var(--bad)}
+#toast button{min-height:30px;padding:4px 10px}
+@media (max-width:520px){
+  header nav{display:none}
+  .summary{gap:8px}
+  .stat{flex:1 1 0;min-width:0;padding:9px 10px}
+  .stat b{font-size:20px}
+  .stat span{font-size:10.5px;letter-spacing:.04em}
+  .dl .acts{display:grid;grid-template-columns:1fr 1fr}
+  .dl .acts button{white-space:normal;min-height:44px;padding:6px 8px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Deadlines</h1>
+  <span class="sp"></span>
+  <nav><a href="/">Chat</a><a href="/notes">Notes</a><a href="/cases">Intel Board</a></nav>
+</header>
+<main>
+  <div class="summary" id="summary" aria-live="polite"></div>
+  <section aria-labelledby="h-open">
+    <h2 id="h-open">Following up</h2>
+    <ul class="list" id="open"><li class="empty">Loading…</li></ul>
+  </section>
+  <section aria-labelledby="h-held" id="held-sec" hidden>
+    <h2 id="h-held">Snoozed &amp; done</h2>
+    <ul class="list" id="held"></ul>
+  </section>
+  <p class="note">Snooze hides a deadline from alerts and the daily brief until the time you pick; it comes back after.
+    Done stops the follow-up for this due date only — the note or email itself is not changed, and a new due date brings it back.</p>
+</main>
+<div id="toast" role="status"><span id="toast-msg"></span><button id="toast-undo" hidden>Undo</button></div>
+<script nonce="{{CSP_NONCE}}">
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const focusId = new URLSearchParams(location.search).get('item');
+  const PRESET_LABEL = { tomorrow: 'Tomorrow 8:00', '3d': '3 days', '1w': '1 week' };
+  let presets = ['tomorrow', '3d', '1w'];
+  let focused = false;
+
+  function fmt(t) {
+    if (!t) return '';
+    const d = new Date(t * 1000);
+    return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function toast(msg, bad, undo) {
+    const t = $('#toast'); $('#toast-msg').textContent = msg; t.className = bad ? 'bad' : '';
+    const u = $('#toast-undo'); u.hidden = !undo; u.onclick = undo ? () => { t.style.display = 'none'; undo(); } : null;
+    t.style.display = 'flex'; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', undo ? 6000 : 2800);
+  }
+  async function api(path, body) {
+    const r = await fetch(path, { method: body ? 'POST' : 'GET', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    if (r.status === 401) { location.href = '/login'; throw new Error('auth'); }
+    const data = (r.headers.get('content-type') || '').includes('json') ? await r.json() : {};
+    if (!r.ok) throw new Error(data.detail || data.error || r.statusText);
+    return data;
+  }
+
+  function row(it, held) {
+    const kind = held ? 'held' : it.kind;
+    const label = held ? (it.followup.status === 'done' ? 'Done' : 'Snoozed')
+                       : (it.kind === 'overdue' ? 'Overdue' : 'Due soon');
+    const when = held && it.followup.status === 'snoozed'
+      ? `Back ${fmt(it.followup.until)} · due ${fmt(it.due_at)}`
+      : (held ? `Due ${fmt(it.due_at)}` : esc(it.message.split(':')[0]) + ` · ${fmt(it.due_at)}`);
+    const pend = !held && it.pending && it.pending.length
+      ? `<ul class="pending">${it.pending.slice(0, 4).map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : '';
+    const key = esc(JSON.stringify({ id: it.id, due_date: it.due_date }));
+    const acts = held
+      ? `<button data-act="restore" data-k="${key}">Follow up again</button>`
+      : `<button class="done" data-act="done" data-k="${key}">✓ Done</button>` +
+        presets.map(p => `<button data-act="snooze" data-p="${p}" data-k="${key}">Snooze · ${esc(PRESET_LABEL[p] || p)}</button>`).join('');
+    return `<li class="dl ${kind}${it.id === focusId ? ' focus' : ''}" data-id="${esc(it.id)}">
+      <span class="tag">${label}</span>
+      <span class="title">${esc(it.title)}</span>
+      <span class="meta"><span class="src">${it.source === 'email' ? 'Email' : 'Note'}</span> · ${when}</span>
+      ${pend}<div class="acts">${acts}</div></li>`;
+  }
+
+  async function load() {
+    try {
+      const d = await api('/api/deadlines');
+      presets = d.presets || presets;
+      const over = d.items.filter(i => i.kind === 'overdue').length;
+      const soon = d.items.length - over;
+      const snoozed = d.held.filter(i => i.followup.status === 'snoozed').length;
+      $('#summary').innerHTML =
+        `<div class="stat${over ? ' over' : ''}"><b>${over}</b><span>Overdue</span></div>` +
+        `<div class="stat"><b>${soon}</b><span>Next 7 days</span></div>` +
+        `<div class="stat"><b>${snoozed}</b><span>Snoozed</span></div>`;
+      $('#open').innerHTML = d.items.length ? d.items.map(i => row(i, false)).join('')
+        : `<li class="empty"><b>Nothing overdue or due this week.</b>Give a note a due date and Odysseus will follow up on it here.</li>`;
+      if (d.long_overdue) $('#open').insertAdjacentHTML('beforeend',
+        `<li class="empty">${d.long_overdue} note(s) overdue for more than 30 days — archive them or set a new date in <a href="/notes">Notes</a>.</li>`);
+      $('#held-sec').hidden = !d.held.length;
+      $('#held').innerHTML = d.held.map(i => row(i, true)).join('');
+      if (focusId && !focused) {
+        const el = document.querySelector(`.dl[data-id="${CSS.escape(focusId)}"]`);
+        if (el) { focused = true; el.scrollIntoView({ block: 'center' }); const b = el.querySelector('button'); if (b) b.focus({ preventScroll: true }); }
+      }
+    } catch (e) {
+      if (e.message !== 'auth') $('#open').innerHTML = `<li class="empty"><b>Couldn't load deadlines.</b>${esc(e.message)} — <a href="">retry</a></li>`;
+    }
+  }
+
+  async function act(action, key, preset, quiet) {
+    const body = { ...key }; if (preset) body.preset = preset;
+    const res = await api('/api/deadlines/' + action, body);
+    await load();
+    if (quiet) return;
+    if (action === 'done') toast('Marked done — no more follow-ups for this due date.', false, () => act('restore', key, null, true).then(load));
+    else if (action === 'snooze') toast('Snoozed until ' + fmt(res.until) + '.', false, () => act('restore', key, null, true).then(load));
+    else toast('Following up again.');
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('button[data-act]'); if (!b) return;
+    b.disabled = true;
+    try { await act(b.dataset.act, JSON.parse(b.dataset.k), b.dataset.p); }
+    catch (e) { if (e.message !== 'auth') toast(e.message, true); b.disabled = false; }
+  });
+  load();
+})();
+</script>
+</body>
+</html>

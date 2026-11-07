@@ -1291,7 +1291,7 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
                  "due_date": n.due_date, "archived": bool(n.archived),
                  "repeat": n.repeat or "none"}
                 for n in notes if n.due_date
-            ] + _email_deadline_notes_safe(owner))
+            ] + _email_deadline_notes_safe(owner), followups=_deadline_followups_safe(owner))
             if dl:
                 plain += [""] + dl
         except Exception:
@@ -1449,27 +1449,57 @@ def _email_deadline_notes_safe(owner: str) -> list:
         return []
 
 
+def _deadline_followups_safe(owner: str) -> dict:
+    """Deadlines the user snoozed / marked done (src/deadline_followups), or {}."""
+    try:
+        from src.deadline_followups import load_followups
+        return load_followups(owner)
+    except Exception:
+        logger.debug("deadline follow-ups unavailable", exc_info=True)
+        return {}
+
+
+def _check_deadlines_sync(owner: str, notes: list):
+    """Alerts for new deadlines, honoring and pruning snooze / done answers."""
+    from src.deadline_watch import assess_notes, due_deadline_alerts
+    from src.deadline_followups import (followup_key, load_followups, prune_followups,
+                                        save_followups)
+    followups = load_followups(owner)
+    if followups:
+        # Answers for items that left play (archived, re-dated, email opened)
+        # or snoozes that ran out are dropped; the horizon is the brief's so
+        # a snooze on a 40h-away note survives the 24h alert window.
+        live = {followup_key(i["note_id"], i["due_date"])
+                for i in assess_notes(notes)["items"]}
+        pruned = prune_followups(followups, live)
+        if pruned != followups:
+            save_followups(owner, pruned)
+        followups = pruned
+    return due_deadline_alerts(owner, notes, followups=followups)
+
+
 async def action_check_deadlines(owner: str, **kwargs) -> Tuple[str, bool]:
     """Follow up on notes with a due date: ones that went past due while
     still open (the at-due-time ping may have been missed) and ones due in
     the next 24h. Each note is reported once per state and due date; nothing
     new → TaskNoop (silent)."""
     try:
-        from src.deadline_watch import (due_deadline_alerts, format_deadline_alerts,
-                                        load_owner_notes)
+        from src.deadline_watch import format_deadline_alerts, load_owner_notes
         notes = await asyncio.to_thread(load_owner_notes, owner)
         try:
             from src.email_deadlines import load_owner_email_deadlines
             notes = list(notes) + await asyncio.to_thread(load_owner_email_deadlines, owner)
         except Exception:
             logger.debug("check_deadlines: email deadlines unavailable", exc_info=True)
-        due = await asyncio.to_thread(due_deadline_alerts, owner, notes)
+        due = await asyncio.to_thread(_check_deadlines_sync, owner, notes)
     except Exception as e:
         logger.exception("check_deadlines action failed")
         return str(e), False
     if not due:
         raise TaskNoop("no new deadlines")
-    return format_deadline_alerts(due), True
+    from src.case_goal import public_base_url
+    from src.deadline_followups import deadlines_link
+    return format_deadline_alerts(due, link=deadlines_link(public_base_url())), True
 
 
 async def action_check_services(owner: str, **kwargs) -> Tuple[str, bool]:

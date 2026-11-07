@@ -62,3 +62,31 @@ handled. Only the scan-state file for your own user is read
 
 Check off the checklist items, archive the note, or give it a new due date.
 For an email deadline, open (or reply to) the email.
+
+## Snooze / mark done (`/deadlines`)
+
+Sometimes you already know: the bill is paid outside Odysseus, the reply
+went from your phone, the report will be late and that is fine. The
+**Deadlines** page (`/deadlines`) lists everything Deadline Watch is following
+up on — overdue and the next 7 days, notes and email asks — with one-click
+actions on each:
+
+- **✓ Done** — stop following up on this deadline. Keyed by item *and* due
+  date, so giving the note a new due date brings it back. The note and the
+  email are not changed.
+- **Snooze · Tomorrow 8:00 / 3 days / 1 week** — hidden from alerts and the
+  daily brief until then; when the snooze runs out it is reported again.
+- **Follow up again** (and the toast's **Undo**) restores either.
+
+Every Deadline Watch notification ends with `Snooze or mark done: <link>`
+(absolute when `app_public_url` is set). Opening the link changes nothing;
+`/deadlines?item=<id>` highlights and focuses one item. The daily brief notes
+how many deadlines are snoozed so nothing disappears silently.
+
+Answers live in `data/deadline_followups/<owner>.json` (checked against its
+`owner`, capped at 500). The scheduled task drops answers for items that left
+play (archived, re-dated, email opened) and expired snoozes. The API —
+`GET /api/deadlines`, `POST /api/deadlines/{snooze|done|restore}` with
+`{id, due_date[, preset]}` — only accepts an item that is one of *your*
+current deadlines (404 otherwise). Code: `src/deadline_followups.py`,
+`routes/deadline_routes.py`, `static/deadlines.html`.

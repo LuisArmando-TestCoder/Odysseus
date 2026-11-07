@@ -160,10 +160,20 @@ def assess_notes(notes: Iterable[Dict[str, Any]], *, now: Optional[float] = None
 
 def deadline_brief_lines(notes: Iterable[Dict[str, Any]], *, now: Optional[float] = None,
                          horizon_hours: float = DEFAULT_HORIZON_HOURS,
-                         limit: int = BRIEF_LIMIT) -> List[str]:
-    """Lines for the daily brief, or [] when nothing is overdue or due soon."""
+                         limit: int = BRIEF_LIMIT,
+                         followups: Optional[Dict[str, Dict[str, Any]]] = None) -> List[str]:
+    """Lines for the daily brief, or [] when nothing is overdue or due soon.
+
+    ``followups`` (``src/deadline_followups``) hides items the user snoozed
+    or marked done; a snoozed count is mentioned so nothing vanishes silently.
+    """
     res = assess_notes(notes, now=now, horizon_hours=horizon_hours)
     items, old = res["items"], res["long_overdue"]
+    n_snoozed = 0
+    if followups:
+        from src.deadline_followups import apply_followups
+        items, held = apply_followups(items, followups, now)
+        n_snoozed = sum(1 for h in held if h["followup"]["status"] == "snoozed")
     if not items and not old:
         return []
     n_over = sum(1 for i in items if i["kind"] == "overdue")
@@ -177,6 +187,8 @@ def deadline_brief_lines(notes: Iterable[Dict[str, Any]], *, now: Optional[float
     if old:
         lines.append(f"  ({old} note(s) overdue for more than {int(DEFAULT_OVERDUE_DAYS)} days — "
                      f"archive them or set a new date)")
+    if n_snoozed:
+        lines.append(f"  ({n_snoozed} snoozed)")
     return lines
 
 
@@ -220,14 +232,20 @@ def _signature(item: Dict[str, Any]) -> str:
 def due_deadline_alerts(owner: str, notes: Iterable[Dict[str, Any]], *,
                         now: Optional[float] = None,
                         horizon_hours: float = DEFAULT_ALERT_HORIZON_HOURS,
-                        state_path: Optional[str] = None) -> List[Dict[str, Any]]:
+                        state_path: Optional[str] = None,
+                        followups: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Deadline items not yet reported for this note/state/due date; records them.
 
     State only keeps signatures of notes still in play, so it stays small and
     a note that leaves and re-enters a state (new due date) is reported again.
+    Items held by ``followups`` (snoozed / marked done) are not in play, so
+    their signatures are dropped and a snooze that runs out is reported again.
     """
     now = time.time() if now is None else now
     items = assess_notes(notes, now=now, horizon_hours=horizon_hours)["items"]
+    if followups:
+        from src.deadline_followups import apply_followups
+        items, _held = apply_followups(items, followups, now)
     path = state_path or _state_path(owner)
     state = _load_state(path)
     live = {_signature(i) for i in items}
@@ -240,7 +258,8 @@ def due_deadline_alerts(owner: str, notes: Iterable[Dict[str, Any]], *,
     return fresh
 
 
-def format_deadline_alerts(items: List[Dict[str, Any]], limit: int = ALERT_LIMIT) -> str:
+def format_deadline_alerts(items: List[Dict[str, Any]], limit: int = ALERT_LIMIT,
+                           link: str = "") -> str:
     n_over = sum(1 for i in items if i["kind"] == "overdue")
     n_soon = len(items) - n_over
     parts = []
@@ -258,6 +277,8 @@ def format_deadline_alerts(items: List[Dict[str, Any]], limit: int = ALERT_LIMIT
         lines.append("Open Notes to finish, reschedule or archive them.")
     if has_email:
         lines.append("Open Email to reply — an email drops off once you've opened it.")
+    if link:
+        lines.append(f"Snooze or mark done: {link}")
     return "\n".join(lines)
 
 

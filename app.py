@@ -562,6 +562,8 @@ app.include_router(setup_trusted_claims_routes())
 # Case Files (organized intel) + Watchlist (proactive change monitor)
 from routes.case_routes import setup_case_routes
 app.include_router(setup_case_routes())
+from routes.deadline_routes import setup_deadline_routes
+app.include_router(setup_deadline_routes())
 
 # Service Health status (sidebar dot) — saved state + on-demand check
 from routes.service_health_routes import setup_service_health_routes
@@ -826,6 +828,11 @@ async def serve_backgrounds(request: Request):
 async def serve_cases(request: Request):
     """Intel Board — Case Files + Watchlist (auth-protected like the SPA)."""
     return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/cases.html"))
+
+@app.get("/deadlines")
+async def serve_deadlines(request: Request):
+    """Deadlines — snooze / mark done what Deadline Watch follows up on."""
+    return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/deadlines.html"))
 
 @app.get("/login")
 async def serve_login(request: Request):

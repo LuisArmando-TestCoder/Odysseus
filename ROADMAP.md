@@ -57,7 +57,14 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   new unread email (deterministic, resolved against the email's `Date:`),
   and Deadline Watch + the daily brief follow up on them like notes — due
   soon, then overdue while still unread. Bulk/spam mail skipped; owner-scoped.
-- Next: one-tap Resume from the notification; "snooze / mark done" actions on deadline notifications;
+- **Snooze / mark done** (`src/deadline_followups.py`, `/deadlines`,
+  `GET /api/deadlines`, `POST /api/deadlines/{snooze|done|restore}`): a
+  Deadlines page with ✓ Done (per due date; note/email untouched) and Snooze
+  (tomorrow 8:00 / 3 days / 1 week) on every followed-up item, with Undo.
+  Held items leave alerts and the daily brief ("(n snoozed)"); a snooze that
+  runs out is reported again. Deadline Watch alerts end with a
+  "Snooze or mark done" link. Owner-scoped; only your current deadlines.
+- Next: a "Deadlines" entry in the main app's Tools sidebar (badge = overdue);
   deadlines from calendar events; an LLM fallback for deadline phrasing the
   regexes miss; treat a sent reply (not just opening the email) as done.
 
@@ -152,7 +159,7 @@ a workflow-tool equivalent, and the UI niceties tracked in the commit log.
   and quoting the blocker, so the next round's steering block connects it),
   then the goal resumes. Human-only; refused while the chat is mid-reply and
   never resumes unless the answer landed. `&do=resume` deep links focus it.
-- Next: "snooze / mark done" actions on deadline notifications; show the
+- Next: show the
   goal's last round output (what it tried) under "Why it stopped".
 
 ## Jarvis UI (in progress)
