@@ -818,13 +818,39 @@ export function isTouchInsideModal() {
   return _touchInsideModal;
 }
 
+
+// Popups, dropdowns and menus only ever open in response to user input. The
+// scroll handlers that dismiss them skip their document-wide queries until
+// the user has clicked/pressed something since the last sweep. In a long chat
+// those queries cost a frame's budget on every scroll.
+let _popupInputAt = 0;
+const _popupSweptAt = new Map();   // per caller: each sweep removes different popups
+['pointerdown', 'click', 'contextmenu', 'keydown', 'focusin'].forEach(t =>
+  document.addEventListener(t, () => { _popupInputAt = performance.now(); }, { capture: true, passive: true }));
+export function popupsMaybeOpen(key = 'default') {
+  // A popup can appear a little after the input that opened it (fetch, timer),
+  // so sweeps keep running for 5 s after the last input before going quiet.
+  const last = _popupSweptAt.has(key) ? _popupSweptAt.get(key) : -Infinity;
+  if (_popupInputAt >= last - 5000) { _popupSweptAt.set(key, performance.now()); return true; }
+  return false;
+}
+window.__odxPopupsMaybeOpen = popupsMaybeOpen;
+
 // Close floating dropdowns/popups on scroll to prevent them drifting
 function _initScrollDismiss() {
   const chatHistory = document.getElementById('chat-history');
   if (chatHistory) {
+    // Once per frame at most: a wheel/trackpad fires many scroll events per
+    // frame, and each query walks the whole (long) chat subtree.
+    let _dismissRaf = 0;
     chatHistory.addEventListener('scroll', () => {
-      chatHistory.querySelectorAll('.dropdown.show').forEach(d => d.classList.remove('show'));
-      document.querySelectorAll('.ctx-popup').forEach(dismissOrRemove);
+      if (_dismissRaf) return;
+      if (!popupsMaybeOpen('chat-dropdowns')) return;
+      _dismissRaf = requestAnimationFrame(() => {
+        _dismissRaf = 0;
+        chatHistory.querySelectorAll('.dropdown.show').forEach(d => d.classList.remove('show'));
+        document.querySelectorAll('.ctx-popup').forEach(dismissOrRemove);
+      });
     }, { passive: true });
   } else {
     // Retry once if element doesn't exist yet

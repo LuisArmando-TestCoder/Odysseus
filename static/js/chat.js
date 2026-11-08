@@ -4381,6 +4381,8 @@ import agentActivity from './agentActivity.js';
    */
   export async function editUserMessage(userMsgElement) {
     const box = document.getElementById('chat-history');
+    // Index math below needs every message built (long threads hydrate lazily).
+    if (window.odysseusChatPerf) window.odysseusChatPerf.flush();
     const allMsgs = Array.from(box.querySelectorAll('.msg'));
     const msgIndex = allMsgs.indexOf(userMsgElement);
     if (msgIndex < 0) return;
@@ -4464,6 +4466,8 @@ import agentActivity from './agentActivity.js';
    */
   export async function resendUserMessage(userMsgElement) {
     const box = document.getElementById('chat-history');
+    // Index math below needs every message built (long threads hydrate lazily).
+    if (window.odysseusChatPerf) window.odysseusChatPerf.flush();
     const allMsgs = Array.from(box.querySelectorAll('.msg'));
     const msgIndex = allMsgs.indexOf(userMsgElement);
     if (msgIndex < 0) return;
@@ -4542,6 +4546,8 @@ import agentActivity from './agentActivity.js';
 
   export async function regenerateFrom(aiMsgElement) {
     const box = document.getElementById('chat-history');
+    // Index math below needs every message built (long threads hydrate lazily).
+    if (window.odysseusChatPerf) window.odysseusChatPerf.flush();
     const allMsgs = Array.from(box.querySelectorAll('.msg'));
     const aiIndex = allMsgs.indexOf(aiMsgElement);
     if (aiIndex < 0) return;
@@ -4792,6 +4798,8 @@ import agentActivity from './agentActivity.js';
 
   export async function forkFrom(aiMsgElement) {
     const box = document.getElementById('chat-history');
+    // Index math below needs every message built (long threads hydrate lazily).
+    if (window.odysseusChatPerf) window.odysseusChatPerf.flush();
     const allMsgs = Array.from(box.querySelectorAll('.msg'));
     const aiIndex = allMsgs.indexOf(aiMsgElement);
     if (aiIndex < 0) return;
@@ -5063,6 +5071,8 @@ import agentActivity from './agentActivity.js';
    */
   export async function deleteMessage(msgElement) {
     const box = document.getElementById('chat-history');
+    // Index math below needs every message built (long threads hydrate lazily).
+    if (window.odysseusChatPerf) window.odysseusChatPerf.flush();
     const allMsgs = Array.from(box.querySelectorAll('.msg'));
     const clickedIndex = allMsgs.indexOf(msgElement);
     if (clickedIndex < 0) return;

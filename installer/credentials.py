@@ -88,6 +88,16 @@ CREDENTIALS = [
         "tutorial_urls": ["https://platform.openai.com/api-keys"],
     },
     {
+        "key": "ABLITERATION_API_KEY",
+        "label": "abliteration.ai API Key",
+        "category": "llm",
+        "required": False,
+        "default": "",
+        "secret": True,
+        "help_text": "Clave de abliteration.ai (modelo de chat por defecto).",
+        "tutorial_urls": ["https://abliteration.ai"],
+    },
+    {
         "key": "OPENROUTER_API_KEY",
         "label": "OpenRouter API Key",
         "category": "llm",

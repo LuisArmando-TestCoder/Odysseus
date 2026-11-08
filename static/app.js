@@ -182,9 +182,17 @@ function initializeEventListeners() {
     uiModule.setAutoScroll(atBottom);
   }, 100));
   // Close all footer popups immediately on any scroll
+  // (once per frame: wheel/trackpads fire several scroll events per frame and
+  // the pill sweep visits every message in a long chat)
+  let _popupSweepRaf = 0;
   el('chat-history').addEventListener('scroll', () => {
-    document.querySelectorAll('.ctx-popup, .memory-used-detail, .msg-overflow-menu').forEach(p => p.remove());
-    document.querySelectorAll('.memory-used-pill').forEach(p => { p._openDetail = null; });
+    if (_popupSweepRaf) return;
+    if (window.__odxPopupsMaybeOpen && !window.__odxPopupsMaybeOpen('footer-popups')) return;
+    _popupSweepRaf = requestAnimationFrame(() => {
+      _popupSweepRaf = 0;
+      document.querySelectorAll('.ctx-popup, .memory-used-detail, .msg-overflow-menu').forEach(p => p.remove());
+      for (const p of document.getElementsByClassName('memory-used-pill')) if (p._openDetail) p._openDetail = null;
+    });
   }, { passive: true });
 
   el('chat-history').addEventListener('wheel', (e) => {
@@ -2651,12 +2659,28 @@ function initializeEventListeners() {
   }
 
   // Observe chat history for new/changed messages — de-emojify on the fly
+  // Only the bodies that actually changed are re-walked — re-walking every
+  // message on each streamed token made long chats slower with every turn.
   let _deEmojifyTimer = null;
-  const _chatObs = new MutationObserver(() => {
+  const _deEmojiDirty = new Set();
+  const _chatObs = new MutationObserver((muts) => {
     if (!document.body.classList.contains('text-emojis')) return;
+    for (const m of muts) {
+      const t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+      const b = t && t.closest ? t.closest('.msg .body') : null;
+      if (b) { _deEmojiDirty.add(b); continue; }
+      for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.matches('.msg .body')) _deEmojiDirty.add(n);
+        n.querySelectorAll('.msg .body').forEach(x => _deEmojiDirty.add(x));
+      }
+    }
+    if (!_deEmojiDirty.size) return;
     clearTimeout(_deEmojifyTimer);
     _deEmojifyTimer = setTimeout(() => {
-      document.querySelectorAll('.msg .body').forEach(deEmojify);
+      const list = [..._deEmojiDirty];
+      _deEmojiDirty.clear();
+      for (const b of list) if (b.isConnected) deEmojify(b);
     }, 150);
   });
   const _chatBox = document.getElementById('chat-history');

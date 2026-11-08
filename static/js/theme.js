@@ -8,6 +8,33 @@ import { hexToRgb } from './color/hex.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { snapModalToZone } from './tileManager.js';
 
+// ── Cached root CSS variables for the background-effect loops ──────────────
+// The canvas effects read --bg-effect-* every animation frame. A fresh
+// getComputedStyle(documentElement) there forces a full style recalculation
+// each frame, whose cost grows with the size of the page (long chats). Values
+// are cached and dropped whenever the theme can have changed.
+const _rootVarCache = new Map();
+let _rootVarAt = 0;
+function _rootVar(name) {
+  const now = performance.now();
+  if (now - _rootVarAt > 1000) { _rootVarCache.clear(); _rootVarAt = now; }
+  let v = _rootVarCache.get(name);
+  if (v === undefined) {
+    v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    _rootVarCache.set(name, v);
+  }
+  return v;
+}
+const _rootStyle = { getPropertyValue: _rootVar };
+try {
+  const _bust = () => _rootVarCache.clear();
+  new MutationObserver(_bust).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-odx-theme'] });
+  const _watchBody = () => document.body && new MutationObserver(_bust).observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+  if (document.body) _watchBody(); else document.addEventListener('DOMContentLoaded', _watchBody, { once: true });
+  new MutationObserver(_bust).observe(document.head || document.documentElement, { childList: true });
+} catch (_) {}
+
+
 export const THEMES = {
   dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
   light:      { bg:'#f0ebe3', fg:'#5a5248', panel:'#faf6f0', border:'#d4cdc2', red:'#c47d5a' },
@@ -438,7 +465,7 @@ export function applyFrostedGlass(on) {
 
 // Read current size multiplier for JS effects (canvas-based).
 function _getEffectSize() {
-  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-size'));
+  const v = parseFloat(_rootVar('--bg-effect-size'));
   return isNaN(v) ? 1 : v;
 }
 
@@ -1547,7 +1574,7 @@ function _initSynapse() {
   window.addEventListener('resize', _onResize);
 
   function getColor() {
-    const s = getComputedStyle(document.documentElement);
+    const s = _rootStyle;
     return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2';
   }
 
@@ -1638,7 +1665,7 @@ function _initRain() {
   window.addEventListener('resize', _onResize);
 
   function getColor() {
-    const s = getComputedStyle(document.documentElement);
+    const s = _rootStyle;
     return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2';
   }
 
@@ -1658,7 +1685,7 @@ function _initRain() {
     ctx.clearRect(0, 0, W, H);
     const c = getColor();
     // Intensity also controls rain speed + spawn rate (feels slower/lighter when dim)
-    const intenCss = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-effect-intensity'));
+    const intenCss = parseFloat(_rootStyle.getPropertyValue('--bg-effect-intensity'));
     const inten = isNaN(intenCss) ? 1 : intenCss;
     const speedMult = 0.35 + inten * 0.65;
     const sizeMult = _getEffectSize();
@@ -1729,7 +1756,7 @@ function _initConstellations() {
   window.addEventListener('resize', _onResize);
 
   function getColor() {
-    const s = getComputedStyle(document.documentElement);
+    const s = _rootStyle;
     return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2';
   }
 
@@ -1816,8 +1843,8 @@ function _initPerlinFlow() {
   resize();
   const _onResize = () => resize();
   window.addEventListener('resize', _onResize);
-  function getColor() { const s = getComputedStyle(document.documentElement); return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
-  function getBg() { return getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#282c34'; }
+  function getColor() { const s = _rootStyle; return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
+  function getBg() { return _rootStyle.getPropertyValue('--bg').trim() || '#282c34'; }
   let _cachedBg = '', _fadeStyle = '';
   function getFade() {
     const bg = getBg();
@@ -1882,7 +1909,7 @@ function _initPetals() {
   resize();
   const _onResize = () => resize();
   window.addEventListener('resize', _onResize);
-  function getColor() { const s = getComputedStyle(document.documentElement); return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
+  function getColor() { const s = _rootStyle; return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
   function draw() {
     if (!document.body.classList.contains('bg-pattern-petals')) { window.removeEventListener('resize', _onResize); canvas.remove(); return; }
     requestAnimationFrame(draw);
@@ -1933,7 +1960,7 @@ function _initSparkles() {
   resize();
   const _onResize = () => resize();
   window.addEventListener('resize', _onResize);
-  function getColor() { const s = getComputedStyle(document.documentElement); return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
+  function getColor() { const s = _rootStyle; return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
   function drawStar(x, y, r, c, alpha) {
     ctx.save(); ctx.translate(x, y); ctx.fillStyle = c; ctx.globalAlpha = alpha;
     // 4-point star
@@ -2004,7 +2031,7 @@ function _initEmbers() {
   const _onResize = () => resize();
   window.addEventListener('resize', _onResize);
   function getColor() {
-    const s = getComputedStyle(document.documentElement);
+    const s = _rootStyle;
     return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#c9a95a';
   }
   function rgba(hex, a) {

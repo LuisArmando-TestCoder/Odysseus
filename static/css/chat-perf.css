@@ -1,0 +1,8 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Odysseus · Chat performance (pairs with static/js/chatPerf.js)
+   A bubble whose entrance animation has finished (or that came from history)
+   drops the animation entirely. Its end keyframe equals the plain style, so
+   nothing changes on screen — but the browser no longer keeps hundreds of
+   finished, filled animations alive, each pinning its own compositor layer.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.chat-history > .msg.msg-settled { animation-name: none; }

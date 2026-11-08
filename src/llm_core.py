@@ -335,7 +335,31 @@ def _detect_provider(url: str) -> str:
         return "openrouter"
     if _host_match(url, "groq.com"):
         return "groq"
+    if _host_match(url, "abliteration.ai"):
+        return "abliteration"
     return "openai"
+
+
+# Request defaults for abliteration.ai (OpenAI-compatible). Applied to every
+# chat call routed there; an explicit caller value (e.g. a lower
+# reasoning_effort or a max_tokens cap) wins over these.
+ABLITERATION_DEFAULTS = {
+    "top_p": 1,
+    "max_tokens": 32768,
+    "reasoning_effort": "high",
+    "include_reasoning": True,
+}
+
+
+def _apply_provider_defaults(provider: str, payload: Dict, reasoning_effort: Optional[str] = None) -> None:
+    if provider != "abliteration":
+        return
+    d = ABLITERATION_DEFAULTS
+    payload.setdefault("top_p", d["top_p"])
+    if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
+        payload["max_tokens"] = d["max_tokens"]
+    payload["reasoning_effort"] = reasoning_effort or d["reasoning_effort"]
+    payload["include_reasoning"] = d["include_reasoning"]
 
 
 def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str, str]:
@@ -358,6 +382,7 @@ def _provider_label(url: str) -> str:
     if _host_match(url, "openai.com"): return "OpenAI"
     if _host_match(url, "openrouter.ai"): return "OpenRouter"
     if _host_match(url, "groq.com"): return "Groq"
+    if _host_match(url, "abliteration.ai"): return "abliteration.ai"
     if _host_match(url, "mistral.ai"): return "Mistral"
     if _host_match(url, "deepseek.com"): return "DeepSeek"
     if _host_match(url, "googleapis.com"): return "Google"
@@ -880,6 +905,7 @@ def _llm_call_raw(url: str, model: str, messages: List[Dict], temperature: float
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
+        _apply_provider_defaults(provider, payload)
     try:
         note_model_activity(target_url, model)
         r = httpx.post(target_url, headers=h, json=payload, timeout=timeout)
@@ -1045,6 +1071,7 @@ async def _llm_call_async_raw(
             payload["reasoning_effort"] = reasoning_effort
         if provider == "openrouter":
             payload["usage"] = {"include": True}   # exact per-call cost for the cost ledger
+        _apply_provider_defaults(provider, payload, reasoning_effort)
 
     if _is_host_dead(target_url):
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
@@ -1173,6 +1200,7 @@ async def _stream_llm_raw(url: str, model: str, messages: List[Dict], temperatur
             payload[tok_key] = max_tokens
         if tools:
             payload["tools"] = tools
+        _apply_provider_defaults(provider, payload)
         h = _provider_headers(provider, headers)
 
     # Short connect timeout: a reachable peer answers SYN in <100ms even on

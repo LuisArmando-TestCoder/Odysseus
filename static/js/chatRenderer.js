@@ -1,6 +1,7 @@
 // static/js/chatRenderer.js
 // Extracted from chat.js — message rendering, sources, images, metrics
 
+import chatPerf from './chatPerf.js';
 import uiModule from './ui.js';
 import markdownModule from './markdown.js';
 import { addAITTSButton } from './tts-ai.js';
@@ -2006,6 +2007,7 @@ export function displayMetrics(messageElement, metrics) {
               if (window.sessionModule) await window.sessionModule.selectSession(sid);
               // Scroll to the compacted message (first msg with compacted metadata)
               setTimeout(() => {
+                if (window.odysseusChatPerf) window.odysseusChatPerf.flush();
                 const msgs = document.querySelectorAll('#chat-history .msg');
                 for (const m of msgs) {
                   if (m.querySelector('.body')?.textContent.includes('Conversation compacted')) {
@@ -2593,20 +2595,21 @@ export function addMessagesBatch(messages) {
     const box = document.getElementById('chat-history');
     if (!box) { console.error('Chat history element not found'); return; }
 
-    const frag = document.createDocumentFragment();
-    for (const m of messages) {
-      addMessage(m.role, m.content, m.modelName, m.metadata, frag);
-    }
-    const newNodes = Array.from(frag.childNodes);
-    box.appendChild(frag);
-
-    for (const node of newNodes) {
-      if (node.nodeType !== 1) continue; // skip non-element nodes
+    // Long threads open with only their newest messages built; older ones are
+    // hydrated newest→oldest in idle slices with the reading position pinned
+    // (chatPerf.js). Each slice is one DOM commit + one scoped hljs/mermaid pass.
+    const build = (list) => {
+      const frag = document.createDocumentFragment();
+      for (const m of list) addMessage(m.role, m.content, m.modelName, m.metadata, frag);
+      return frag;
+    };
+    const post = (node) => {
       if (window.hljs) {
         node.querySelectorAll('pre code:not(.hljs)').forEach(b => window.hljs.highlightElement(b));
       }
       if (markdownModule.renderMermaid) markdownModule.renderMermaid(node);
-    }
+    };
+    chatPerf.hydrate(box, messages, build, post);
   } catch (error) {
     console.error('Error in addMessagesBatch:', error);
     if (uiModule) uiModule.showError('Failed to add messages: ' + error.message);

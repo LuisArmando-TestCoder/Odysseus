@@ -476,7 +476,10 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         break;   // one load per scroll tick
       }
     };
-    document.addEventListener('scroll', () => {
+    document.addEventListener('scroll', (e) => {
+      // The chat thread never holds library load-more buttons; skip the
+      // document-wide query for its (very frequent) scroll events.
+      if (e.target && e.target.id === 'chat-history') return;
       if (_tick) return;
       _tick = true;
       requestAnimationFrame(_maybeAutoLoad);

@@ -190,6 +190,9 @@ def build_models_url(base: str) -> str:
 def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
     """Build auth headers for an endpoint."""
     provider = _detect_provider(base)
+    if not api_key and provider == "abliteration":
+        import os as _os
+        api_key = _os.getenv("ABLITERATION_API_KEY") or None
     headers: Dict[str, str] = {}
     if provider == "anthropic":
         if api_key:

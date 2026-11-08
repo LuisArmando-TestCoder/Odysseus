@@ -14814,7 +14814,13 @@ body.left-dock-active {
   display: none;
 }
 /* Hide everything except the grid when a card is expanded */
-.admin-card:has(.doclib-card-expanded) > *:not(.doclib-grid):not(.hwfit-cached-list) {
+/* Written sibling-relative (same matches, same specificity 0,4,0) instead of
+   `.admin-card:has(.doclib-card-expanded) > *:not(…)`: a :has() rule whose
+   right side has no class/tag makes Chrome restyle the WHOLE PAGE on every
+   DOM change anywhere (all :has() rules share one invalidation set, and the
+   body:has(...) rules make <body> an anchor) — that cost grew with chat length. */
+.admin-card > :not(.doclib-grid):not(.hwfit-cached-list):not(.odx-spec):where(:has(~ :is(.doclib-grid, .hwfit-cached-list) .doclib-card-expanded)),
+.admin-card > :where(:is(.doclib-grid, .hwfit-cached-list):has(.doclib-card-expanded)) ~ :not(.doclib-grid):not(.hwfit-cached-list):not(.odx-spec) {
   opacity: 0;
   max-height: 0;
   overflow: hidden;
@@ -15453,7 +15459,9 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   .doclib-grid:has(.doclib-chat-row.doclib-card-expanded) > .doclib-chat-row:not(.doclib-card-expanded) {
     display: none;
   }
-  .admin-card:has(.doclib-chat-row.doclib-card-expanded) > *:not(.doclib-grid) {
+  /* sibling-relative form of `.admin-card:has(.doclib-chat-row.doclib-card-expanded) > *:not(.doclib-grid)` — see the note on .admin-card above (page-wide restyles) */
+  .admin-card > :not(.doclib-grid):not(.odx-spec):not(.odx-spec-b):where(:has(~ .doclib-grid .doclib-chat-row.doclib-card-expanded)),
+  .admin-card > :where(.doclib-grid:has(.doclib-chat-row.doclib-card-expanded)) ~ :not(.doclib-grid):not(.odx-spec):not(.odx-spec-b) {
     display: none;
   }
   .admin-card:has(.doclib-chat-row.doclib-card-expanded) > .doclib-grid {
@@ -15528,7 +15536,9 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   .doclib-grid:has(.doclib-chat-row.doclib-card-expanded) > .doclib-chat-row:not(.doclib-card-expanded) {
     display: none;
   }
-  .admin-card:has(.doclib-chat-row.doclib-card-expanded) > *:not(.doclib-grid) {
+  /* sibling-relative form of `.admin-card:has(.doclib-chat-row.doclib-card-expanded) > *:not(.doclib-grid)` — see the note on .admin-card above (page-wide restyles) */
+  .admin-card > :not(.doclib-grid):not(.odx-spec):not(.odx-spec-b):where(:has(~ .doclib-grid .doclib-chat-row.doclib-card-expanded)),
+  .admin-card > :where(.doclib-grid:has(.doclib-chat-row.doclib-card-expanded)) ~ :not(.doclib-grid):not(.odx-spec):not(.odx-spec-b) {
     display: none;
   }
   .admin-card:has(.doclib-chat-row.doclib-card-expanded) > .doclib-grid {
@@ -16517,7 +16527,9 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
    via the detail element's inline `display:flex` so the grid / albums views
    keep sizing to their own content. Works on both desktop and the mobile
    full-screen sheet. */
-#gallery-images-container:has(> #gallery-detail[style*="flex"]) > *:not(#gallery-detail) {
+/* sibling-relative form of `#gallery-images-container:has(> #gallery-detail[style*="flex"]) > *:not(#gallery-detail)` (same specificity) — see the .admin-card note: page-wide restyles */
+#gallery-images-container > :not(#gallery-detail):is(#gallery-detail[style*="flex"], *):where(:has(~ #gallery-detail[style*="flex"])),
+#gallery-images-container > :where(#gallery-detail[style*="flex"]) ~ :not(#gallery-detail):is(#gallery-detail[style*="flex"], *) {
   display: none !important;
 }
 #gallery-images-container:has(> #gallery-detail[style*="flex"]) > #gallery-detail {
