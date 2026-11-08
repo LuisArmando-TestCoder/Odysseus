@@ -105,3 +105,6 @@ venv.broken-*/
 # scheduled-sync scratch (format-patch / bundles)
 odysseus-pending-patches/
 odysseus-pending.bundle
+
+# scratch / backups, never commit
+_to_delete/
