@@ -923,3 +923,52 @@ forced-colours gates) and one all-theme change in `static/js/spinner.js`.
 **Next:** streaming states part 2 — the document editor's stream cursor
 (`.doc-stream-cursor`) and Deep Research's live progress panel in the same
 core/scan language; then the light-theme contrast report.
+
+### Run 23 — 2026-11-08 · Streaming states, part 2: write head + research
+`static/css/jarvis.css` §9 (+ reduced-motion / forced-colours gates); the
+§8 core rule now also draws `.doc-stream-dot`, the running research phase
+`::before` and `.research-sb-dot`. Removed tron.css's amber diamond rules
+for the doc stream tag (dead once §9 owns it).
+- **Found:** the document stream cursor was invisible in *every* theme —
+  document.js appended `▏` to `#doc-editor-highlight`, which is
+  `display:none` since the single-layer editor change. And that overlay was
+  being tagged `.pre-compact` by chat.js's global `<pre>` sweep (+200px
+  right padding), so whenever it *is* shown (find mode) wrapped lines
+  pushed every mark one line low.
+- **document.js (all themes, no visible change outside jarvis):** one
+  cached, empty, `aria-hidden` cursor element (no glyph in the overlay's
+  text); `_placeStreamCursor()` seats it before the overlay's trailing
+  `\n`, i.e. at the end of the line being written, not the start of the
+  next; a mid-stream highlight pass re-seats it. Doc-edit animation uses
+  the same placement.
+- **chat.js:** `_markCompactPre` skips `#doc-editor-highlight`.
+- **Jarvis write head:** while the head exists (`.doc-editor-wrap:has(
+  .doc-stream-cursor)` — removed on finalize, so :has() is the state) the
+  overlay is shown as a ghost layer (transparent ink, like find mode) and
+  the head is a zero-width inline box whose `::before` is a 0.62em cyan
+  block with a soft glow, blinking on a 1.06 s step. No reflow, no drift.
+  A 2px scan runs along the editor's top edge. The footer tag is core +
+  cyan "EDITING" (was a pulsing amber diamond — writing is the assistant
+  working, not an alert; the pulse dipped it to ~2.6 : 1).
+- **Deep Research running card:** phase line = core + mono uppercase
+  label in `--jv-cyan-hi`, full opacity (was sans at .6); clock + model
+  tag mono tabular at full opacity (clock cyan); progress is a 2px lit
+  hairline with a scan riding the fill and a 6px leading tick, 240 ms
+  expo-out width changes. Sidebar running mark: core + "R2" at 10px mono
+  cyan (was 8px at .5 opacity).
+- **Reduced motion (all themes):** `research/panel.js` no longer runs the
+  60 fps orbit rAF — the edge signal parks; the active-section dot, synapse
+  pulse and doc stream tag stop (style.css). Jarvis: head solid, scans
+  parked, cores still. Probe: 0 running infinite animations in either scene
+  under reduced motion (jarvis), only one-shot `rs-fire` left in light.
+- Verified headless (mocked `/api/*`, nonce injected): streaming doc +
+  research pane (running / queued / done jobs) in jarvis + light at
+  1440×900 and 390×844, normal + reduced motion. Head lands on the last
+  character at both widths (incl. a wrapped line on 390). Light before /
+  after differs only in animated regions (voice orb, synapse, orbit edge).
+  No page errors. Theme/CSS/JS tests: same pass/fail set as baseline
+  (legal + queue tests fail on missing deps).
+
+**Next:** light-theme contrast/overlap report (Runs 19–23 notes) for the
+preset owner; then jarvis polish for remaining one-off windows (Services,
+Deadlines page) if the audit finds gaps.

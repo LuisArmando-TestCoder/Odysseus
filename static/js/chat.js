@@ -4141,6 +4141,10 @@ import agentActivity from './agentActivity.js';
   // render the Run/Edit/Copy buttons as a slim row that doesn't make a
   // 1-line bash block taller than its own contents.
   function _markCompactPre(pre) {
+    // The document editor's overlay is not a code block: its padding must
+    // match the textarea under it, or find marks / the stream head land on
+    // the wrong line (pre-compact adds 200px right padding).
+    if (pre.id === 'doc-editor-highlight') { pre.classList.remove('pre-compact'); return; }
     const code = pre.querySelector('code');
     if (!code) return;
     const txt = code.textContent || '';

@@ -6382,6 +6382,11 @@ import * as Modals from './modalManager.js';
     // Reapply find highlights after hljs rewrote the DOM
     if (codeEl.dataset.findQuery) applyFindMarks(codeEl);
 
+    // A highlight pass mid-stream rewrites the overlay: re-seat the write head
+    if (_streamDocId && _streamDocId === activeDocId && _streamCursorEl) {
+      _placeStreamCursor(codeEl, _streamCursorEl);
+    }
+
     // Keep scroll in sync
     if (pre) {
       codeEl.style.minHeight = textarea.scrollHeight + 'px';
@@ -9024,6 +9029,34 @@ import * as Modals from './modalManager.js';
     renderTabs();
   }
 
+  /** Stream write head. Empty + aria-hidden: themes draw it (the overlay it
+   *  lives in is hidden unless a theme shows it), and it adds no text to the
+   *  overlay's textContent. */
+  let _streamCursorEl = null;
+  function _makeStreamCursor() {
+    if (!_streamCursorEl) {
+      _streamCursorEl = document.createElement('span');
+      _streamCursorEl.id = 'doc-stream-cursor';
+      _streamCursorEl.className = 'doc-stream-cursor';
+      _streamCursorEl.setAttribute('aria-hidden', 'true');
+    }
+    return _streamCursorEl;
+  }
+  /** Put the head right after the last character — before the overlay's
+   *  trailing '\n' — so it sits at the end of the line being written, not at
+   *  the start of the next one. */
+  function _placeStreamCursor(codeEl, cursor) {
+    const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
+    let last = null;
+    while (walker.nextNode()) last = walker.currentNode;
+    if (last && last.data.endsWith('\n')) {
+      const tail = last.data.length > 1 ? last.splitText(last.data.length - 1) : last;
+      tail.parentNode.insertBefore(cursor, tail);
+    } else {
+      codeEl.appendChild(cursor);
+    }
+  }
+
   /** Simulate streaming effect for doc edits */
   let _editAnimFrame = null;
   function _animateDocEdit(textarea, newContent) {
@@ -9033,10 +9066,7 @@ import * as Modals from './modalManager.js';
     const codeEl = document.getElementById('doc-editor-code');
     let cursor = document.getElementById('doc-stream-cursor');
     if (!cursor) {
-      cursor = document.createElement('span');
-      cursor.id = 'doc-stream-cursor';
-      cursor.className = 'doc-stream-cursor';
-      cursor.textContent = '\u258F';
+      cursor = _makeStreamCursor();
     }
 
     const oldContent = textarea.value;
@@ -9072,7 +9102,7 @@ import * as Modals from './modalManager.js';
         const current = oldContent.slice(0, prefixLen) + deletedText.slice(0, deletePos) + suffix;
         textarea.value = current;
         if (codeEl) codeEl.textContent = current + '\n';
-        if (codeEl && codeEl.parentElement) codeEl.parentElement.appendChild(cursor);
+        if (codeEl) _placeStreamCursor(codeEl, cursor);
         updateLineNumbers(current);
         if (deletePos > 0) {
           _editAnimFrame = requestAnimationFrame(tick);
@@ -9085,7 +9115,7 @@ import * as Modals from './modalManager.js';
         const current = newContent.slice(0, prefixLen + insertPos) + suffix;
         textarea.value = current;
         if (codeEl) codeEl.textContent = current + '\n';
-        if (codeEl && codeEl.parentElement) codeEl.parentElement.appendChild(cursor);
+        if (codeEl) _placeStreamCursor(codeEl, cursor);
         updateLineNumbers(current);
         if (insertPos < insertedText.length) {
           _editAnimFrame = requestAnimationFrame(tick);
@@ -9127,12 +9157,9 @@ import * as Modals from './modalManager.js';
       // Show blinking cursor at end of content
       let cursor = document.getElementById('doc-stream-cursor');
       if (!cursor) {
-        cursor = document.createElement('span');
-        cursor.id = 'doc-stream-cursor';
-        cursor.className = 'doc-stream-cursor';
-        cursor.textContent = '\u258F';
+        cursor = _makeStreamCursor();
       }
-      if (codeEl && codeEl.parentElement) codeEl.parentElement.appendChild(cursor);
+      if (codeEl) _placeStreamCursor(codeEl, cursor);
       clearTimeout(_streamHlDebounce);
       _streamHlDebounce = setTimeout(syncHighlighting, 150);
     }

@@ -148,6 +148,13 @@ let _orbitLastTs = 0;
 let _orbitSpeedDegPerSec = 22;  // idle ambient default
 function _ensureOrbit() {
   if (_orbitRAF) return;
+  // Reduced motion: the edge signal parks where it is — no 60 fps loop
+  // (CSS can't stop a JS-driven angle).
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const pane = document.getElementById('research-pane');
+    if (pane) pane.style.setProperty('--research-orbit-angle', _orbitAngle.toFixed(2) + 'deg');
+    return;
+  }
   _orbitLastTs = 0;
   const tick = (ts) => {
     const pane = document.getElementById('research-pane');

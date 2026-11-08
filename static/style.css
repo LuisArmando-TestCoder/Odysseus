@@ -11511,6 +11511,9 @@ textarea.memory-add-input {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .doc-stream-indicator { animation: none; opacity: 1; }
+}
 .doc-updated-flash {
   animation: doc-update-flash 0.6s ease-out;
 }
@@ -34832,7 +34835,9 @@ body.research-panel-view #research-divider { display:none; }
   left: -4px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .research-sb-dot { animation: none; }
+  .research-sb-dot,
+  .research-section-dot.pulsing,
+  .research-synapse .rs-pulse { animation: none; }
 }
 
 /* ── In-house color picker ── */

@@ -898,7 +898,10 @@
   color: var(--jv-text-dim);
 }
 :root[data-odx-theme="jarvis"] .ai-spinner:not(.ai-spinner-whirlpool, .ai-spinner-sinewave)::before,
-:root[data-odx-theme="jarvis"] .live-think-spinner-slot::before {
+:root[data-odx-theme="jarvis"] .live-think-spinner-slot::before,
+:root[data-odx-theme="jarvis"] .doc-stream-indicator .doc-stream-dot,
+:root[data-odx-theme="jarvis"] .research-job-card.running .research-job-phase::before,
+:root[data-odx-theme="jarvis"] .research-sb-running .research-sb-dot {
   content: "";
   flex: none;
   width: var(--jv-core);
@@ -1017,6 +1020,156 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   9. STREAMING STATES, PART 2 — DOCUMENT WRITE HEAD + DEEP RESEARCH
+   The same core / scan / micro-label language as §8, carried into the two
+   places the assistant writes or works outside the chat:
+   • Document editor while the AI writes (the overlay holds the write head
+     only while streaming — document.js removes it on finalize, so :has() is
+     the state flag): the overlay is shown as a ghost layer (transparent ink,
+     like find mode) so the head can sit at the end of the line being written;
+     a scan line runs along the editor's top edge; the footer "editing" tag is
+     a core + cyan label (it was a pulsing amber diamond: writing is the
+     assistant working, not an alert).
+   • Deep Research running card: phase line as a core + mono label, mono
+     tabular clock, progress as a lit hairline with a scan riding the fill.
+   • Sidebar "Deep Research" running mark: core + readable round label.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor):not(.diff-mode) .doc-editor-highlight {
+  display: block !important;
+  z-index: 5 !important;
+  background: transparent !important;
+  pointer-events: none;
+}
+:root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor):not(.diff-mode) .doc-editor-highlight :not(.doc-stream-cursor) {
+  color: transparent !important;
+  background: transparent !important;
+}
+/* The head: zero-width in flow (no reflow, no wrap drift), drawn as a lit
+   block by its pseudo-element */
+:root[data-odx-theme="jarvis"] .doc-stream-cursor {
+  display: inline-block;
+  position: relative;
+  width: 0;
+  height: 1.45em;
+  vertical-align: top;
+}
+:root[data-odx-theme="jarvis"] .doc-stream-cursor::before {
+  content: "";
+  position: absolute;
+  top: 0.12em;
+  bottom: 0.12em;
+  left: 1px;
+  width: 0.62em;
+  background: var(--jv-cyan-hi);
+  box-shadow: 0 0 calc(8px * var(--jv-glow-k)) var(--jv-glow), 0 0 0 1px color-mix(in srgb, var(--jv-cyan) 35%, transparent);
+  animation: jv-head-blink 1.06s steps(1, end) infinite;
+}
+:root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 6;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, var(--jv-cyan-hi), transparent) no-repeat,
+    color-mix(in srgb, var(--jv-cyan) 18%, transparent);
+  background-size: 22% 100%, 100% 100%;
+  background-position: -30% 0, 0 0;
+  animation: jv-scan 1.6s var(--jv-ease) infinite;
+}
+/* Footer tag: core + label, full opacity (the pulse dipped it to ~2.6 : 1) */
+:root[data-odx-theme="jarvis"] .doc-stream-indicator {
+  gap: 7px;
+  animation: none !important;
+  opacity: 1 !important;
+  font-family: var(--jv-mono);
+  font-size: 10px;
+  letter-spacing: var(--jv-label-track);
+  text-transform: uppercase;
+  color: var(--jv-cyan-hi) !important;
+}
+:root[data-odx-theme="jarvis"] .doc-stream-indicator .doc-stream-dot { display: inline-block; }
+
+/* Deep Research — running card */
+:root[data-odx-theme="jarvis"] .research-job-card.running .research-job-phase {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 2px;
+  opacity: 1;
+  font-family: var(--jv-mono);
+  font-size: var(--jv-label-size);
+  letter-spacing: var(--jv-label-track);
+  text-transform: uppercase;
+  color: var(--jv-cyan-hi);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-odx-theme="jarvis"] .research-job-card.running :is(.research-job-time, .research-job-model) {
+  opacity: 1;
+  font-family: var(--jv-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--jv-text-dim);
+}
+:root[data-odx-theme="jarvis"] .research-job-card.running .research-job-time {
+  min-width: 4.5ch;
+  text-align: right;
+  color: var(--jv-cyan-hi);
+}
+:root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-bar {
+  height: 2px;
+  margin-top: 10px;
+  border-radius: 0;
+  overflow: visible;
+  background: color-mix(in srgb, var(--jv-cyan) 16%, transparent);
+}
+:root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill {
+  position: relative;
+  border-radius: 0;
+  transition: width 240ms var(--jv-ease);
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, #fff 70%, var(--jv-cyan-hi)), transparent) no-repeat,
+    var(--jv-cyan);
+  background-size: 30% 100%, 100% 100%;
+  background-position: -40% 0, 0 0;
+  box-shadow: 0 0 calc(6px * var(--jv-glow-k)) var(--jv-glow);
+  animation: jv-scan 1.8s var(--jv-ease) infinite;
+}
+/* Leading edge: a 6px tick that marks "you are here" on the track */
+:root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -2px;
+  width: 2px;
+  height: 6px;
+  background: var(--jv-cyan-hi);
+}
+
+/* Sidebar running mark: core + round label at a readable size */
+:root[data-odx-theme="jarvis"] .research-sb-running { gap: 7px; }
+:root[data-odx-theme="jarvis"] .research-sb-running .research-sb-status {
+  left: 0;
+  opacity: 1;
+  font-family: var(--jv-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: var(--jv-cyan-hi);
+}
+:root[data-odx-theme="jarvis"] .research-sb-running .research-sb-dot {
+  position: static;
+  display: inline-block;
+}
+
+@keyframes jv-head-blink { 50% { opacity: 0; } }
+
+/* ───────────────────────────────────────────────────────────────────────────
    3. ACCESSIBILITY GATES
    ─────────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -1032,6 +1185,12 @@
   :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-wave) { animation: none !important; }
   :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-node.running .agent-thread-wave) { background-position: 50% 0, 0 0; }
   :root[data-odx-theme="jarvis"] .agent-thread-node.running .agent-thread-dot::after { animation: none; opacity: .45; transform: scale(1); }
+  /* §9: head stays lit, scans park, cores hold */
+  :root[data-odx-theme="jarvis"] .doc-stream-cursor::before,
+  :root[data-odx-theme="jarvis"] .research-job-phase::before,
+  :root[data-odx-theme="jarvis"] :is(.doc-stream-dot, .research-sb-dot, .research-progress-fill) { animation: none !important; }
+  :root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor)::after { animation: none; background-position: 50% 0, 0 0; }
+  :root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill { background-position: 100% 0, 0 0; transition: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1075,4 +1234,8 @@
   :root[data-odx-theme="jarvis"] .ai-spinner::before,
   :root[data-odx-theme="jarvis"] .live-think-spinner-slot::before { background: CanvasText; -webkit-mask: none; mask: none; width: 6px; height: 6px; animation: none; }
   :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-node.running .agent-thread-wave) { background: CanvasText; animation: none; }
+  :root[data-odx-theme="jarvis"] .research-job-phase::before,
+  :root[data-odx-theme="jarvis"] :is(.doc-stream-dot, .research-sb-dot) { background: CanvasText; -webkit-mask: none; mask: none; width: 6px; height: 6px; animation: none; }
+  :root[data-odx-theme="jarvis"] .doc-stream-cursor::before { background: Highlight; box-shadow: none; }
+  :root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill { background: Highlight; box-shadow: none; animation: none; }
 }

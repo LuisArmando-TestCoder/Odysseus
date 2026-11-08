@@ -224,8 +224,16 @@ rotating reactor core, a mono micro-label and a scan line replace the ASCII
 in the live thinking header; running tools get a ping ring and a drawn
 "STDOUT · LIVE" readout; the live thinking timer reaches AA (3.2 → 5 : 1).
 Under reduced motion the ASCII spinner now holds still in every theme.
-Next: light-theme contrast report; streaming polish (document stream cursor,
-research progress).
+Run 23 carried that language out of the chat: the document editor's stream
+cursor, which had been invisible in every theme (it lived in the hidden
+highlight overlay), is now a lit write head at the end of the line being
+written in jarvis, with a scan line on the editor's top edge and a cyan
+core "EDITING" tag; the Deep Research running card reads as an instrument
+(core + mono phase, tabular clock, lit progress hairline). All themes: the
+doc overlay no longer gets chat's 200px `pre-compact` padding (find marks
+were landing a line low after wrapped lines), and the research pane's edge
+signal, active-section dot and synapse pulse hold still under reduced motion.
+Next: light-theme contrast report; then modals/windows polish backlog.
 Spec + log: `docs/JARVIS_UI.md`.
 
 ## High Priority

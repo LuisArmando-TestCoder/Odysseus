@@ -826,8 +826,6 @@
 :root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-reject, .diff-chunk-btn-reject) { color: var(--jv-danger) !important; border-color: color-mix(in srgb, var(--jv-danger) 40%, transparent) !important; }
 :root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-accept, .diff-chunk-btn-accept):hover { background: color-mix(in srgb, var(--jv-ok) 12%, transparent) !important; border-color: var(--jv-ok) !important; }
 :root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-reject, .diff-chunk-btn-reject):hover { background: color-mix(in srgb, var(--jv-danger) 12%, transparent) !important; border-color: var(--jv-danger) !important; }
-:root[data-odx-theme="jarvis"] .doc-stream-dot { border-radius: 0 !important; transform: rotate(45deg); background: var(--jv-amber) !important; }
-:root[data-odx-theme="jarvis"] .doc-stream-indicator { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; color: var(--jv-amber) !important; }
 
 /* Library (documents tab): drawn cards, lit preview slot */
 :root[data-odx-theme="jarvis"] #doclib-modal .doclib-card {
