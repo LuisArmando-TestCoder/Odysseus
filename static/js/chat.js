@@ -1365,7 +1365,8 @@ import agentActivity from './agentActivity.js';
         isAgentMode = true;
       }
       fd.append('mode', isAgentMode ? 'agent' : 'chat');
-      if (el('web-toggle').checked) {
+      // Web is always on (user decision 2026-11-09); the toggle no longer gates it.
+      if (true) {
         if (isAgentMode) {
           fd.append('allow_web_search', 'true');
         } else {
@@ -1422,7 +1423,7 @@ import agentActivity from './agentActivity.js';
 
       let loadingText = 'Initializing...';
 
-      if (el('web-toggle').checked && !_isAgent) {
+      if (!_isAgent) {
         const _searchLabel = searchModule ? searchModule.getProviderLabel() : 'web';
         loadingText = `Searching via ${_searchLabel}...<br>
                        <span style="font-size: 0.9em; opacity: 0.8;">
@@ -1450,7 +1451,7 @@ import agentActivity from './agentActivity.js';
       spinner.start();
       
       // Update spinner message based on mode
-      if (el('web-toggle').checked && !_isAgent) {
+      if (!_isAgent) {
         spinner.updateMessage('Searching web with ' + (searchModule ? searchModule.getProviderLabel() : 'SearXNG'));
         setTimeout(() => spinner.updateMessage('Processing results'), 1500);
       } else if (el('research-toggle').checked) {

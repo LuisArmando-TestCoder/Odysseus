@@ -882,7 +882,7 @@ async function _executeCompare(message) {
     const researchChk = document.getElementById('research-toggle');
     const webChkT = document.getElementById('web-toggle');
     const noTimeLimit = state._compareMode === 'research' || (researchChk && researchChk.checked);
-    const needsLongTimeout = state._compareMode === 'agent' || (webChkT && webChkT.checked);
+    const needsLongTimeout = state._compareMode === 'agent' || true;
     const runTimeout = noTimeLimit ? 999999 : needsLongTimeout ? Math.max(state._timeout, 300) : state._timeout;
 
     // ── Pre-search if web toggle is on (share same results across all panes) ──
@@ -891,7 +891,7 @@ async function _executeCompare(message) {
     const webChk = document.getElementById('web-toggle');
     const toggleState = Storage.loadToggleState();
     const isAgentMode = (toggleState.mode || 'chat') === 'agent';
-    const webOn = webChk && webChk.checked;
+    const webOn = true; // web is always on
     // In agent mode, web_search is a tool (handled per-pane); in chat mode, pre-search and share
     if (webOn && !isAgentMode) {
       try {

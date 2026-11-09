@@ -1886,6 +1886,24 @@ async def stream_agent_loop(
             "read_file/write_file are confined to this folder."
         )})
 
+    # Tell the model WHY it has no web tools. Without this, a model whose
+    # web_search/web_fetch were stripped (Web toggle off) concludes "I have no
+    # internet access" and gives the user a false limitation.
+    try:
+        _web_off = [t for t in ("web_search", "web_fetch") if disabled_tools and t in disabled_tools]
+        if _web_off:
+            messages.insert(0, {"role": "system", "content": (
+                "=== WEB ACCESS IS SWITCHED OFF ===\n"
+                "You DO have internet tools (web_search, web_fetch), but the user's Web toggle "
+                "(globe button next to the message box) is OFF for this message, so they are "
+                "unavailable right now. Never say you lack internet or real-time access. If the "
+                "request needs current information (news, prices, 'latest', 'today', live data), "
+                "say in one sentence that Web is switched off and ask them to turn on the Web "
+                "toggle and resend; then offer anything you can do without it."
+            )})
+    except Exception:
+        pass
+
     prep_timings["prompt_build"] = time.time() - _t2
 
     _t3 = time.time()

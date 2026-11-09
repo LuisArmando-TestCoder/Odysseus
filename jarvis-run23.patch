@@ -1,0 +1,481 @@
+From 9d14ab1f2d4ca95a1b2ef3682ff835d8a4e0d589 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 8 Nov 2026 18:53:31 +0000
+Subject: [PATCH] =?UTF-8?q?style(jarvis):=20streaming=20part=202=20?=
+ =?UTF-8?q?=E2=80=94=20document=20write=20head=20+=20Deep=20Research=20ins?=
+ =?UTF-8?q?trument=20card?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- document.js: the stream cursor was invisible in every theme (it lived in
+  the hidden highlight overlay). One cached, empty, aria-hidden head is now
+  seated before the overlay's trailing newline and re-seated after a
+  mid-stream highlight pass.
+- chat.js: the global pre-compact sweep skips #doc-editor-highlight (its
+  +200px right padding put find marks a line low after wrapped lines).
+- jarvis.css §9: ghost overlay + lit, blinking write head while streaming,
+  top-edge scan, core + cyan EDITING tag; research running card with core +
+  mono phase, tabular clock, lit progress hairline; sidebar core + R# label.
+- Reduced motion: research orbit rAF no longer runs; section dot, synapse
+  pulse and doc stream tag stop (all themes).
+- docs/JARVIS_UI.md Run 23, ROADMAP.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015k7oH48ZZAxQ6CjSEAhMsY
+---
+ ROADMAP.md                  |  12 ++-
+ docs/JARVIS_UI.md           |  49 +++++++++++
+ static/css/jarvis.css       | 165 +++++++++++++++++++++++++++++++++++-
+ static/css/tron.css         |   2 -
+ static/js/chat.js           |   4 +
+ static/js/document.js       |  49 ++++++++---
+ static/js/research/panel.js |   7 ++
+ static/style.css            |   7 +-
+ 8 files changed, 278 insertions(+), 17 deletions(-)
+
+diff --git a/ROADMAP.md b/ROADMAP.md
+index 52f1ac9..9a72fce 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -224,8 +224,16 @@ rotating reactor core, a mono micro-label and a scan line replace the ASCII
+ in the live thinking header; running tools get a ping ring and a drawn
+ "STDOUT · LIVE" readout; the live thinking timer reaches AA (3.2 → 5 : 1).
+ Under reduced motion the ASCII spinner now holds still in every theme.
+-Next: light-theme contrast report; streaming polish (document stream cursor,
+-research progress).
++Run 23 carried that language out of the chat: the document editor's stream
++cursor, which had been invisible in every theme (it lived in the hidden
++highlight overlay), is now a lit write head at the end of the line being
++written in jarvis, with a scan line on the editor's top edge and a cyan
++core "EDITING" tag; the Deep Research running card reads as an instrument
++(core + mono phase, tabular clock, lit progress hairline). All themes: the
++doc overlay no longer gets chat's 200px `pre-compact` padding (find marks
++were landing a line low after wrapped lines), and the research pane's edge
++signal, active-section dot and synapse pulse hold still under reduced motion.
++Next: light-theme contrast report; then modals/windows polish backlog.
+ Spec + log: `docs/JARVIS_UI.md`.
+ 
+ ## High Priority
+diff --git a/docs/JARVIS_UI.md b/docs/JARVIS_UI.md
+index 2803a83..cd07ce0 100644
+--- a/docs/JARVIS_UI.md
++++ b/docs/JARVIS_UI.md
+@@ -923,3 +923,52 @@ forced-colours gates) and one all-theme change in `static/js/spinner.js`.
+ **Next:** streaming states part 2 — the document editor's stream cursor
+ (`.doc-stream-cursor`) and Deep Research's live progress panel in the same
+ core/scan language; then the light-theme contrast report.
++
++### Run 23 — 2026-11-08 · Streaming states, part 2: write head + research
++`static/css/jarvis.css` §9 (+ reduced-motion / forced-colours gates); the
++§8 core rule now also draws `.doc-stream-dot`, the running research phase
++`::before` and `.research-sb-dot`. Removed tron.css's amber diamond rules
++for the doc stream tag (dead once §9 owns it).
++- **Found:** the document stream cursor was invisible in *every* theme —
++  document.js appended `▏` to `#doc-editor-highlight`, which is
++  `display:none` since the single-layer editor change. And that overlay was
++  being tagged `.pre-compact` by chat.js's global `<pre>` sweep (+200px
++  right padding), so whenever it *is* shown (find mode) wrapped lines
++  pushed every mark one line low.
++- **document.js (all themes, no visible change outside jarvis):** one
++  cached, empty, `aria-hidden` cursor element (no glyph in the overlay's
++  text); `_placeStreamCursor()` seats it before the overlay's trailing
++  `\n`, i.e. at the end of the line being written, not the start of the
++  next; a mid-stream highlight pass re-seats it. Doc-edit animation uses
++  the same placement.
++- **chat.js:** `_markCompactPre` skips `#doc-editor-highlight`.
++- **Jarvis write head:** while the head exists (`.doc-editor-wrap:has(
++  .doc-stream-cursor)` — removed on finalize, so :has() is the state) the
++  overlay is shown as a ghost layer (transparent ink, like find mode) and
++  the head is a zero-width inline box whose `::before` is a 0.62em cyan
++  block with a soft glow, blinking on a 1.06 s step. No reflow, no drift.
++  A 2px scan runs along the editor's top edge. The footer tag is core +
++  cyan "EDITING" (was a pulsing amber diamond — writing is the assistant
++  working, not an alert; the pulse dipped it to ~2.6 : 1).
++- **Deep Research running card:** phase line = core + mono uppercase
++  label in `--jv-cyan-hi`, full opacity (was sans at .6); clock + model
++  tag mono tabular at full opacity (clock cyan); progress is a 2px lit
++  hairline with a scan riding the fill and a 6px leading tick, 240 ms
++  expo-out width changes. Sidebar running mark: core + "R2" at 10px mono
++  cyan (was 8px at .5 opacity).
++- **Reduced motion (all themes):** `research/panel.js` no longer runs the
++  60 fps orbit rAF — the edge signal parks; the active-section dot, synapse
++  pulse and doc stream tag stop (style.css). Jarvis: head solid, scans
++  parked, cores still. Probe: 0 running infinite animations in either scene
++  under reduced motion (jarvis), only one-shot `rs-fire` left in light.
++- Verified headless (mocked `/api/*`, nonce injected): streaming doc +
++  research pane (running / queued / done jobs) in jarvis + light at
++  1440×900 and 390×844, normal + reduced motion. Head lands on the last
++  character at both widths (incl. a wrapped line on 390). Light before /
++  after differs only in animated regions (voice orb, synapse, orbit edge).
++  No page errors. Theme/CSS/JS tests: same pass/fail set as baseline
++  (legal + queue tests fail on missing deps).
++
++**Next:** light-theme contrast/overlap report (Runs 19–23 notes) for the
++preset owner; then jarvis polish for remaining one-off windows (Services,
++Deadlines page) if the audit finds gaps.
+diff --git a/static/css/jarvis.css b/static/css/jarvis.css
+index 3fc8ae5..ccce746 100644
+--- a/static/css/jarvis.css
++++ b/static/css/jarvis.css
+@@ -898,7 +898,10 @@
+   color: var(--jv-text-dim);
+ }
+ :root[data-odx-theme="jarvis"] .ai-spinner:not(.ai-spinner-whirlpool, .ai-spinner-sinewave)::before,
+-:root[data-odx-theme="jarvis"] .live-think-spinner-slot::before {
++:root[data-odx-theme="jarvis"] .live-think-spinner-slot::before,
++:root[data-odx-theme="jarvis"] .doc-stream-indicator .doc-stream-dot,
++:root[data-odx-theme="jarvis"] .research-job-card.running .research-job-phase::before,
++:root[data-odx-theme="jarvis"] .research-sb-running .research-sb-dot {
+   content: "";
+   flex: none;
+   width: var(--jv-core);
+@@ -1016,6 +1019,156 @@
+   100% { opacity: 0; transform: scale(1.15); }
+ }
+ 
++/* ───────────────────────────────────────────────────────────────────────────
++   9. STREAMING STATES, PART 2 — DOCUMENT WRITE HEAD + DEEP RESEARCH
++   The same core / scan / micro-label language as §8, carried into the two
++   places the assistant writes or works outside the chat:
++   • Document editor while the AI writes (the overlay holds the write head
++     only while streaming — document.js removes it on finalize, so :has() is
++     the state flag): the overlay is shown as a ghost layer (transparent ink,
++     like find mode) so the head can sit at the end of the line being written;
++     a scan line runs along the editor's top edge; the footer "editing" tag is
++     a core + cyan label (it was a pulsing amber diamond: writing is the
++     assistant working, not an alert).
++   • Deep Research running card: phase line as a core + mono label, mono
++     tabular clock, progress as a lit hairline with a scan riding the fill.
++   • Sidebar "Deep Research" running mark: core + readable round label.
++   ─────────────────────────────────────────────────────────────────────────── */
++:root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor):not(.diff-mode) .doc-editor-highlight {
++  display: block !important;
++  z-index: 5 !important;
++  background: transparent !important;
++  pointer-events: none;
++}
++:root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor):not(.diff-mode) .doc-editor-highlight :not(.doc-stream-cursor) {
++  color: transparent !important;
++  background: transparent !important;
++}
++/* The head: zero-width in flow (no reflow, no wrap drift), drawn as a lit
++   block by its pseudo-element */
++:root[data-odx-theme="jarvis"] .doc-stream-cursor {
++  display: inline-block;
++  position: relative;
++  width: 0;
++  height: 1.45em;
++  vertical-align: top;
++}
++:root[data-odx-theme="jarvis"] .doc-stream-cursor::before {
++  content: "";
++  position: absolute;
++  top: 0.12em;
++  bottom: 0.12em;
++  left: 1px;
++  width: 0.62em;
++  background: var(--jv-cyan-hi);
++  box-shadow: 0 0 calc(8px * var(--jv-glow-k)) var(--jv-glow), 0 0 0 1px color-mix(in srgb, var(--jv-cyan) 35%, transparent);
++  animation: jv-head-blink 1.06s steps(1, end) infinite;
++}
++:root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor)::after {
++  content: "";
++  position: absolute;
++  top: 0;
++  left: 0;
++  right: 0;
++  height: 2px;
++  z-index: 6;
++  pointer-events: none;
++  background:
++    linear-gradient(90deg, transparent, var(--jv-cyan-hi), transparent) no-repeat,
++    color-mix(in srgb, var(--jv-cyan) 18%, transparent);
++  background-size: 22% 100%, 100% 100%;
++  background-position: -30% 0, 0 0;
++  animation: jv-scan 1.6s var(--jv-ease) infinite;
++}
++/* Footer tag: core + label, full opacity (the pulse dipped it to ~2.6 : 1) */
++:root[data-odx-theme="jarvis"] .doc-stream-indicator {
++  gap: 7px;
++  animation: none !important;
++  opacity: 1 !important;
++  font-family: var(--jv-mono);
++  font-size: 10px;
++  letter-spacing: var(--jv-label-track);
++  text-transform: uppercase;
++  color: var(--jv-cyan-hi) !important;
++}
++:root[data-odx-theme="jarvis"] .doc-stream-indicator .doc-stream-dot { display: inline-block; }
++
++/* Deep Research — running card */
++:root[data-odx-theme="jarvis"] .research-job-card.running .research-job-phase {
++  display: flex;
++  align-items: center;
++  gap: 9px;
++  margin-top: 2px;
++  opacity: 1;
++  font-family: var(--jv-mono);
++  font-size: var(--jv-label-size);
++  letter-spacing: var(--jv-label-track);
++  text-transform: uppercase;
++  color: var(--jv-cyan-hi);
++  min-width: 0;
++  white-space: nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
++}
++:root[data-odx-theme="jarvis"] .research-job-card.running :is(.research-job-time, .research-job-model) {
++  opacity: 1;
++  font-family: var(--jv-mono);
++  font-variant-numeric: tabular-nums;
++  color: var(--jv-text-dim);
++}
++:root[data-odx-theme="jarvis"] .research-job-card.running .research-job-time {
++  min-width: 4.5ch;
++  text-align: right;
++  color: var(--jv-cyan-hi);
++}
++:root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-bar {
++  height: 2px;
++  margin-top: 10px;
++  border-radius: 0;
++  overflow: visible;
++  background: color-mix(in srgb, var(--jv-cyan) 16%, transparent);
++}
++:root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill {
++  position: relative;
++  border-radius: 0;
++  transition: width 240ms var(--jv-ease);
++  background:
++    linear-gradient(90deg, transparent, color-mix(in srgb, #fff 70%, var(--jv-cyan-hi)), transparent) no-repeat,
++    var(--jv-cyan);
++  background-size: 30% 100%, 100% 100%;
++  background-position: -40% 0, 0 0;
++  box-shadow: 0 0 calc(6px * var(--jv-glow-k)) var(--jv-glow);
++  animation: jv-scan 1.8s var(--jv-ease) infinite;
++}
++/* Leading edge: a 6px tick that marks "you are here" on the track */
++:root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill::after {
++  content: "";
++  position: absolute;
++  right: -1px;
++  top: -2px;
++  width: 2px;
++  height: 6px;
++  background: var(--jv-cyan-hi);
++}
++
++/* Sidebar running mark: core + round label at a readable size */
++:root[data-odx-theme="jarvis"] .research-sb-running { gap: 7px; }
++:root[data-odx-theme="jarvis"] .research-sb-running .research-sb-status {
++  left: 0;
++  opacity: 1;
++  font-family: var(--jv-mono);
++  font-size: 10px;
++  letter-spacing: 0.08em;
++  font-variant-numeric: tabular-nums;
++  color: var(--jv-cyan-hi);
++}
++:root[data-odx-theme="jarvis"] .research-sb-running .research-sb-dot {
++  position: static;
++  display: inline-block;
++}
++
++@keyframes jv-head-blink { 50% { opacity: 0; } }
++
+ /* ───────────────────────────────────────────────────────────────────────────
+    3. ACCESSIBILITY GATES
+    ─────────────────────────────────────────────────────────────────────────── */
+@@ -1032,6 +1185,12 @@
+   :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-wave) { animation: none !important; }
+   :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-node.running .agent-thread-wave) { background-position: 50% 0, 0 0; }
+   :root[data-odx-theme="jarvis"] .agent-thread-node.running .agent-thread-dot::after { animation: none; opacity: .45; transform: scale(1); }
++  /* §9: head stays lit, scans park, cores hold */
++  :root[data-odx-theme="jarvis"] .doc-stream-cursor::before,
++  :root[data-odx-theme="jarvis"] .research-job-phase::before,
++  :root[data-odx-theme="jarvis"] :is(.doc-stream-dot, .research-sb-dot, .research-progress-fill) { animation: none !important; }
++  :root[data-odx-theme="jarvis"] .doc-editor-wrap:has(.doc-stream-cursor)::after { animation: none; background-position: 50% 0, 0 0; }
++  :root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill { background-position: 100% 0, 0 0; transition: none; }
+ }
+ 
+ @media (prefers-reduced-transparency: reduce) {
+@@ -1075,4 +1234,8 @@
+   :root[data-odx-theme="jarvis"] .ai-spinner::before,
+   :root[data-odx-theme="jarvis"] .live-think-spinner-slot::before { background: CanvasText; -webkit-mask: none; mask: none; width: 6px; height: 6px; animation: none; }
+   :root[data-odx-theme="jarvis"] :is(.ai-spinner-frame, .agent-thread-node.running .agent-thread-wave) { background: CanvasText; animation: none; }
++  :root[data-odx-theme="jarvis"] .research-job-phase::before,
++  :root[data-odx-theme="jarvis"] :is(.doc-stream-dot, .research-sb-dot) { background: CanvasText; -webkit-mask: none; mask: none; width: 6px; height: 6px; animation: none; }
++  :root[data-odx-theme="jarvis"] .doc-stream-cursor::before { background: Highlight; box-shadow: none; }
++  :root[data-odx-theme="jarvis"] .research-job-card.running .research-progress-fill { background: Highlight; box-shadow: none; animation: none; }
+ }
+diff --git a/static/css/tron.css b/static/css/tron.css
+index 4526191..99c88bb 100644
+--- a/static/css/tron.css
++++ b/static/css/tron.css
+@@ -826,8 +826,6 @@
+ :root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-reject, .diff-chunk-btn-reject) { color: var(--jv-danger) !important; border-color: color-mix(in srgb, var(--jv-danger) 40%, transparent) !important; }
+ :root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-accept, .diff-chunk-btn-accept):hover { background: color-mix(in srgb, var(--jv-ok) 12%, transparent) !important; border-color: var(--jv-ok) !important; }
+ :root[data-odx-theme="jarvis"] :is(.diff-toolbar-btn-reject, .diff-chunk-btn-reject):hover { background: color-mix(in srgb, var(--jv-danger) 12%, transparent) !important; border-color: var(--jv-danger) !important; }
+-:root[data-odx-theme="jarvis"] .doc-stream-dot { border-radius: 0 !important; transform: rotate(45deg); background: var(--jv-amber) !important; }
+-:root[data-odx-theme="jarvis"] .doc-stream-indicator { font-family: var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; color: var(--jv-amber) !important; }
+ 
+ /* Library (documents tab): drawn cards, lit preview slot */
+ :root[data-odx-theme="jarvis"] #doclib-modal .doclib-card {
+diff --git a/static/js/chat.js b/static/js/chat.js
+index bbe516e..6fd03f1 100644
+--- a/static/js/chat.js
++++ b/static/js/chat.js
+@@ -4141,6 +4141,10 @@ import agentActivity from './agentActivity.js';
+   // render the Run/Edit/Copy buttons as a slim row that doesn't make a
+   // 1-line bash block taller than its own contents.
+   function _markCompactPre(pre) {
++    // The document editor's overlay is not a code block: its padding must
++    // match the textarea under it, or find marks / the stream head land on
++    // the wrong line (pre-compact adds 200px right padding).
++    if (pre.id === 'doc-editor-highlight') { pre.classList.remove('pre-compact'); return; }
+     const code = pre.querySelector('code');
+     if (!code) return;
+     const txt = code.textContent || '';
+diff --git a/static/js/document.js b/static/js/document.js
+index 010087a..16398ae 100644
+--- a/static/js/document.js
++++ b/static/js/document.js
+@@ -6382,6 +6382,11 @@ import * as Modals from './modalManager.js';
+     // Reapply find highlights after hljs rewrote the DOM
+     if (codeEl.dataset.findQuery) applyFindMarks(codeEl);
+ 
++    // A highlight pass mid-stream rewrites the overlay: re-seat the write head
++    if (_streamDocId && _streamDocId === activeDocId && _streamCursorEl) {
++      _placeStreamCursor(codeEl, _streamCursorEl);
++    }
++
+     // Keep scroll in sync
+     if (pre) {
+       codeEl.style.minHeight = textarea.scrollHeight + 'px';
+@@ -9024,6 +9029,34 @@ import * as Modals from './modalManager.js';
+     renderTabs();
+   }
+ 
++  /** Stream write head. Empty + aria-hidden: themes draw it (the overlay it
++   *  lives in is hidden unless a theme shows it), and it adds no text to the
++   *  overlay's textContent. */
++  let _streamCursorEl = null;
++  function _makeStreamCursor() {
++    if (!_streamCursorEl) {
++      _streamCursorEl = document.createElement('span');
++      _streamCursorEl.id = 'doc-stream-cursor';
++      _streamCursorEl.className = 'doc-stream-cursor';
++      _streamCursorEl.setAttribute('aria-hidden', 'true');
++    }
++    return _streamCursorEl;
++  }
++  /** Put the head right after the last character — before the overlay's
++   *  trailing '\n' — so it sits at the end of the line being written, not at
++   *  the start of the next one. */
++  function _placeStreamCursor(codeEl, cursor) {
++    const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
++    let last = null;
++    while (walker.nextNode()) last = walker.currentNode;
++    if (last && last.data.endsWith('\n')) {
++      const tail = last.data.length > 1 ? last.splitText(last.data.length - 1) : last;
++      tail.parentNode.insertBefore(cursor, tail);
++    } else {
++      codeEl.appendChild(cursor);
++    }
++  }
++
+   /** Simulate streaming effect for doc edits */
+   let _editAnimFrame = null;
+   function _animateDocEdit(textarea, newContent) {
+@@ -9033,10 +9066,7 @@ import * as Modals from './modalManager.js';
+     const codeEl = document.getElementById('doc-editor-code');
+     let cursor = document.getElementById('doc-stream-cursor');
+     if (!cursor) {
+-      cursor = document.createElement('span');
+-      cursor.id = 'doc-stream-cursor';
+-      cursor.className = 'doc-stream-cursor';
+-      cursor.textContent = '\u258F';
++      cursor = _makeStreamCursor();
+     }
+ 
+     const oldContent = textarea.value;
+@@ -9072,7 +9102,7 @@ import * as Modals from './modalManager.js';
+         const current = oldContent.slice(0, prefixLen) + deletedText.slice(0, deletePos) + suffix;
+         textarea.value = current;
+         if (codeEl) codeEl.textContent = current + '\n';
+-        if (codeEl && codeEl.parentElement) codeEl.parentElement.appendChild(cursor);
++        if (codeEl) _placeStreamCursor(codeEl, cursor);
+         updateLineNumbers(current);
+         if (deletePos > 0) {
+           _editAnimFrame = requestAnimationFrame(tick);
+@@ -9085,7 +9115,7 @@ import * as Modals from './modalManager.js';
+         const current = newContent.slice(0, prefixLen + insertPos) + suffix;
+         textarea.value = current;
+         if (codeEl) codeEl.textContent = current + '\n';
+-        if (codeEl && codeEl.parentElement) codeEl.parentElement.appendChild(cursor);
++        if (codeEl) _placeStreamCursor(codeEl, cursor);
+         updateLineNumbers(current);
+         if (insertPos < insertedText.length) {
+           _editAnimFrame = requestAnimationFrame(tick);
+@@ -9127,12 +9157,9 @@ import * as Modals from './modalManager.js';
+       // Show blinking cursor at end of content
+       let cursor = document.getElementById('doc-stream-cursor');
+       if (!cursor) {
+-        cursor = document.createElement('span');
+-        cursor.id = 'doc-stream-cursor';
+-        cursor.className = 'doc-stream-cursor';
+-        cursor.textContent = '\u258F';
++        cursor = _makeStreamCursor();
+       }
+-      if (codeEl && codeEl.parentElement) codeEl.parentElement.appendChild(cursor);
++      if (codeEl) _placeStreamCursor(codeEl, cursor);
+       clearTimeout(_streamHlDebounce);
+       _streamHlDebounce = setTimeout(syncHighlighting, 150);
+     }
+diff --git a/static/js/research/panel.js b/static/js/research/panel.js
+index 6893ec2..c127713 100644
+--- a/static/js/research/panel.js
++++ b/static/js/research/panel.js
+@@ -148,6 +148,13 @@ let _orbitLastTs = 0;
+ let _orbitSpeedDegPerSec = 22;  // idle ambient default
+ function _ensureOrbit() {
+   if (_orbitRAF) return;
++  // Reduced motion: the edge signal parks where it is — no 60 fps loop
++  // (CSS can't stop a JS-driven angle).
++  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
++    const pane = document.getElementById('research-pane');
++    if (pane) pane.style.setProperty('--research-orbit-angle', _orbitAngle.toFixed(2) + 'deg');
++    return;
++  }
+   _orbitLastTs = 0;
+   const tick = (ts) => {
+     const pane = document.getElementById('research-pane');
+diff --git a/static/style.css b/static/style.css
+index 5dccfd0..4a6dade 100644
+--- a/static/style.css
++++ b/static/style.css
+@@ -11511,6 +11511,9 @@ textarea.memory-add-input {
+   0%, 100% { opacity: 0.5; }
+   50% { opacity: 1; }
+ }
++@media (prefers-reduced-motion: reduce) {
++  .doc-stream-indicator { animation: none; opacity: 1; }
++}
+ .doc-updated-flash {
+   animation: doc-update-flash 0.6s ease-out;
+ }
+@@ -34832,7 +34835,9 @@ body.research-panel-view #research-divider { display:none; }
+   left: -4px;
+ }
+ @media (prefers-reduced-motion: reduce) {
+-  .research-sb-dot { animation: none; }
++  .research-sb-dot,
++  .research-section-dot.pulsing,
++  .research-synapse .rs-pulse { animation: none; }
+ }
+ 
+ /* ── In-house color picker ── */
+-- 
+2.43.0
+

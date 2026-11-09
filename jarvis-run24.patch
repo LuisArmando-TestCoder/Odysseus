@@ -1,0 +1,630 @@
+From aac0f39c71de454c14f9563b4f1a697cad1d081b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 9 Nov 2026 04:53:12 +0000
+Subject: [PATCH] =?UTF-8?q?style(jarvis):=20/deadlines=20page=20=E2=80=94?=
+ =?UTF-8?q?=20instrument=20readouts,=20status=20rails,=20countdown=20colum?=
+ =?UTF-8?q?n?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- New static/css/deadlines-jarvis.css (scoped to data-odx-theme="jarvis",
+  linked after the inline sheet like /cases): glass header with core +
+  tracked wordmark and mono nav keys; chamfered summary readouts (amber
+  only when overdue, zeros dim); chamfered rows with a status rail, fixed
+  status column (tag + countdown), ticked pending spine, green confirm key;
+  brightest frame on the ?item= row; amber notice rail; glass toast.
+- Phones (jarvis): keep a "‹ Chat" key — the inline sheet hid the whole
+  nav ≤520px, leaving no way back to the app.
+- deadlines.html: aria-hidden .eta countdown + .zero stat class from the
+  page script; .eta is display:none in the inline sheet, so other themes
+  render pixel-identical (verified).
+- Reduced motion / contrast / transparency / forced-colours gates.
+- docs/JARVIS_UI.md Run 24, ROADMAP.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015k7oH7XqN1yQQzkZnUKdAx
+---
+ ROADMAP.md                      |  11 +-
+ docs/JARVIS_UI.md               |  52 +++-
+ static/css/deadlines-jarvis.css | 440 ++++++++++++++++++++++++++++++++
+ static/deadlines.html           |  19 +-
+ 4 files changed, 517 insertions(+), 5 deletions(-)
+ create mode 100644 static/css/deadlines-jarvis.css
+
+diff --git a/ROADMAP.md b/ROADMAP.md
+index 9a72fce..7a51f4e 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -233,7 +233,16 @@ core "EDITING" tag; the Deep Research running card reads as an instrument
+ doc overlay no longer gets chat's 200px `pre-compact` padding (find marks
+ were landing a line low after wrapped lines), and the research pane's edge
+ signal, active-section dot and synapse pulse hold still under reduced motion.
+-Next: light-theme contrast report; then modals/windows polish backlog.
++Run 24 brought the standalone `/deadlines` page into the HUD
++(`static/css/deadlines-jarvis.css`): instrument readouts for the summary
++(amber only when something is overdue, zeros dim), chamfered rows with a
++status rail and a countdown column ("4D LATE", "2D TO GO"), a ticked spine
++for pending items, mono keys with a green confirm key, and a brightest
++frame on the row a notification linked to. On phones jarvis keeps a
++"‹ Chat" key in the header (the page's nav was hidden there, leaving no way
++back). Other themes render pixel-identical.
++Next: light-theme contrast report; then modals/windows polish backlog
++(Services window).
+ Spec + log: `docs/JARVIS_UI.md`.
+ 
+ ## High Priority
+diff --git a/docs/JARVIS_UI.md b/docs/JARVIS_UI.md
+index cd07ce0..85b014e 100644
+--- a/docs/JARVIS_UI.md
++++ b/docs/JARVIS_UI.md
+@@ -60,7 +60,8 @@ Keep the head-script fallback colours in sync with `THEMES.jarvis`.
+ 12. ✅ `/cases` Intel Board (`static/cases.html` → `cases-jarvis.css`)
+ 13. Mobile pass — ✅ part 1 app shell (`jarvis-mobile.css`) · ✅ part 2 message tables/code + sheet close keys · ✅ part 3 sheet bodies on touch · ✅ part 4 settings panels on phones · ✅ part 5 chat overlays · ✅ part 6 voice overlay controls
+ 14. Whole-app contrast / reduced-motion audit — ✅ part 1 shell, tool windows, settings (contrast floor in `jarvis.css` §5) · ✅ part 2 chat content + voice overlay · ✅ part 3 gradient headings + welcome hero (`jarvis.css` §6) · ✅ part 4 `pointer-events: none` surfaces + queue tray (`jarvis.css` §7)
+-15. Streaming states — ✅ part 1 chat: pending turn, live thinking, running tool (`jarvis.css` §8)
++15. Streaming states — ✅ part 1 chat: pending turn, live thinking, running tool (`jarvis.css` §8) · ✅ part 2 doc write head + research (§9)
++16. One-off pages/windows — ✅ `/deadlines` (`deadlines-jarvis.css`) · Services window
+ 
+ ## Progress log
+ 
+@@ -972,3 +973,52 @@ for the doc stream tag (dead once §9 owns it).
+ **Next:** light-theme contrast/overlap report (Runs 19–23 notes) for the
+ preset owner; then jarvis polish for remaining one-off windows (Services,
+ Deadlines page) if the audit finds gaps.
++
++### Run 24 — 2026-11-09 · `/deadlines` page
++New `static/css/deadlines-jarvis.css`, linked after the page's inline
++`<style>` in `static/deadlines.html` (same pattern as `/cases`: every rule
++scoped to `:root[data-odx-theme="jarvis"]`, own `@font-face` for Inter /
++Fira Code since the page doesn't load the app's sheets).
++- **Before:** jarvis colours only — rounded system-font cards, a 2-tone
++  summary, titles misaligned by tag width (OVERDUE vs DUE SOON), header
++  wordmark in the fallback mono, and **no way back to the app on phones**
++  (the inline sheet hides `header nav` ≤520px).
++- **Header:** dark glass + neon bottom edge, living core diamond + tracked
++  wordmark (the page's only infinite animation); nav = mono keys, first one
++  "‹ Chat". ≤520px jarvis keeps that one key (44px). `scroll-padding-top`
++  keeps a `?item=` row clear of the sticky header.
++- **Summary:** three chamfered instrument readouts — mono micro-label over a
++  32px mono figure. Overdue > 0 is the only amber surface (line, ticks,
++  figure); a zero dims to `--jv-text-faint` (`.zero` class added in JS —
++  no rule outside jarvis).
++- **Rows:** the `/cases` frame recipe (45° chamfers, drawn diagonals,
++  ticks) + a 2px status rail (amber overdue / cyan due soon / faint held).
++  Fixed 96px status column: tag chip + a countdown readout `.eta`
++  ("4D LATE", "24H LATE", "2D TO GO", "3D UNTIL BACK"; hours under 36h).
++  `.eta` is new markup from `eta()` in the page script, `aria-hidden`
++  (the meta line already says it in words) and `display:none` in the
++  inline sheet, so other themes don't see it. Source = outlined mono chip;
++  pending items hang off a hairline spine with ticks; actions sit under a
++  faint rule — green confirm key, then the snooze cluster.
++- **Focus row** (`?item=`): bigger chamfer + ticks at full cyan-hi (amber
++  if overdue), a one-shot brightness "lock" (no glow box).
++- **Empty / notices:** idle core above "Nothing overdue…"; the ">30 days
++  overdue" line is an amber attention rail, not a dashed empty box. Toast =
++  chamfered glass slab with a cyan (or danger) rail.
++- **Phones:** status column folds into one line (tag left, countdown
++  right) above the title; keys stay 2-up at 44px.
++- **Type:** tabular figures only on data (summary, countdown, meta, toast)
++  — Inter's `tnum` also widens hyphens in prose.
++- **Prefs:** reduced motion kills every jarvis animation (probe: 0 running
++  vs 1 core); `prefers-contrast: more` zeroes glow + brightens hairlines;
++  reduced transparency drops blur + grid; forced colours drop chamfers and
++  pseudo frames for plain borders.
++- Verified headless (mocked `/api/deadlines`, nonce injected): full list
++  (overdue, due soon, snoozed, done, long-overdue notice, `?item=` focus),
++  empty state and snooze toast, jarvis + light at 1440×900 and 390×844.
++  Light before/after **pixel-identical** in all four scenes. No page or
++  console errors. Deadline + static-mime + theme CSS tests: same pass/fail
++  as baseline (2 route tests fail on missing fastapi).
++
++**Next:** light-theme contrast/overlap report (Runs 19–23 notes) for the
++preset owner; then the Services window in the same frame language.
+diff --git a/static/css/deadlines-jarvis.css b/static/css/deadlines-jarvis.css
+new file mode 100644
+index 0000000..3e96e71
+--- /dev/null
++++ b/static/css/deadlines-jarvis.css
+@@ -0,0 +1,440 @@
++/* ═══════════════════════════════════════════════════════════════════════════
++   Deadlines (/deadlines) — Jarvis HUD layer
++   ───────────────────────────────────────────────────────────────────────────
++   deadlines.html is a standalone page with its own inline tokens; a nonce'd
++   head script copies the saved theme name onto <html data-odx-theme>
++   (default jarvis). Every rule below is scoped to
++   :root[data-odx-theme="jarvis"], so other themes render the original page.
++   Same vocabulary as cases-jarvis.css (docs/JARVIS_UI.md): void canvas, one
++   overhead cyan light, amber reserved for what is late, chamfered frames of
++   light, Inter for prose, Fira Code for data, expo-out motion ≤240ms.
++   ═══════════════════════════════════════════════════════════════════════════ */
++
++@font-face { font-family: "JV Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Regular.woff2") format("woff2"); }
++@font-face { font-family: "JV Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-Medium.woff2") format("woff2"); }
++@font-face { font-family: "JV Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("/static/fonts/Inter-SemiBold.woff2") format("woff2"); }
++@font-face { font-family: "JV Fira Code"; font-weight: 400; font-style: normal; font-display: swap; src: url("/static/fonts/FiraCode-Regular.woff2") format("woff2"); }
++@font-face { font-family: "JV Fira Code"; font-weight: 600; font-style: normal; font-display: swap; src: url("/static/fonts/FiraCode-SemiBold.woff2") format("woff2"); }
++
++/* ── 0 · Tokens ───────────────────────────────────────────────────────── */
++:root[data-odx-theme="jarvis"] {
++  color-scheme: dark;
++  --jv-cyan: #4fd8ff;
++  --jv-cyan-hi: #b8f3ff;
++  --jv-amber: #ffb347;
++  --jv-danger: #ff6b6b;
++  --jv-ok: #5ef2b3;
++  --jv-void: #060b14;
++  --jv-panel: #0a1424;
++  --jv-slot: #050c18;
++  --jv-text: #d3e9f5;
++  --jv-text-dim: #9fb9c9;     /* 9.6:1 on void, ~8.8:1 on panel */
++  --jv-text-faint: #7d98aa;   /* 6.4:1 on void, ~5.9:1 on panel */
++  --jv-ln: color-mix(in srgb, var(--jv-cyan) 42%, transparent);
++  --jv-ln-dim: color-mix(in srgb, var(--jv-cyan) 18%, transparent);
++  --jv-glow-k: 1;
++  --jv-glow: color-mix(in srgb, var(--jv-cyan) calc(40% * var(--jv-glow-k)), transparent);
++  --jv-glow-amber: color-mix(in srgb, var(--jv-amber) calc(36% * var(--jv-glow-k)), transparent);
++  --jv-ui: "JV Inter", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
++  --jv-mono: "JV Fira Code", "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
++  --jv-ease: cubic-bezier(0.16, 1, 0.3, 1);
++
++  /* The page's own tokens — inline rules and JS-built markup read these */
++  --bg: var(--jv-void);
++  --panel: var(--jv-panel);
++  --panel2: var(--jv-slot);
++  --border: var(--jv-ln-dim);
++  --fg: var(--jv-text);
++  --muted: var(--jv-text-dim);
++  --accent: var(--jv-cyan);
++  --good: var(--jv-ok);
++  --warn: var(--jv-amber);
++  --bad: var(--jv-danger);
++  --chip: color-mix(in srgb, var(--jv-cyan) 6%, transparent);
++  --mono: var(--jv-mono);
++  --ui: var(--jv-ui);
++  background-color: var(--jv-void);
++  scrollbar-color: color-mix(in srgb, var(--jv-cyan) 30%, transparent) transparent;
++  /* the sticky header must not hide a row that is scrolled into view (?item=) */
++  scroll-padding-top: 76px;
++}
++
++/* ── 1 · Canvas: void + overhead light + holo grid + scanline veil ───── */
++:root[data-odx-theme="jarvis"] body {
++  background:
++    radial-gradient(70% 520px at 50% -160px, color-mix(in srgb, var(--jv-cyan) 13%, transparent), transparent 72%),
++    var(--jv-void);
++  font: 14px/1.5 var(--jv-ui);
++  min-height: 100vh;
++}
++:root[data-odx-theme="jarvis"] body::before {
++  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
++  background-image:
++    linear-gradient(to right, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 1px, transparent 1px),
++    linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 5%, transparent) 1px, transparent 1px),
++    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--jv-cyan) 2%, transparent) 0 1px, transparent 1px 3px);
++  background-size: 48px 48px, 48px 48px, auto;
++  background-position: center top;
++  -webkit-mask-image: radial-gradient(90% 75% at 50% 15%, #000 0%, transparent 80%);
++          mask-image: radial-gradient(90% 75% at 50% 15%, #000 0%, transparent 80%);
++}
++:root[data-odx-theme="jarvis"] ::selection { background: color-mix(in srgb, var(--jv-cyan) 32%, transparent); color: #fff; }
++:root[data-odx-theme="jarvis"] a { color: var(--jv-cyan); text-underline-offset: 3px; }
++:root[data-odx-theme="jarvis"] a:hover { color: var(--jv-cyan-hi); }
++:root[data-odx-theme="jarvis"] :is(a, button):focus-visible { outline: 2px solid var(--jv-cyan); outline-offset: 2px; }
++
++/* ── 2 · Header: dark glass, neon bottom edge, core + tracked wordmark ── */
++:root[data-odx-theme="jarvis"] header {
++  min-height: 60px; padding: 10px 16px;
++  background: color-mix(in srgb, var(--jv-void) 84%, transparent);
++  -webkit-backdrop-filter: blur(12px) saturate(1.2);
++          backdrop-filter: blur(12px) saturate(1.2);
++  border-bottom: 0;
++}
++:root[data-odx-theme="jarvis"] header::after {
++  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; pointer-events: none;
++  background: linear-gradient(90deg, transparent, var(--jv-ln) 25%, var(--jv-cyan) 50%, var(--jv-ln) 75%, transparent);
++  box-shadow: 0 0 10px var(--jv-glow);
++}
++:root[data-odx-theme="jarvis"] header h1 {
++  display: inline-flex; align-items: center; gap: 10px; white-space: nowrap;
++  font: 600 13.5px/1 var(--jv-ui);
++  text-transform: uppercase; letter-spacing: 0.3em; margin-right: -0.3em;
++  color: var(--jv-cyan-hi);
++  text-shadow: 0 0 12px var(--jv-glow);
++}
++/* The page's one living core: a lit diamond inside a ring */
++:root[data-odx-theme="jarvis"] header h1::before {
++  content: ""; flex: none; width: 7px; height: 7px; transform: rotate(45deg);
++  background: var(--jv-cyan);
++  box-shadow: 0 0 0 4px var(--jv-void), 0 0 0 5px var(--jv-ln), 0 0 12px 4px var(--jv-glow);
++  margin: 0 6px 0 4px;
++  animation: jvd-core 3.2s var(--jv-ease) infinite;
++}
++@keyframes jvd-core { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
++/* Nav = mono keys on a hairline rail */
++:root[data-odx-theme="jarvis"] header nav { gap: 2px; font: 400 11px/1 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.14em; }
++:root[data-odx-theme="jarvis"] header nav a {
++  display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
++  color: var(--jv-text-dim); text-decoration: none;
++  border: 1px solid transparent;
++  transition: color .12s var(--jv-ease), border-color .12s var(--jv-ease), background-color .12s var(--jv-ease);
++}
++:root[data-odx-theme="jarvis"] header nav a:hover {
++  color: var(--jv-cyan-hi); border-color: var(--jv-ln-dim);
++  background: color-mix(in srgb, var(--jv-cyan) 8%, transparent);
++}
++:root[data-odx-theme="jarvis"] header nav a:first-child::before { content: "‹"; margin-right: 8px; font-size: 14px; color: var(--jv-cyan); }
++
++/* ── 3 · Boot: the containers reveal once (rows are re-rendered on every
++         action, so they never replay an entrance) ───────────────────── */
++:root[data-odx-theme="jarvis"] main { padding-top: 22px; }
++:root[data-odx-theme="jarvis"] :is(.summary, main > section, .note) { animation: jvd-boot .24s var(--jv-ease) both; }
++:root[data-odx-theme="jarvis"] main > section { animation-delay: 60ms; }
++:root[data-odx-theme="jarvis"] .note { animation-delay: 120ms; }
++@keyframes jvd-boot { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
++
++/* ── 4 · The frame recipe: fill clipped to a 45° chamfer; light line,
++         drawn diagonals and bright ticks in ::after (as on /cases) ──── */
++:root[data-odx-theme="jarvis"] :is(.stat, .dl) {
++  --c: 10px;
++  --ln: var(--jv-ln-dim);
++  --hi: color-mix(in srgb, var(--jv-cyan-hi) 60%, transparent);
++  --tick: 14px;
++  --fill: color-mix(in srgb, var(--jv-panel) 88%, transparent);
++  position: relative;
++  border: 0; border-radius: 0;
++  background: linear-gradient(180deg, color-mix(in srgb, var(--jv-cyan) 5%, var(--fill)), var(--fill) 110px);
++  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
++}
++:root[data-odx-theme="jarvis"] :is(.stat, .dl)::after {
++  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
++  border: 1px solid var(--ln);
++  clip-path: inherit;
++  background:
++    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 0 0 / var(--c) var(--c) no-repeat border-box,
++    linear-gradient(135deg, transparent calc(50% - .8px), var(--hi) calc(50% - .8px), var(--hi) calc(50% + .8px), transparent calc(50% + .8px)) 100% 100% / var(--c) var(--c) no-repeat border-box,
++    linear-gradient(var(--hi), var(--hi)) var(--c) 0 / var(--tick) 1.5px no-repeat border-box,
++    linear-gradient(var(--hi), var(--hi)) 0 var(--c) / 1.5px var(--tick) no-repeat border-box,
++    linear-gradient(var(--hi), var(--hi)) calc(100% - var(--c)) 100% / var(--tick) 1.5px no-repeat border-box,
++    linear-gradient(var(--hi), var(--hi)) 100% calc(100% - var(--c)) / 1.5px var(--tick) no-repeat border-box;
++  transition: border-color .18s var(--jv-ease);
++}
++
++/* Tabular figures on data only — Inter's tnum also widens hyphens in prose */
++:root[data-odx-theme="jarvis"] :is(.stat b, .dl .eta, .dl .meta, #toast) { font-variant-numeric: tabular-nums; }
++
++/* ── 5 · Summary: three instrument readouts ───────────────────────────── */
++:root[data-odx-theme="jarvis"] .summary { gap: 12px; margin-bottom: 26px; }
++:root[data-odx-theme="jarvis"] .stat {
++  --c: 8px; --tick: 12px;
++  display: flex; flex-direction: column-reverse; gap: 8px;
++  padding: 12px 16px 14px;
++}
++:root[data-odx-theme="jarvis"] .stat span {
++  display: flex; align-items: center; gap: 8px;
++  font: 400 10.5px/1.2 var(--jv-mono); letter-spacing: 0.16em; color: var(--jv-text-dim);
++}
++:root[data-odx-theme="jarvis"] .stat span::before {
++  content: ""; flex: none; width: 5px; height: 5px; transform: rotate(45deg);
++  background: var(--jv-cyan); box-shadow: 0 0 6px var(--jv-glow);
++}
++:root[data-odx-theme="jarvis"] .stat b {
++  font: 600 32px/1 var(--jv-mono); letter-spacing: -0.02em;
++  color: #eaf8ff; text-shadow: 0 0 14px var(--jv-glow);
++}
++/* An idle readout dims; it is a zero, not news */
++:root[data-odx-theme="jarvis"] .stat.zero b { color: var(--jv-text-faint); text-shadow: none; }
++/* Overdue is the one place amber lives on this page */
++:root[data-odx-theme="jarvis"] .stat.over {
++  --ln: color-mix(in srgb, var(--jv-amber) 50%, transparent);
++  --hi: var(--jv-amber);
++  background: linear-gradient(180deg, color-mix(in srgb, var(--jv-amber) 9%, var(--fill)), var(--fill) 90px);
++}
++:root[data-odx-theme="jarvis"] .stat.over b { color: var(--jv-amber); text-shadow: 0 0 16px var(--jv-glow-amber); }
++:root[data-odx-theme="jarvis"] .stat.over span { color: color-mix(in srgb, var(--jv-amber) 80%, var(--jv-text)); }
++:root[data-odx-theme="jarvis"] .stat.over span::before { background: var(--jv-amber); box-shadow: 0 0 6px var(--jv-glow-amber); }
++
++/* ── 6 · Section labels: cyan mono, led by a diamond, ruled to the edge ─ */
++:root[data-odx-theme="jarvis"] h2 {
++  display: flex; align-items: center; gap: 10px;
++  font: 400 10.5px/1.3 var(--jv-mono); letter-spacing: 0.18em;
++  color: var(--jv-cyan); margin: 0 0 12px;
++}
++:root[data-odx-theme="jarvis"] h2::before {
++  content: ""; flex: none; width: 5px; height: 5px; transform: rotate(45deg);
++  background: var(--jv-cyan); box-shadow: 0 0 6px var(--jv-glow);
++}
++:root[data-odx-theme="jarvis"] h2::after {
++  content: ""; flex: 1; height: 1px;
++  background: linear-gradient(90deg, var(--jv-ln-dim), transparent);
++}
++:root[data-odx-theme="jarvis"] #held-sec { margin-top: 30px; }
++:root[data-odx-theme="jarvis"] #held-sec h2 { color: var(--jv-text-dim); }
++:root[data-odx-theme="jarvis"] #held-sec h2::before { background: var(--jv-text-faint); box-shadow: none; }
++
++/* ── 7 · Deadline rows: status column (tag + countdown) | body ─────────── */
++:root[data-odx-theme="jarvis"] .list { gap: 10px; }
++:root[data-odx-theme="jarvis"] .dl {
++  --rail: var(--jv-cyan);
++  grid-template-columns: 96px minmax(0, 1fr);
++  gap: 2px 16px;
++  padding: 14px 18px 14px 16px;
++  transition: none;
++}
++/* The status rail: a 2px lit edge on the left, in the row's state colour */
++:root[data-odx-theme="jarvis"] .dl::before {
++  content: ""; position: absolute; left: 0; top: var(--c); bottom: 0; width: 2px; pointer-events: none;
++  background: linear-gradient(180deg, var(--rail), color-mix(in srgb, var(--rail) 0%, transparent));
++  box-shadow: 0 0 10px color-mix(in srgb, var(--rail) calc(45% * var(--jv-glow-k)), transparent);
++}
++:root[data-odx-theme="jarvis"] .dl.overdue {
++  --rail: var(--jv-amber);
++  --ln: color-mix(in srgb, var(--jv-amber) 30%, transparent);
++  --hi: color-mix(in srgb, var(--jv-amber) 75%, transparent);
++  background: linear-gradient(90deg, color-mix(in srgb, var(--jv-amber) 7%, var(--fill)), var(--fill) 45%);
++}
++:root[data-odx-theme="jarvis"] .dl.held {
++  --rail: var(--jv-text-faint);
++  --hi: color-mix(in srgb, var(--jv-text-dim) 45%, transparent);
++  --fill: color-mix(in srgb, var(--jv-slot) 80%, transparent);
++  background: var(--fill);
++}
++:root[data-odx-theme="jarvis"] .dl.held::before { box-shadow: none; opacity: .7; }
++:root[data-odx-theme="jarvis"] .dl .tag {
++  grid-column: 1; grid-row: 1; justify-self: start;
++  border-radius: 0; padding: 5px 7px 4px;
++  font: 600 10px/1 var(--jv-mono); letter-spacing: 0.14em;
++  background: color-mix(in srgb, currentColor 8%, transparent);
++  border-color: color-mix(in srgb, currentColor 55%, transparent);
++}
++:root[data-odx-theme="jarvis"] .dl.held .tag { color: var(--jv-text-dim); background: transparent; }
++/* Countdown readout under the tag (aria-hidden — the meta line says it) */
++:root[data-odx-theme="jarvis"] .dl .eta {
++  display: flex; flex-direction: column; gap: 3px;
++  grid-column: 1; grid-row: 2 / span 2; align-self: start;
++  margin-top: 8px;
++  font: 400 9.5px/1.1 var(--jv-mono); letter-spacing: 0.14em; text-transform: uppercase;
++  color: var(--jv-text-faint);
++}
++:root[data-odx-theme="jarvis"] .dl .eta b { font: 600 22px/1 var(--jv-mono); letter-spacing: -0.01em; color: var(--jv-cyan-hi); }
++:root[data-odx-theme="jarvis"] .dl.overdue .eta b { color: var(--jv-amber); text-shadow: 0 0 12px var(--jv-glow-amber); }
++:root[data-odx-theme="jarvis"] .dl.held .eta b { color: var(--jv-text-dim); font-size: 18px; }
++:root[data-odx-theme="jarvis"] .dl .title {
++  grid-column: 2; grid-row: 1;
++  font: 600 15px/1.35 var(--jv-ui); letter-spacing: -0.005em; color: #eaf8ff;
++}
++:root[data-odx-theme="jarvis"] .dl.held .title { color: var(--jv-text); font-weight: 500; }
++:root[data-odx-theme="jarvis"] .dl .meta {
++  grid-column: 2; grid-row: 2;
++  font: 400 11.5px/1.5 var(--jv-mono); letter-spacing: 0.02em; color: var(--jv-text-dim);
++}
++:root[data-odx-theme="jarvis"] .dl .meta .src {
++  display: inline-block; padding: 0 5px; margin-right: 2px;
++  border: 1px solid var(--jv-ln-dim); color: var(--jv-cyan);
++  font-size: 10px; letter-spacing: 0.14em; line-height: 16px;
++}
++/* Pending sub-items: a hairline spine with tick marks */
++:root[data-odx-theme="jarvis"] .dl .pending {
++  grid-column: 2; grid-row: 3;
++  list-style: none; margin: 8px 0 2px; padding: 0 0 0 14px;
++  border-left: 1px solid var(--jv-ln-dim);
++  font-size: 13px; color: var(--jv-text);
++  display: grid; gap: 3px;
++}
++:root[data-odx-theme="jarvis"] .dl .pending li { position: relative; }
++:root[data-odx-theme="jarvis"] .dl .pending li::before {
++  content: ""; position: absolute; left: -14px; top: .72em; width: 8px; height: 1px; background: var(--jv-ln);
++}
++/* Actions: one confirm key, then a snooze cluster */
++:root[data-odx-theme="jarvis"] .dl .acts {
++  grid-row: 4;
++  gap: 6px; margin-top: 12px; padding-top: 12px;
++  border-top: 1px solid color-mix(in srgb, var(--jv-cyan) 9%, transparent);
++}
++:root[data-odx-theme="jarvis"] .dl .acts button.done { margin-right: 10px; }
++
++/* The row a notification linked to (?item=): brightest frame on the page */
++:root[data-odx-theme="jarvis"] .dl.focus {
++  --c: 14px; --tick: 22px;
++  --ln: var(--jv-ln); --hi: var(--jv-cyan-hi);
++  box-shadow: none;
++  background:
++    radial-gradient(70% 120px at 30% 0, color-mix(in srgb, var(--jv-cyan) 11%, transparent), transparent 75%),
++    var(--fill);
++  animation: jvd-lock .5s var(--jv-ease) both;
++}
++:root[data-odx-theme="jarvis"] .dl.overdue.focus { --ln: color-mix(in srgb, var(--jv-amber) 55%, transparent); --hi: var(--jv-amber); }
++@keyframes jvd-lock { 0% { filter: brightness(1.6); } 100% { filter: none; } }
++
++/* ── 8 · Keys ─────────────────────────────────────────────────────────── */
++:root[data-odx-theme="jarvis"] button {
++  min-height: 34px; padding: 6px 12px;
++  border-radius: 0;
++  background: color-mix(in srgb, var(--jv-cyan) 5%, transparent);
++  border: 1px solid var(--jv-ln-dim);
++  color: var(--jv-text);
++  font: 400 11px/1.2 var(--jv-mono); text-transform: uppercase; letter-spacing: 0.1em;
++  transition: border-color .12s var(--jv-ease), color .12s var(--jv-ease), background-color .12s var(--jv-ease), box-shadow .12s var(--jv-ease);
++}
++:root[data-odx-theme="jarvis"] button:hover {
++  border-color: var(--jv-ln); color: var(--jv-cyan-hi);
++  background: color-mix(in srgb, var(--jv-cyan) 12%, transparent);
++}
++:root[data-odx-theme="jarvis"] button:active { transform: translateY(1px); }
++:root[data-odx-theme="jarvis"] button.done {
++  color: var(--jv-ok); font-weight: 600;
++  border-color: color-mix(in srgb, var(--jv-ok) 50%, transparent);
++  background: color-mix(in srgb, var(--jv-ok) 8%, transparent);
++}
++:root[data-odx-theme="jarvis"] button.done:hover {
++  color: #d6ffee; border-color: var(--jv-ok);
++  background: color-mix(in srgb, var(--jv-ok) 16%, transparent);
++  box-shadow: 0 0 14px -4px color-mix(in srgb, var(--jv-ok) calc(60% * var(--jv-glow-k)), transparent);
++}
++:root[data-odx-theme="jarvis"] button.done:focus-visible { outline-color: var(--jv-ok); }
++:root[data-odx-theme="jarvis"] button[disabled] { opacity: .45; transform: none; }
++
++/* ── 9 · Empty / notice / footnote ────────────────────────────────────── */
++:root[data-odx-theme="jarvis"] .empty {
++  border-radius: 0;
++  border: 1px dashed var(--jv-ln-dim);
++  background:
++    radial-gradient(50% 120px at 50% 0, color-mix(in srgb, var(--jv-cyan) 7%, transparent), transparent 75%),
++    color-mix(in srgb, var(--jv-slot) 70%, transparent);
++  color: var(--jv-text-dim);
++  padding: 30px 20px;
++}
++:root[data-odx-theme="jarvis"] .empty b {
++  display: flex; flex-direction: column; align-items: center; gap: 16px;
++  font: 600 15px/1.3 var(--jv-ui); color: var(--jv-text); margin-bottom: 6px;
++}
++/* An idle core above the "all clear" line */
++:root[data-odx-theme="jarvis"] .empty b::before {
++  content: ""; width: 8px; height: 8px; transform: rotate(45deg); margin-top: 6px;
++  background: var(--jv-cyan);
++  box-shadow: 0 0 0 6px var(--jv-slot), 0 0 0 7px var(--jv-ln), 0 0 18px 6px var(--jv-glow);
++}
++/* The ">30 days overdue" notice is an attention line, not an empty state */
++:root[data-odx-theme="jarvis"] #open > .empty:not(:first-child) {
++  border: 0; text-align: left; padding: 11px 14px 11px 16px; font-size: 13px;
++  border-left: 2px solid var(--jv-amber);
++  background: linear-gradient(90deg, color-mix(in srgb, var(--jv-amber) 9%, transparent), transparent 80%);
++  color: var(--jv-text);
++}
++:root[data-odx-theme="jarvis"] .note {
++  margin-top: 26px; padding-top: 14px;
++  border-top: 1px solid color-mix(in srgb, var(--jv-cyan) 9%, transparent);
++  font-size: 12.5px; line-height: 1.6; color: var(--jv-text-faint); max-width: 72ch;
++}
++
++/* ── 10 · Toast: a chamfered glass slab with a status rail ────────────── */
++:root[data-odx-theme="jarvis"] #toast {
++  --c: 8px;
++  border: 0; border-radius: 0;
++  padding: 10px 12px 10px 16px;
++  background: color-mix(in srgb, var(--jv-panel) 92%, transparent);
++  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
++  box-shadow: inset 2px 0 0 var(--jv-cyan), inset 0 0 0 1px var(--jv-ln), 0 12px 40px rgba(0, 0, 0, .55);
++  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
++  color: var(--jv-text); font-size: 13px;
++  animation: jvd-toast .2s var(--jv-ease) both;
++}
++:root[data-odx-theme="jarvis"] #toast.bad { color: #ffd0d0; box-shadow: inset 2px 0 0 var(--jv-danger), inset 0 0 0 1px color-mix(in srgb, var(--jv-danger) 50%, transparent), 0 12px 40px rgba(0, 0, 0, .55); }
++:root[data-odx-theme="jarvis"] #toast button { min-height: 30px; color: var(--jv-cyan); }
++@keyframes jvd-toast { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
++
++/* ── 11 · Phones ──────────────────────────────────────────────────────── */
++@media (max-width: 520px) {
++  /* The inline sheet hides the whole nav here, leaving no way back:
++     keep the first key ("‹ Chat") */
++  :root[data-odx-theme="jarvis"] header nav { display: flex; }
++  :root[data-odx-theme="jarvis"] header nav a:not(:first-child) { display: none; }
++  :root[data-odx-theme="jarvis"] header nav a { min-height: 44px; }
++  :root[data-odx-theme="jarvis"] header h1 { letter-spacing: 0.24em; margin-right: -0.24em; }
++  :root[data-odx-theme="jarvis"] .summary { gap: 8px; }
++  :root[data-odx-theme="jarvis"] .stat { padding: 10px 10px 12px; gap: 6px; }
++  :root[data-odx-theme="jarvis"] .stat b { font-size: 26px; }
++  :root[data-odx-theme="jarvis"] .stat span { font-size: 9.5px; letter-spacing: 0.1em; gap: 6px; }
++  :root[data-odx-theme="jarvis"] .stat span::before { display: none; }
++  /* Status column folds into one line above the title */
++  :root[data-odx-theme="jarvis"] .dl { grid-template-columns: minmax(0, 1fr); padding: 12px 14px 14px; gap: 4px; }
++  :root[data-odx-theme="jarvis"] .dl .tag { grid-column: 1; grid-row: 1; }
++  :root[data-odx-theme="jarvis"] .dl .eta {
++    grid-column: 1; grid-row: 1; justify-self: end; align-self: center;
++    flex-direction: row; align-items: baseline; gap: 6px; margin: 0;
++  }
++  :root[data-odx-theme="jarvis"] .dl .eta b { font-size: 16px; }
++  :root[data-odx-theme="jarvis"] .dl .title { grid-column: 1; grid-row: 2; margin-top: 6px; }
++  :root[data-odx-theme="jarvis"] .dl .meta { grid-column: 1; grid-row: 3; }
++  :root[data-odx-theme="jarvis"] .dl .pending { grid-column: 1; grid-row: 4; }
++  :root[data-odx-theme="jarvis"] .dl .acts { grid-row: 5; }
++  :root[data-odx-theme="jarvis"] .dl .acts button.done { margin-right: 0; }
++  :root[data-odx-theme="jarvis"] .dl .acts button { font-size: 10.5px; letter-spacing: 0.06em; }
++}
++
++/* ── 12 · Preferences ─────────────────────────────────────────────────── */
++@media (prefers-reduced-motion: reduce) {
++  :root[data-odx-theme="jarvis"] *,
++  :root[data-odx-theme="jarvis"] *::before,
++  :root[data-odx-theme="jarvis"] *::after { animation: none !important; }
++}
++@media (prefers-contrast: more) {
++  :root[data-odx-theme="jarvis"] {
++    --jv-glow-k: 0;
++    --jv-ln-dim: color-mix(in srgb, var(--jv-cyan) 45%, transparent);
++    --jv-text-faint: var(--jv-text-dim);
++  }
++  :root[data-odx-theme="jarvis"] :is(.stat b, header h1, .dl .eta b) { text-shadow: none; }
++}
++@media (prefers-reduced-transparency: reduce) {
++  :root[data-odx-theme="jarvis"] :is(header, #toast) { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--jv-panel); }
++  :root[data-odx-theme="jarvis"] body::before { display: none; }
++}
++@media (forced-colors: active) {
++  :root[data-odx-theme="jarvis"] body::before,
++  :root[data-odx-theme="jarvis"] :is(.stat, .dl, header)::after,
++  :root[data-odx-theme="jarvis"] .dl::before { display: none; }
++  :root[data-odx-theme="jarvis"] :is(.stat, .dl, #toast) { clip-path: none; border: 1px solid CanvasText; }
++  :root[data-odx-theme="jarvis"] header { border-bottom: 1px solid CanvasText; }
++}
+diff --git a/static/deadlines.html b/static/deadlines.html
+index 8ecf63a..1951557 100644
+--- a/static/deadlines.html
++++ b/static/deadlines.html
+@@ -60,6 +60,7 @@ h2{font:600 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;col
+ .dl .meta{color:var(--muted);font-size:12.5px}
+ .dl .meta .src{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+ .dl .acts{grid-column:1 / -1;display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
++.dl .eta{display:none} /* countdown readout — drawn by the jarvis layer only */
+ .dl .pending{grid-column:2;margin:2px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px}
+ button{font:inherit;color:inherit;background:var(--chip);border:1px solid var(--border);border-radius:8px;
+   padding:7px 12px;cursor:pointer;min-height:36px;white-space:nowrap}
+@@ -86,6 +87,8 @@ button[disabled]{opacity:.5;cursor:default}
+ }
+ @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+ </style>
++<!-- Jarvis HUD layer — every rule scoped to data-odx-theme="jarvis" on <html>; other themes keep the look above. -->
++<link rel="stylesheet" href="/static/css/deadlines-jarvis.css">
+ </head>
+ <body>
+ <header>
+@@ -121,6 +124,15 @@ button[disabled]{opacity:.5;cursor:default}
+     const d = new Date(t * 1000);
+     return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+   }
++  // Countdown readout for the row's status column ("2D" / "LATE"). Decorative:
++  // the meta line already says it in words, so it is aria-hidden.
++  function eta(t, kind) {
++    if (!t) return '';
++    const s = Math.abs(t - Date.now() / 1000), h = Math.round(s / 3600), d = Math.round(s / 86400);
++    const n = h < 36 ? Math.max(1, h) + 'H' : d + 'D';
++    const cap = kind === 'snoozed' ? 'until back' : (t * 1000 < Date.now() ? 'late' : 'to go');
++    return `<span class="eta" aria-hidden="true"><b>${n}</b>${cap}</span>`;
++  }
+   function toast(msg, bad, undo) {
+     const t = $('#toast'); $('#toast-msg').textContent = msg; t.className = bad ? 'bad' : '';
+     const u = $('#toast-undo'); u.hidden = !undo; u.onclick = undo ? () => { t.style.display = 'none'; undo(); } : null;
+@@ -151,6 +163,7 @@ button[disabled]{opacity:.5;cursor:default}
+         presets.map(p => `<button data-act="snooze" data-p="${p}" data-k="${key}">Snooze · ${esc(PRESET_LABEL[p] || p)}</button>`).join('');
+     return `<li class="dl ${kind}${it.id === focusId ? ' focus' : ''}" data-id="${esc(it.id)}">
+       <span class="tag">${label}</span>
++      ${held ? (it.followup.status === 'snoozed' ? eta(it.followup.until, 'snoozed') : '') : eta(it.due_at, it.kind)}
+       <span class="title">${esc(it.title)}</span>
+       <span class="meta"><span class="src">${it.source === 'email' ? 'Email' : 'Note'}</span> · ${when}</span>
+       ${pend}<div class="acts">${acts}</div></li>`;
+@@ -164,9 +177,9 @@ button[disabled]{opacity:.5;cursor:default}
+       const soon = d.items.length - over;
+       const snoozed = d.held.filter(i => i.followup.status === 'snoozed').length;
+       $('#summary').innerHTML =
+-        `<div class="stat${over ? ' over' : ''}"><b>${over}</b><span>Overdue</span></div>` +
+-        `<div class="stat"><b>${soon}</b><span>Next 7 days</span></div>` +
+-        `<div class="stat"><b>${snoozed}</b><span>Snoozed</span></div>`;
++        `<div class="stat${over ? ' over' : ' zero'}"><b>${over}</b><span>Overdue</span></div>` +
++        `<div class="stat${soon ? '' : ' zero'}"><b>${soon}</b><span>Next 7 days</span></div>` +
++        `<div class="stat${snoozed ? '' : ' zero'}"><b>${snoozed}</b><span>Snoozed</span></div>`;
+       $('#open').innerHTML = d.items.length ? d.items.map(i => row(i, false)).join('')
+         : `<li class="empty"><b>Nothing overdue or due this week.</b>Give a note a due date and Odysseus will follow up on it here.</li>`;
+       if (d.long_overdue) $('#open').insertAdjacentHTML('beforeend',
+-- 
+2.43.0
+
